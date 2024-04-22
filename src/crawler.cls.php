@@ -346,7 +346,10 @@ class Crawler extends Root
 			$this->_engine_start();
 			$this->Release_lane();
 		} catch (\Exception $e) {
-			self::debug('🛑 ' . $e->getMessage());
+			self::debug('🛑 Error on crawling: ' . $e->getMessage());
+			$this->_end_reason = 'error';
+			$this->_terminate_running();
+			$this->Release_lane();
 		}
 	}
 
