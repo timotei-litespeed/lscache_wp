@@ -169,9 +169,13 @@ if ($cdn_setup_done_ts) {
 				</tr>
 			</thead>
 			<tbody>
-				<?php foreach ($setup_summary['cdn_dns_summary']['types'] as $type => $cnt) {
-					echo '<tr><td>' . wp_kses_post($type) . '</td><td>' . wp_kses_post($cnt) . '</td></tr>';
-				} ?>
+				<?php 
+					if( is_array($setup_summary['cdn_dns_summary']['types']) ){
+						foreach ($setup_summary['cdn_dns_summary']['types'] as $type => $cnt) {
+							echo '<tr><td>' . wp_kses_post($type) . '</td><td>' . wp_kses_post($cnt) . '</td></tr>';
+						}
+					}
+				?>
 			</tbody>
 		</table>
 
