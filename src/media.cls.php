@@ -1045,11 +1045,11 @@ class Media extends Root
 				$url .= '.webp';
 			} else {
 				Debug2::debug2('[Media] -no WebP file, bypassed');
-				return false;
+				return $url;
 			}
 		} else {
 			Debug2::debug2('[Media] -no file, bypassed');
-			return false;
+			return $url;
 		}
 
 		Debug2::debug2('[Media] - replaced to: ' . $url);
