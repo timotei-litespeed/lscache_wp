@@ -998,7 +998,10 @@ class Media extends Root
 			if (json_last_error() === JSON_ERROR_NONE) {
 				array_walk_recursive($jsonData, function (&$item, $key) {
 					if ($key == 'url') {
-						$item = $this->replace_webp($item);
+						$webp_image = $this->replace_webp($item);
+						if( $webp_image ){
+							$item = $webp_image;
+						}
 					}
 				});
 
@@ -1045,11 +1048,11 @@ class Media extends Root
 				$url .= '.webp';
 			} else {
 				Debug2::debug2('[Media] -no WebP file, bypassed');
-				return $url;
+				return false;
 			}
 		} else {
 			Debug2::debug2('[Media] -no file, bypassed');
-			return $url;
+			return false;
 		}
 
 		Debug2::debug2('[Media] - replaced to: ' . $url);
