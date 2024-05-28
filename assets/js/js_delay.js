@@ -276,7 +276,7 @@
                         script.removeAttribute("data-src");
                         script.src = scriptSrc;
                     } else {
-                        console.log('[LiteSpeed] Load inline JS' + ( newScript.attribute("id") ? ' '+newScript.attribute("id") : '' ));
+                        console.log('[LiteSpeed] Load inline JS' + ( script.getAttribute("id") ? ' #'+ script.getAttribute("id") : '' ));
                         script.src = "data:text/javascript;base64," + window.btoa(unescape(encodeURIComponent(script.text)));
                     }
                 }
