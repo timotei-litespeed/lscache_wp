@@ -82,6 +82,7 @@ class Optimize extends Base
 			$this->cfg_js_defer = 2;
 		}
 		if ($this->cfg_js_defer == 2) {
+			$this->cfg_js_comb = false;
 			add_filter(
 				'litespeed_optm_cssjs',
 				function ($con, $file_type) {
