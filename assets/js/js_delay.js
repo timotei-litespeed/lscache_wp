@@ -227,39 +227,39 @@
             }
 
             try {
-                if (navigator.userAgent.indexOf("Firefox/") > 0 || navigator.vendor === "") {
-                    newScript = document.createElement("script");
-                    [...script.attributes].forEach((attr) => {
-                        let name = attr.nodeName;
-                        if (name !== "type") {
-                            if (name === "data-lsc-type") {
-                                name = "type";
-                            }
-                            if (name === "data-src") {
-                                name = "src";
-                            }
-                            newScript.setAttribute(name, attr.nodeValue);
-                        }
-                    });
-                    if (script.text) {
-                        newScript.text = script.text;
-                    }
+                // if (navigator.userAgent.indexOf("Firefox/") > 0 || navigator.vendor === "") {
+                //     newScript = document.createElement("script");
+                //     [...script.attributes].forEach((attr) => {
+                //         let name = attr.nodeName;
+                //         if (name !== "type") {
+                //             if (name === "data-lsc-type") {
+                //                 name = "type";
+                //             }
+                //             if (name === "data-src") {
+                //                 name = "src";
+                //             }
+                //             newScript.setAttribute(name, attr.nodeValue);
+                //         }
+                //     });
+                //     if (script.text) {
+                //         newScript.text = script.text;
+                //     }
 
-                    if (newScript.hasAttribute("src")) {
-                        console.log('[LiteSpeed] Load ', newScript.attribute("src"));
-                        newScript.addEventListener("load", onload);
-                        newScript.addEventListener("error", onError);
-                        setTimeout(() => {
-                            if (!newScript.isConnected) {
-                                resolve();
-                            }
-                        }, 1);
-                    } else {
-                        newScript.text = script.text;
-                        onload();
-                    }
-                    script.parentNode.replaceChild(newScript, script);
-                } else {
+                //     if (newScript.hasAttribute("src")) {
+                //         console.log('[LiteSpeed] Load ', newScript.attribute("src"));
+                //         newScript.addEventListener("load", onload);
+                //         newScript.addEventListener("error", onError);
+                //         setTimeout(() => {
+                //             if (!newScript.isConnected) {
+                //                 resolve();
+                //             }
+                //         }, 1);
+                //     } else {
+                //         newScript.text = script.text;
+                //         onload();
+                //     }
+                //     script.parentNode.replaceChild(newScript, script);
+                // } else {
                     const scriptType = script.getAttribute("data-lsc-type");
                     const scriptSrc = script.getAttribute("data-src");
                     if (scriptType) {
@@ -279,7 +279,7 @@
                         console.log('[LiteSpeed] Load inline JS' + ( script.getAttribute("id") ? ' #'+ script.getAttribute("id") : '' ));
                         script.src = "data:text/javascript;base64," + window.btoa(unescape(encodeURIComponent(script.text)));
                     }
-                }
+                // }
             } catch (error) {
                 onError();
             }
