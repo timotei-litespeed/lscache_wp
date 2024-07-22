@@ -9,6 +9,10 @@
  */
 namespace LiteSpeed;
 
+use LiteSpeed\Lib\MatthiasMullie\Minify\CSS as CSS_MIN;
+use LiteSpeed\Lib\MatthiasMullie\Minify\JS as JS_MIN;
+use LiteSpeed\Lib\UriRewriter;
+
 defined('WPINC') || exit();
 
 class Optimizer extends Root
@@ -249,7 +253,7 @@ class Optimizer extends Root
 			if ($file_type == 'css') {
 				$dirname = dirname($this_url) . '/';
 
-				$con = Lib\CSS_MIN\UriRewriter::prepend($con, $dirname);
+				$con = UriRewriter::prepend($con, $dirname);
 			}
 		} else {
 			Debug2::debug2('[CSS] Load local [' . $file_type . '] ' . $real_file[0]);
@@ -258,7 +262,7 @@ class Optimizer extends Root
 			if ($file_type == 'css') {
 				$dirname = dirname($real_file[0]);
 
-				$con = Lib\CSS_MIN\UriRewriter::rewrite($con, $dirname);
+				$con = UriRewriter::rewrite($con, $dirname);
 			}
 		}
 
@@ -274,8 +278,10 @@ class Optimizer extends Root
 	public static function minify_css($data)
 	{
 		try {
-			$obj = new Lib\CSS_MIN\Minifier();
-			return $obj->run($data);
+			$obj = new CSS_MIN();
+			$obj->add($data);
+
+			return $obj->minify();
 		} catch (\Exception $e) {
 			Debug2::debug('******[Optmer] minify_css failed: ' . $e->getMessage());
 			error_log('****** LiteSpeed Optimizer minify_css failed: ' . $e->getMessage());
@@ -303,8 +309,10 @@ class Optimizer extends Root
 		}
 
 		try {
-			$data = Lib\JSMin::minify($data);
-			return $data;
+			$obj = new JS_MIN();
+			$obj->add($data);
+			
+			return $obj->minify();
 		} catch (\Exception $e) {
 			Debug2::debug('******[Optmer] minify_js failed: ' . $e->getMessage());
 			// error_log( '****** LiteSpeed Optimizer minify_js failed: ' . $e->getMessage() );
