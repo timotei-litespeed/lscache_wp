@@ -9,10 +9,6 @@
  */
 namespace LiteSpeed;
 
-use LiteSpeed\Lib\MatthiasMullie\Minify\CSS as CSS_MIN;
-use LiteSpeed\Lib\MatthiasMullie\Minify\JS as JS_MIN;
-use LiteSpeed\Lib\UriRewriter;
-
 defined('WPINC') || exit();
 
 class Optimizer extends Root
@@ -253,7 +249,7 @@ class Optimizer extends Root
 			if ($file_type == 'css') {
 				$dirname = dirname($this_url) . '/';
 
-				$con = UriRewriter::prepend($con, $dirname);
+				$con = Lib\UriRewriter::prepend($con, $dirname);
 			}
 		} else {
 			Debug2::debug2('[CSS] Load local [' . $file_type . '] ' . $real_file[0]);
@@ -262,7 +258,7 @@ class Optimizer extends Root
 			if ($file_type == 'css') {
 				$dirname = dirname($real_file[0]);
 
-				$con = UriRewriter::rewrite($con, $dirname);
+				$con = Lib\UriRewriter::rewrite($con, $dirname);
 			}
 		}
 
@@ -278,7 +274,7 @@ class Optimizer extends Root
 	public static function minify_css($data)
 	{
 		try {
-			$obj = new CSS_MIN();
+			$obj = new Lib\MatthiasMullie\Minify\CSS();
 			$obj->add($data);
 
 			return $obj->minify();
@@ -309,7 +305,7 @@ class Optimizer extends Root
 		}
 
 		try {
-			$obj = new JS_MIN();
+			$obj = new Lib\MatthiasMullie\Minify\JS();
 			$obj->add($data);
 			
 			return $obj->minify();
