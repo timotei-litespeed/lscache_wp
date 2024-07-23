@@ -16,7 +16,7 @@ use LiteSpeed\Lib\UriRewriter;
 defined('WPINC') || exit();
 
 class Optimizer extends Root
-{
+{ 
 	private $_conf_css_font_display;
 
 	/**

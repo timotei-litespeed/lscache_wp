@@ -13,7 +13,7 @@
 namespace LiteSpeed\Lib\MatthiasMullie\Minify\Exceptions;
 
 /**
- * IO Exception Class.
+ * IO Exception Class. 
  *
  * @author Matthias Mullie <minify@mullie.eu>
  */
