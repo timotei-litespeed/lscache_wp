@@ -218,7 +218,7 @@ class Img_Optm extends Base
 		}
 
 		if (!$allowance) {
-			self::debug('❌ No credit');
+			self::debug('❌ No credit ');
 			Admin_Display::error(Error::msg($err));
 			$this->_finished_running();
 			return;
@@ -824,15 +824,15 @@ class Img_Optm extends Base
 		} else {
 			// get images post ids
 			$q = "SELECT DISTINCT post_id FROM `$this->_table_img_optming` WHERE id IN ( " . implode(',', array_fill(0, count($notified_data), '%d')) . ' ) ';
-			$post_ids_tmp  = $wpdb->get_results($wpdb->prepare($q, $notified_data), ARRAY_N);
+			$post_ids_tmp = $wpdb->get_results($wpdb->prepare($q, $notified_data), ARRAY_N);
 			$post_ids = array();
 
-			foreach($post_ids_tmp as $l1){
+			foreach ($post_ids_tmp as $l1) {
 				if (is_array($l1)) {
 					$post_ids[] = $l1[0];
 				}
 			}
-			
+
 			// Other errors will directly remove the working records
 			// Delete from working table
 			$q = "DELETE FROM `$this->_table_img_optming` WHERE post_id IN ( " . implode(',', array_fill(0, count($post_ids), '%d')) . ' ) ';
