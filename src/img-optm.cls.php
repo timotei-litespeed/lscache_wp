@@ -822,21 +822,13 @@ class Img_Optm extends Base
 			// Mark need_pull tag for cron
 			self::update_option(self::DB_NEED_PULL, self::STATUS_NOTIFIED);
 		} else {
-			// get images post ids
-			$q = "SELECT DISTINCT post_id FROM `$this->_table_img_optming` WHERE id IN ( " . implode(',', array_fill(0, count($notified_data), '%d')) . ' ) ';
-			$post_ids_tmp = $wpdb->get_results($wpdb->prepare($q, $notified_data), ARRAY_N);
-			$post_ids = array();
-
-			foreach ($post_ids_tmp as $l1) {
-				if (is_array($l1)) {
-					$post_ids[] = $l1[0];
-				}
-			}
-
-			// Other errors will directly remove the working records
+			// Other errors will directly remove the working records. Will delete all images sizes attached to id
 			// Delete from working table
-			$q = "DELETE FROM `$this->_table_img_optming` WHERE post_id IN ( " . implode(',', array_fill(0, count($post_ids), '%d')) . ' ) ';
-			$wpdb->query($wpdb->prepare($q, array_values($post_ids)));
+			$q =
+				"DELETE FROM `$this->_table_img_optming` WHERE post_id IN ( SELECT DISTINCT post_id FROM `$this->_table_img_optming` WHERE id IN ( " .
+				implode(',', array_fill(0, count($notified_data), '%d')) .
+				' ) ) ';
+			$wpdb->query($wpdb->prepare($q, $notified_data));
 		}
 
 		return Cloud::ok(array('count' => count($notified_data)));
