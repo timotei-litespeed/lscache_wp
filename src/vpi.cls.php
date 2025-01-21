@@ -166,6 +166,7 @@ class VPI extends Base
 		$this->_queue = $this->load_queue('vpi');
 
 		if (empty($this->_queue)) {
+			self::debug('Queue is empty. Please clear the queue and restart the process.');
 			return;
 		}
 
