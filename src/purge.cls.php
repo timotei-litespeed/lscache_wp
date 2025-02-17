@@ -408,6 +408,17 @@ class Purge extends Base
 			return false;
 		}
 
+		if(Router::opcache_restricted()) {
+			self::debug('Failed to reset opcode cache due to opcache restricted');
+
+			if (!$silence) {
+				$msg = __('Opcode cache is restricted.', 'litespeed-cache');
+				Admin_Display::error($msg);
+			}
+
+			return false;
+		}
+
 		// Action to run after opcache purge.
 		do_action('litespeed_purged_all_opcache');
 

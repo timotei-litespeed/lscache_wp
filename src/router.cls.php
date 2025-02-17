@@ -754,6 +754,17 @@ class Router extends Base
 	}
 
 	/**
+	 * Check if opcode cache is restricted
+	 *
+	 * @since  7.0
+	 * @access public
+	 */
+	public static function opcache_restricted()
+	{
+		return ini_get('opcache.restrict_api') || stripos(__FILE__, ini_get('opcache.restrict_api') >= 0) ;
+	}
+
+	/**
 	 * Handle static files
 	 *
 	 * @since  3.0
