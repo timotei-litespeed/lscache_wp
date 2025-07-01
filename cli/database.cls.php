@@ -67,24 +67,30 @@ class Database {
 	 * @param array $args Description.
 	 */
 	private function change_to_blog( $args ) {
-		if ( isset( $args[0] ) && 'blog' === $args[0] ) {
-			$this->current_blog = get_current_blog_id();
-			$blogid             = $args[1];
-			if ( !is_numeric( $blogid ) ) {
-				$error = WP_CLI::colorize( '%RError: invalid blog id entered.%n' );
-				WP_CLI::line( $error );
-				$this->network_list( $args );
-				return;
-			}
-			$site = get_blog_details( $blogid );
-			if ( false === $site ) {
-				$error = WP_CLI::colorize( '%RError: invalid blog id entered.%n' );
-				WP_CLI::line( $error );
-				$this->network_list( $args );
-				return;
-			}
-			switch_to_blog( $blogid );
+		if ( !isset( $args[0] ) ) {
+			return;
 		}
+		if ( 'blog' !== $args[0] ) {
+			return;
+		}
+
+		$this->current_blog = get_current_blog_id();
+		$blogid             = $args[1];
+		
+		if ( !is_numeric( $blogid ) ) {
+			$error = WP_CLI::colorize( '%RError: invalid blog id entered.%n' );
+			WP_CLI::line( $error );
+			$this->network_list( $args );
+			return;
+		}
+		$site = get_blog_details( $blogid );
+		if ( false === $site ) {
+			$error = WP_CLI::colorize( '%RError: could not find site with id provided.%n' );
+			WP_CLI::line( $error );
+			$this->network_list( $args );
+			return;
+		}
+		switch_to_blog( $blogid );
 	}
 
 	/**
