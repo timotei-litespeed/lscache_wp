@@ -432,7 +432,15 @@ class GUI extends Base {
 	 * @access public
 	 */
 	public function frontend_enqueue_style_public() {
-		wp_enqueue_script(Core::PLUGIN_NAME, LSWCP_PLUGIN_URL . 'assets/js/instant_click.min.js', array(), Core::VER, true);
+		wp_enqueue_script(
+			Core::PLUGIN_NAME,
+			LSWCP_PLUGIN_URL . 'assets/js/instant_click.min.js',
+			array(),
+			Core::VER,
+			array(
+				'strategy'  => 'defer',
+			)
+		);
 	}
 
 	/**
