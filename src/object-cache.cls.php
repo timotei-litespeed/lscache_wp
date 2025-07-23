@@ -454,6 +454,42 @@ class Object_Cache extends Root {
 	}
 
 	/**
+	 * Get cache, multiple keys at once
+	 *
+	 * @since 7.4
+	 * @access public
+	 */
+	public function get_multiple($keys)
+	{
+		if (count($keys)<1) {
+			return array();
+		}
+		
+		if (!$this->_cfg_enabled) {
+			return array();
+		}
+
+		if (!$this->_can_cache()) {
+			return array();
+		}
+
+		if (!$this->_connect()) {
+			return array();
+		}
+
+		$this->debug_oc("OOOCCC: get_multiple ran: " . print_r( $keys, true ) );
+
+		if ($this->_oc_driver == 'Redis') {
+			$res = $this->_conn->mGet($keys);
+		}
+		else{
+			$res = $this->_conn->getMulti($keys, \Memcached::GET_PRESERVE_ORDER);
+		}
+
+		return $res;
+	}
+
+	/**
 	 * Set cache
 	 *
 	 * @since  1.8
@@ -463,6 +499,8 @@ class Object_Cache extends Root {
 		if (!$this->_cfg_enabled) {
 			return null;
 		}
+
+		$this->debug_oc("OOOCCC: set ran " . $key );
 
 		/**
 		 * To fix the Cloud callback cached as its frontend call but the hash is generated in backend
@@ -488,6 +526,70 @@ class Object_Cache extends Root {
 			}
 		} else {
 			$res = $this->_conn->set($key, $data, $ttl);
+		}
+
+		return $res;
+	}
+
+	/**
+	 * Set multiple cache items
+	 *
+	 * @since 7.4
+	 * @access public
+	 */
+	public function set_multiple($data, $group, $expire)
+	{
+		$res = array();
+
+		if (!$this->_cfg_enabled) {
+			return null;
+		}
+
+		if (!$this->_connect()) {
+			return null;
+		}
+
+		$this->debug_oc("OOOCCC: set_multiple ran: " . print_r( $data, true ) );
+
+		$ttl = $expire ?: $this->_cfg_life;
+		$keys = array_keys($data);
+
+		if (
+			$this->_oc_driver == 'Redis' && 
+			$this->redis_has_pipeline() &&
+			! $this->is_non_persistent($group)
+		) {
+			try {
+				// Create pipeline.
+				$pipeline = $this->_conn->pipeline();
+				// Add action to pipeline.
+				foreach($data as $key=>$value){
+					if ( $expire ) {
+						$pipeline->setex( $key, $ttl, $value );
+					} else {
+						$pipeline->set( $key, $value );
+					}
+				}
+				// Run the pipeline and get values.
+				$exec = $pipeline->exec();
+
+				// Prepare return
+				foreach ( $exec as $i => $result) {
+					$res[$keys[$i]] = $result;
+				}
+
+				return $res;
+			} catch (\Exception $ex) {
+				return false;
+			}
+		}
+		elseif ($this->_oc_driver == 'Memcached') {
+			return $this->_conn->setMulti($data, $ttl);
+		} 
+
+		// Fallback: Do normal set in case of error.
+		foreach($data as $key => $value){
+			$res[$key] = $this->set($key, $value, $ttl);
 		}
 
 		return $res;
@@ -520,14 +622,67 @@ class Object_Cache extends Root {
 		if (!$this->_connect()) {
 			return null;
 		}
+		
+		$this->debug_oc("OOOCCC: delete ran ". $key );
 
 		if ($this->_oc_driver == 'Redis') {
-			$res = $this->_conn->del($key);
+			if ( method_exists( $this->_conn, 'unlink' ) ) {
+				$res = $this->_conn->unlink( $key );
+			} else {
+				$res = $this->_conn->del( $key );
+			}
 		} else {
 			$res = $this->_conn->delete($key);
 		}
 
 		return (bool) $res;
+	}
+
+	/**
+	 * Delete multiple cache items at once
+	 *
+	 * @since  7.4
+	 * @access public
+	 */
+	public function delete_multiple($keys, $group)
+	{
+		if (!$this->_cfg_enabled) {
+			return null;
+		}
+
+		if (!$this->_connect()) {
+			return null;
+		}
+
+		$this->debug_oc("OOOCCC: delete_multiple ran: " . print_r( $keys, true ) );
+
+		if (
+			$this->_oc_driver == 'Redis' && 
+			$this->redis_has_pipeline() &&
+			! $this->is_non_persistent($group)
+		) {
+			try {
+				// Create pipeline.
+				$pipeline = $this->_conn->pipeline();
+				// Add action to pipeline.
+				foreach($keys as $key){
+					$pipeline->del($key);
+				}
+
+				// Run the pipeline and get status.
+				$exec = $pipeline->exec();
+				foreach ($exec as $i => $result) {
+					$res[$keys[$i]] = $result;
+				}
+
+				return $res;
+			} catch (\Exception $ex) {
+				return false;
+			}
+		}
+		elseif ($this->_oc_driver == 'Memcached') {
+			return $this->_conn->deleteMulti($keys);
+		}
 	}
 
 	/**
@@ -546,7 +701,7 @@ class Object_Cache extends Root {
 			return null;
 		}
 
-		$this->debug_oc('flush!');
+		$this->debug_oc("OOOCCC: flush ran");
 
 		if ($this->_oc_driver == 'Redis') {
 			$res = $this->_conn->flushDb();
@@ -556,6 +711,67 @@ class Object_Cache extends Root {
 		}
 
 		return $res;
+	}
+
+	/**
+	 * Flush cache items by group.
+	 *
+	 * @since 7.4
+	 * @access public
+	 */
+	public function flush_group( $group ) {
+		$blog_prefix = is_multisite() ? get_current_blog_id() . ':' : '';
+		$prefix = $this->is_global($group) ? '' : $blog_prefix;
+		$pattern = LSOC_PREFIX . $prefix . $group . ":*";
+
+		$this->debug_oc("OOOCCC: flush_group ran " . $group );
+
+		if ($this->_oc_driver == 'Redis') {
+			if ( defined( 'LSCWP_DISABLE_GROUP_FLUSH' ) && LSCWP_DISABLE_GROUP_FLUSH ) {
+				return $this->flush();
+			}
+
+			$cursor = 0;
+
+			do {
+				$keys = [];
+				$scan_result = $this->_conn->scan( $cursor, $pattern, 1000 );
+
+				if ( false === $scan_result ) {
+					$this->debug_oc('❌ FLUSH_GROUP_ERROR. Pattern: ' . $pattern );
+					return false;
+				}
+
+				$cursor = (int) $scan_result[0];
+				$keys   = $scan_result[1];
+
+				if ( ! empty( $keys ) ) {
+					$this->delete( $keys );
+				}
+			} while ( $cursor !== 0 ); // Continue scanning until cursor is 0
+			
+			return true;
+		} else {
+			$keys = $this->_conn->getAllKeys();
+			foreach($keys as $key) {
+				if(preg_match('/'.$pattern.'/', $key)) {
+					$this->delete($key);
+				}
+			}
+
+			return false;
+		}
+	}
+
+	/**
+	 * Closes the cache instance.
+	 *
+	 * @since 7.4
+	 * @access public
+	 */
+	public function close()
+	{
+		return true;
 	}
 
 	/**
@@ -606,5 +822,15 @@ class Object_Cache extends Root {
 	 */
 	public function is_non_persistent( $group ) {
 		return in_array($group, $this->_non_persistent_groups);
+	}
+
+	/**
+	 * Test if Redis has Pipeline enabled
+	 *
+	 * @since 7.4
+	 * @access private
+	 */
+	private function redis_has_pipeline(){
+		return method_exists( $this->_conn, 'pipeline' );
 	}
 }
