@@ -239,6 +239,12 @@ class Debug2 extends Root {
 
 		$msg = $purge_header . self::_backtrace_info(6);
 
+		// Parameters
+		$request_data = json_encode($_REQUEST);
+		if( !empty($request_data) ){
+			$msg .= "\n 💾 Request Data: $request_data";
+		}
+
 		File::append($purge_file, self::format_message($msg));
 	}
 
@@ -515,14 +521,16 @@ class Debug2 extends Root {
 		$msg = '';
 
 		$trace = version_compare(PHP_VERSION, '5.4.0', '<') ? debug_backtrace() : debug_backtrace(false, $backtrace_limit + 3);
+
+		// Backtracking
+		$msg .= "\n ⏮️";
 		for ($i = 2; $i <= $backtrace_limit + 2; $i++) {
+			// Skip if index is not set
+			if( !isset($trace[$i]) ) break;
+			$log = '';
+
 			// 0st => _backtrace_info(), 1st => push()
-			if (empty($trace[$i]['class'])) {
-				if (empty($trace[$i]['file'])) {
-					break;
-				}
-				$log = "\n" . $trace[$i]['file'];
-			} else {
+			if ( !empty($trace[$i]['class']) ) {
 				if ($trace[$i]['class'] == __CLASS__) {
 					continue;
 				}
@@ -543,8 +551,30 @@ class Debug2 extends Root {
 
 				$log = str_replace('Core', 'LSC', $trace[$i]['class']) . $trace[$i]['type'] . $trace[$i]['function'] . '(' . $args . ')';
 			}
-			if (!empty($trace[$i - 1]['line'])) {
-				$log .= '@' . $trace[$i - 1]['line'];
+			else {
+				if( empty( $trace[$i]['function'] ) ) break;
+				$log = $trace[$i]['function'];
+			}
+
+			// Skip if empty
+			if( !$log ) continue;
+
+			// Line number
+			$line = 0;
+			if (!empty( $trace[$i]['line'] ) ) {
+				$line = $trace[$i]['line'];
+			}
+
+			// File Path + line
+			$file = !empty( $trace[$i]['file'] ) ? $trace[$i]['file'] : '';
+			if( !empty( $file ) ){
+				$file = str_replace( LSCWP_DIR, 'LSC/', $file );
+				$file = str_replace( ABSPATH, '', $file );
+
+				$log = " 📂 $file:$line @ $log";
+			}
+			else{
+				$log .= $line ? "@ $line" : '';
 			}
 			$msg .= " => $log";
 		}
