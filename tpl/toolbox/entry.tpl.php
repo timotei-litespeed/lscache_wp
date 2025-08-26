@@ -34,6 +34,8 @@ if ( ! $this->_is_multisite || $this->_is_network_admin ) {
 	$menu_list['log_viewer']     = esc_html__( 'Log View', 'litespeed-cache' );
 	$menu_list['beta_test']      = esc_html__( 'Beta Test', 'litespeed-cache' );
 }
+
+$menu_list['compatibility'] = esc_html__( 'Compatibility', 'litespeed-cache' );
 ?>
 
 <div class="wrap">

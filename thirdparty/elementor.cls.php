@@ -14,6 +14,11 @@ use LiteSpeed\Debug2;
 class Elementor {
 
 	public static function preload() {
+		add_filter(
+			'litespeed_compatibilties',
+			[ __CLASS__ , 'addCompatibility' ]
+		);
+
 		if (!defined('ELEMENTOR_VERSION')) {
 			return;
 		}
@@ -46,11 +51,89 @@ class Elementor {
 		add_action('elementor/core/files/clear_cache', __CLASS__ . '::regenerate_litespeed_cache');
 	}
 
+	/**
+	 * Add Elemnentor compatibility
+	 *
+	 * @param array $current Current values.
+	 * @return array
+	 */
+	public static function addCompatibility( $current ) {
+		$current[ 'elementor/elementor.php' ] = [
+			'title'          => 'Elementor',
+			'text'           => 'Add compatibility fixes.',
+			'functions' => [
+				'fix_css' => [
+					'text'      => __( 'Fix CSS Print Method', 'litespeed-cache' ),
+					'info'      => __( 'Set CSS print method to "Internal"', 'litespeed-cache' ),
+					'condition' => [ __CLASS__ , 'showElementorCSS' ], 
+					'function'  => [ __CLASS__ , 'applyElementorCSS' ],
+				],
+				'disable_element' => [
+					'text'      => __( 'Fix Element Cache', 'litespeed-cache' ),
+					'info'      => __( 'Disable Element Cache', 'litespeed-cache' ),
+					'condition' => [ __CLASS__ , 'showElementorCache' ], 
+					'function'  => [ __CLASS__ , 'applyElementorCache' ],
+				],
+			],
+		];
+
+		return $current;
+	}
+
 	public static function disable_litespeed_esi() {
 		define('LITESPEED_ESI_OFF', true);
 	}
 
 	public static function regenerate_litespeed_cache() {
 		do_action('litespeed_purge_all', 'Elementor - Regenerate CSS & Data');
+	}
+
+	/**
+	 * Show Elementor compatibility: CSS print method.
+	 *
+	 * @access private
+	 * 
+	 * @return bool Return if changes need to be done or not.
+	 */
+	public static function showElementorCSS() {
+		return 'internal' !== get_option('elementor_css_print_method');
+	}
+	/**
+	 * Show Elementor compatibility: Element cache.
+	 *
+	 * @access private
+	 * 
+	 * @return bool Return if changes need to be done or not.
+	 */
+	public static function showElementorCache() {
+		return 'disable' !== get_option('elementor_element_cache_ttl');
+	}
+
+	/**
+	 * Apply Elementor compatibility: CSS print method.
+	 *
+	 * @access private
+	 * 
+	 * @return bool Return if changes were done or not.
+	 */
+	public static function applyElementorCSS() {
+		// When Elementor settings are changed, a clear cache happen. Because of action we added to: elementor/core/files/clear_cache.
+		update_option('elementor_css_print_method', 'internal' );
+
+		return true;
+	}
+
+	/**
+	 * Apply Elementor compatibility: element cache.
+	 *
+	 * @access private
+	 * 
+	 * @return bool Return if changes were done or not.
+	 */
+	public static function applyElementorCache() {
+		// When Elementor settings are changed, a clear cache happen. Because of action we added to: elementor/core/files/clear_cache.
+		update_option('elementor_element_cache_ttl', 'disable' );
+
+		return true;
 	}
 }

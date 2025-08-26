@@ -39,6 +39,7 @@ class Router extends Base {
 	const ACTION_IMPORT                = 'import';
 	const ACTION_REPORT                = 'report';
 	const ACTION_DEBUG2                = 'debug2';
+	const ACTION_COMPATIBILITY         = 'compatibility';
 	const ACTION_CDN_CLOUDFLARE        = 'CDN\Cloudflare';
 	const ACTION_ADMIN_DISPLAY         = 'admin_display';
 	const ACTION_TMP_DISABLE          = 'tmp_disable';
@@ -57,6 +58,7 @@ class Router extends Base {
 		self::ACTION_VPI,
 		self::ACTION_DB_OPTM,
 		self::ACTION_DEBUG2,
+		self::ACTION_COMPATIBILITY,
 		self::ACTION_HEALTH,
 		self::ACTION_IMG_OPTM,
 		self::ACTION_PRESET,
@@ -658,6 +660,7 @@ class Router extends Base {
 				}
 				return;
 
+			case self::ACTION_COMPATIBILITY:
 			case Core::ACTION_DISMISS:
             /**
              * Non ajax call can dismiss too

@@ -66,6 +66,7 @@ $litespeed_php_files = array(
 	'src/utility.cls.php',
 	'src/vary.cls.php',
 	'src/vpi.cls.php',
+	'src/compatibility.cls.php',
 
 	// Extra CDN cls files
 	'src/cdn/cloudflare.cls.php',
