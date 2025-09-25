@@ -85,21 +85,21 @@ if ( $crawler_run_interval > 0 ) :
 		<?php endif; ?>
 	<?php endif; ?>
 
-	<?php if ( $summary['last_full_time_cost'] ) : ?>
+	<?php if ( !$is_running && $summary['last_full_time_cost'] ) : ?>
 		<p>
 			<b><?php esc_html_e( 'Last complete run time for all crawlers', 'litespeed-cache' ); ?>:</b>
 			<?php printf( esc_html__( '%d seconds', 'litespeed-cache' ), (int) $summary['last_full_time_cost'] ); ?>
 		</p>
 	<?php endif; ?>
 
-	<?php if ( $summary['last_crawler_total_cost'] ) : ?>
+	<?php if ( !$is_running && $summary['last_crawler_total_cost'] ) : ?>
 		<p>
 			<b><?php esc_html_e( 'Run time for previous crawler', 'litespeed-cache' ); ?>:</b>
 			<?php printf( esc_html__( '%d seconds', 'litespeed-cache' ), (int) $summary['last_crawler_total_cost'] ); ?>
 		</p>
 	<?php endif; ?>
 
-	<?php if ( $summary['curr_crawler_beginning_time'] ) : ?>
+	<?php if ( $is_running && $summary['curr_crawler_beginning_time'] ) : ?>
 		<p>
 			<b><?php esc_html_e( 'Current crawler started at', 'litespeed-cache' ); ?>:</b>
 			<?php echo esc_html( Utility::readable_time( $summary['curr_crawler_beginning_time'] ) ); ?>
@@ -111,21 +111,21 @@ if ( $crawler_run_interval > 0 ) :
 		<?php echo esc_html( $__crawler->get_server_load() ); ?>
 	</p>
 
-	<?php if ( $summary['last_start_time'] ) : ?>
+	<?php if ( $is_running && $summary['last_start_time'] ) : ?>
 		<p class="litespeed-desc">
 			<b><?php esc_html_e( 'Last interval', 'litespeed-cache' ); ?>:</b>
 			<?php echo esc_html( Utility::readable_time( $summary['last_start_time'] ) ); ?>
 		</p>
 	<?php endif; ?>
 
-	<?php if ( $summary['end_reason'] ) : ?>
+	<?php if ( !$is_running && $summary['end_reason'] ) : ?>
 		<p class="litespeed-desc">
 			<b><?php esc_html_e( 'Ended reason', 'litespeed-cache' ); ?>:</b>
 			<?php echo esc_html( $summary['end_reason'] ); ?>
 		</p>
 	<?php endif; ?>
 
-	<?php if ( $summary['last_crawled'] ) : ?>
+	<?php if ( !$is_running && $summary['last_crawled'] ) : ?>
 		<p class="litespeed-desc">
 			<b><?php esc_html_e( 'Last crawled', 'litespeed-cache' ); ?>:</b>
 			<?php

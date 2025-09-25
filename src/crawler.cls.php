@@ -471,7 +471,7 @@ class Crawler extends Root {
 		}
 
 		// log started time
-		self::save_summary(array( 'last_start_time' => time() ));
+		self::save_summary(array( 'last_start_time' => time() ), true);
 
 		// set time limit
 		$maxTime = (int) ini_get('max_execution_time');
@@ -601,7 +601,7 @@ class Crawler extends Root {
 			$this->_summary['crawler_stats'][$this->_summary['curr_crawler']] = array();
 		}
 
-		self::save_summary();
+		self::save_summary(false, true);
 	}
 
 	/**
@@ -858,6 +858,7 @@ class Crawler extends Root {
 						// reset done status
 						$this->_summary['done']                     = 0;
 						$this->_summary['this_full_beginning_time'] = 0;
+						$this->_summary['is_running']               = 0;
 						$this->_end_reason                          = 'stopped_reset';
 						return;
 						// return __('Stopped due to reset meta position', 'litespeed-cache');
@@ -1216,7 +1217,7 @@ class Crawler extends Root {
 		$this->_summary['last_status'] = 'stopped';
 		$this->_summary['is_running']  = 0;
 		$this->_summary['end_reason']  = $this->_end_reason;
-		self::save_summary();
+		self::save_summary( false, true);
 	}
 
 	/**
@@ -1376,7 +1377,9 @@ class Crawler extends Root {
 	public function reset_pos() {
 		File::save($this->_resetfile, time(), true);
 
-		self::save_summary(array( 'is_running' => 0 ));
+		self::save_summary(array( 'is_running' => 0 ), true);
+
+		$this->Release_lane();
 	}
 
 	/**
