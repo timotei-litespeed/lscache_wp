@@ -117,7 +117,7 @@
 	"object-user": "",
 	"object-pswd": "",
 	"object-global_groups": "users\nuserlogins\nuseremail\nuserslugs\nusermeta\nuser_meta\nsite-transient\nsite-options\nsite-lookup\nsite-details\nblog-lookup\nblog-details\nblog-id-cache\nrss\nglobal-posts\nglobal-cache-test",
-	"object-non_persistent_groups": "comment\ncounts\nplugins\nwc_session_id",
+	"object-non_persistent_groups": "cron\ncomment\ncounts\nplugins\nwc_session_id",
 	"discuss-avatar_cache": "",
 	"discuss-avatar_cron": "",
 	"discuss-avatar_cache_ttl": "604800",
