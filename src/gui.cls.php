@@ -101,15 +101,6 @@ class GUI extends Base {
 			add_action( 'admin_bar_menu', [ $this, 'frontend_shortcut' ], 95 );
 		}
 
-		/**
-		 * Turn on instant click.
-		 *
-		 * @since 1.8.2
-		 */
-		if ( $this->conf( self::O_UTIL_INSTANT_CLICK ) ) {
-			add_action( 'wp_enqueue_scripts', [ $this, 'frontend_enqueue_style_public' ] );
-		}
-
 		// NOTE: this needs to be before optimizer to avoid wrapper being removed.
 		add_filter( 'litespeed_buffer_finalize', [ $this, 'finalize' ], 8 );
 	}
@@ -521,17 +512,6 @@ class GUI extends Base {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Load frontend public script.
-	 *
-	 * @since 1.8.2
-	 * @access public
-	 * @return void
-	 */
-	public function frontend_enqueue_style_public() {
-		wp_enqueue_script( Core::PLUGIN_NAME, LSWCP_PLUGIN_URL . 'assets/js/instant_click.min.js', [], Core::VER, true );
 	}
 
 	/**
@@ -1125,6 +1105,7 @@ class GUI extends Base {
 	 * Finalize buffer by GUI class.
 	 *
 	 * @since 1.6
+	 * @since 7.7 Add Instant click
 	 * @access public
 	 *
 	 * @param string $buffer HTML buffer.
@@ -1140,6 +1121,21 @@ class GUI extends Base {
 
 		if ( defined( 'LITESPEED_GUEST' ) && LITESPEED_GUEST && false !== strpos( $buffer, '</body>' ) && defined( 'LITESPEED_IS_HTML' ) ) {
 			$buffer = $this->_enqueue_guest_js( $buffer );
+		}
+
+		/**
+		 * Turn on instant click.
+		 *
+		 * @since 1.8.2
+		 */
+		if ( $this->conf( self::O_UTIL_INSTANT_CLICK ) && false !== strpos( $buffer, '</body>' ) ) {
+			if ( ! defined( 'LITESPEED_JS_INSTANTCLICK_LIB_LOADED' ) ) {
+				define( 'LITESPEED_JS_INSTANTCLICK_LIB_LOADED', true );
+				$content = str_replace( '</body>', '<script data-no-optimize="1">' . File::read( LSCWP_DIR . Optimize::LIB_FILE_JS_INSTANTCLICK ) . '</script></body>', $buffer );
+			}
+		}
+		else{
+			self::debug2( 'Instant Click library cannot be loaded.' );
 		}
 
 		return $buffer;

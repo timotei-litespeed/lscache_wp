@@ -17,6 +17,7 @@ class Optimize extends Base {
 	const LIB_FILE_CSS_ASYNC     = 'assets/js/css_async.min.js';
 	const LIB_FILE_WEBFONTLOADER = 'assets/js/webfontloader.min.js';
 	const LIB_FILE_JS_DELAY      = 'assets/js/js_delay.min.js';
+	const LIB_FILE_JS_INSTANTCLICK = 'assets/js/instant_click.min.js';
 
 	const ITEM_TIMESTAMP_PURGE_CSS = 'timestamp_purge_css';
 
