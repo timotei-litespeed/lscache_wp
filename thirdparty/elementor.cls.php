@@ -43,7 +43,9 @@ class Elementor {
 		}
 
 		// Clear LSC cache on Elementor Regenerate CSS & Data
-		add_action('elementor/core/files/clear_cache', __CLASS__ . '::regenerate_litespeed_cache');
+		if( apply_filters( 'litespeed_thirdparty_elementor_purge', true ) ){
+			add_action('elementor/core/files/clear_cache', __CLASS__ . '::regenerate_litespeed_cache');
+		}
 	}
 
 	public static function disable_litespeed_esi() {
