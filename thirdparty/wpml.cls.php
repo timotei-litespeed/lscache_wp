@@ -17,6 +17,7 @@ class WPML {
 		}
 
 		add_filter('litespeed_internal_domains', __CLASS__ . '::append_domains');
+		add_filter('litespeed_optm_optm-js_delay_inc', __CLASS__ . '::add_js_defer');
 	}
 
 	/**
@@ -29,5 +30,16 @@ class WPML {
 		}
 
 		return $domains;
+	}
+
+	/**
+	 * Add JS Defer Exclusion
+	 */
+	public static function add_js_defer( $list ) {
+		if( false === array_search( 'wpml_cookies', $list, true ) ){
+			$list[] = 'wpml_cookies';
+		}
+
+		return $list;
 	}
 }
