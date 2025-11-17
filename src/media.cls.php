@@ -777,7 +777,7 @@ class Media extends Root {
 				}
 			}
 
-			$this->content = str_replace( '</body>', $lazy_lib . '</body>', $this->content );
+			$this->content = str_replace( '<head>', $lazy_lib . '</head>', $this->content );
 		}
 	}
 

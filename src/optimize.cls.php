@@ -86,6 +86,7 @@ class Optimize extends Base {
 			$this->cfg_js_defer = 2;
 		}
 		if ($this->cfg_js_defer == 2) {
+			$this->cfg_js_comb = false;
 			add_filter(
 				'litespeed_optm_cssjs',
 				function ( $con, $file_type ) {
@@ -451,15 +452,15 @@ class Optimize extends Base {
 		 */
 		$this->_async_ggfonts();
 
+		// Inject JS Delay lib
+		$this->_maybe_js_delay();
+
 		/**
 		 * Font display optm
 		 *
 		 * @since  3.0
 		 */
 		$this->_font_optm();
-
-		// Inject JS Delay lib
-		$this->_maybe_js_delay();
 
 		/**
 		 * HTML Lazyload
@@ -573,7 +574,7 @@ class Optimize extends Base {
 
 		if (!defined('LITESPEED_JS_DELAY_LIB_LOADED')) {
 			define('LITESPEED_JS_DELAY_LIB_LOADED', true);
-			$this->html_foot .= '<script>' . File::read(LSCWP_DIR . self::LIB_FILE_JS_DELAY) . '</script>';
+			$this->html_head_early .= '<script>' . File::read(LSCWP_DIR . self::LIB_FILE_JS_DELAY) . '</script>';
 		}
 	}
 
@@ -904,7 +905,7 @@ class Optimize extends Base {
 				$ext_excluded = !$combine_ext_inl && !$is_internal;
 				if ($js_excluded || $ext_excluded || !$is_file) {
 					// Maybe defer
-					if ($this->cfg_js_defer) {
+					if ($this->cfg_js_defer === 1) {
 						$deferred = $this->_js_defer($match[0], $attrs['src']);
 						if ($deferred) {
 							$this->content = str_replace($match[0], $deferred, $this->content);
@@ -1236,7 +1237,9 @@ class Optimize extends Base {
 		}
 
 		if (strpos($ori, 'defer') !== false) {
-			return false;
+			if ($this->cfg_js_defer !== 2) {
+				return false;
+			}
 		}
 		if (strpos($ori, 'data-deferred') !== false) {
 			self::debug2('bypass: attr data-deferred exist');
