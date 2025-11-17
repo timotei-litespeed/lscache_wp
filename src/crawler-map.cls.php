@@ -618,12 +618,17 @@ class Crawler_Map extends Root {
 			throw new \Exception( 'Failed to remote read ' . esc_url( $sitemap ) );
 		}
 
-		$xml_object = simplexml_load_string($response['body'], null, LIBXML_NOCDATA);
-		if (!$xml_object) {
-			if ($this->_urls) {
-				return;
+		$xml_object = [];
+		try {
+			$xml_object = simplexml_load_string($response['body'], null, LIBXML_NOCDATA);
+			if (!$xml_object) {
+				if ($this->_urls) {
+					return;
+				}
+				throw new \Exception( 'Failed to parse xml ' . esc_url( $sitemap ) );
 			}
-			throw new \Exception('Failed to parse xml ' . esc_url( $sitemap ));
+		} catch ( \Exception $ex ) {
+			throw new \Exception( 'Error parsing xml ' . esc_url( $sitemap ) );
 		}
 
 		// start parsing.
