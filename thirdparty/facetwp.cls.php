@@ -1,17 +1,17 @@
 <?php
+// phpcs:ignoreFile
 /**
  * The Third Party integration with FacetWP.
  *
- * @since		2.9.9
+ * @since       2.9.9
  */
 namespace LiteSpeed\Thirdparty;
 
 defined('WPINC') || exit();
 
-class Facetwp
-{
-	public static function detect()
-	{
+class Facetwp {
+
+	public static function detect() {
 		if (!defined('FACETWP_VERSION')) {
 			return;
 		}
@@ -24,8 +24,7 @@ class Facetwp
 		}
 	}
 
-	public static function set_is_json($params)
-	{
+	public static function set_is_json( $params ) {
 		$params['is_json'] = 1;
 		return $params;
 	}
