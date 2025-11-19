@@ -33,6 +33,7 @@ class Elementor {
 		if ( ! defined( 'ELEMENTOR_VERSION' ) ) {
 			return;
 		}
+		add_action('elementor/document/after_save', __CLASS__ . '::clear_document_cssjs', 10, 2);
 
 		// If user explicitly opened the Elementor editor, disable all LSCWP features.
 		$action = isset( $_GET['action'] ) ? sanitize_text_field( wp_unslash( $_GET['action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -90,5 +91,16 @@ class Elementor {
 	 */
 	public static function regenerate_litespeed_cache() {
 		do_action( 'litespeed_purge_all', 'Elementor - Regenerate CSS & Data' );
+	}
+
+	/**
+	 * Purge LiteSpeed Cache when Elementor saves a doc.
+	 *
+	 * @since 7.7
+	 * @return void
+	 */
+	public static function clear_document_cssjs($doc) {
+		// get ID: $doc->get_main_id()
+		\LiteSpeed\Purge::purge_single_cssjs($doc->get_main_id(), true);
 	}
 }

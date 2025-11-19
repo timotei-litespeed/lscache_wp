@@ -457,6 +457,65 @@ class Purge extends Base {
 	}
 
 	/**
+	 * Purge one CSS/JS URL or post ID.
+	 *
+	 * @since 4.5
+	 * @param int|string $post_id_or_url Post ID or URL.
+	 * @return void
+	 */
+	public static function purge_single_cssjs( $post_id_or_url = null, $silence = false, $reason = null ) {
+		self::cls()->_purge_single_cssjs( $post_id_or_url, $silence, $reason );
+	}
+
+	/**
+	 * Purge single document CSS/JS assets and related LSCache entries.
+	 *
+	 * @since 1.2.2
+	 * @param bool $silence If true, don't show admin notice.
+	 * @return void
+	 */
+	private function _purge_single_cssjs( $post_id_or_url = null, $silence = false, $reason = null ) {
+		if ( ! $post_id_or_url ){
+			self::debug( '❌ Single cssjs delete need document data' );
+			return;
+		}
+
+		if ( wp_doing_cron() || defined( 'LITESPEED_DID_send_headers' ) ) {
+			self::debug( '❌ Bypassed cssjs delete as header sent (lscache purge after this point will fail) or doing cron' );
+			return;
+		}
+
+		$reason = is_string( $reason ) ? "( $reason )" : '';
+
+		self::debug( 'Purge single post/page CSS/JS ' . $reason, 3 );
+
+		$this->_purge_all_lscache( $silence ); // Purge CSSJS must purge lscache too to avoid 404
+
+		do_action( 'litespeed_purged_single_cssjs' );
+
+		// TODO: if $post_id_or_url is string or ID
+
+		// Optimize::update_option( Optimize::ITEM_TIMESTAMP_PURGE_CSS, time() );
+
+		// $this->_add( Tag::TYPE_MIN );
+
+		// $this->cls( 'CSS' )->rm_cache_folder( 'css' );
+		// $this->cls( 'CSS' )->rm_cache_folder( 'js' );
+		// $this->cls( 'Data' )->url_file_clean( 'css' );
+		// $this->cls( 'Data' )->url_file_clean( 'js' );
+
+		// // Clear UCSS queue as it used combined CSS to generate.
+		// $this->clear_q( 'ucss', true );
+
+		if ( ! $silence ) {
+			$msg = __( 'Notified LiteSpeed Web Server to purge CSS/JS for single document.', 'litespeed-cache' );
+			if ( ! defined( 'LITESPEED_PURGE_SILENT' ) ) {
+				Admin_Display::success( $msg );
+			}
+		}
+	}
+
+	/**
 	 * Purge opcode cache.
 	 *
 	 * @since 1.8.2
