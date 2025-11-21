@@ -97,6 +97,12 @@ class Elementor {
 		do_action( 'litespeed_purge_all', 'Elementor - Regenerate CSS & Data' );
 	}
 
+	/**
+	 * Purge LiteSpeed Cache when Elementor Form is submitted.
+	 *
+	 * @since 7.7
+	 * @return void
+	 */
 	public static function purge_lscache() {
 		Purge::purge_all_lscache('Elementor Form Submission');
 	}
