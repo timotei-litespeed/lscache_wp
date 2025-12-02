@@ -82,6 +82,8 @@ class WooCommerce extends Base {
 		add_action('woocommerce_product_set_stock', [ $this, 'purge_product' ]);
 		add_action('woocommerce_variation_set_stock', [ $this, 'purge_product' ]); // #984479 Update variations stock
 
+		add_action( 'woocommerce_after_product_object_save', [ $this, 'purge_product_on_save' ] );
+
 		add_action('comment_post', [ $this, 'add_review' ], 10, 3);
 
 		if ( $this->esi_enabled ) {
@@ -128,6 +130,19 @@ class WooCommerce extends Base {
 				}
 			);
 		}
+	}
+
+	/**
+	 * Purge single product CSS/JS on product->save();
+	 *
+	 * @since  7.7
+	 * @access public
+	 * 
+	 * @param \WooCommerce\Abstracts\WC_Product $product Product saved.
+	 * @return void
+	 */
+	public function purge_product_on_save( $product ){
+		\LiteSpeed\Purge::purge_post_css_js( $product->get_id() );
 	}
 
 	/**

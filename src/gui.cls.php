@@ -587,6 +587,16 @@ class GUI extends Base {
 			]
 		);
 
+		$wp_admin_bar->add_menu(
+			[
+				'parent' => 'litespeed-menu',
+				'id'     => 'litespeed-purge-single-css_js',
+				'title'  => esc_html__( 'Purge this page', 'litespeed-cache' ) . ' - CSS/JS',
+				'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_FRONT_CSS_JS, false, true ),
+				'meta'   => [ 'tabindex' => '0' ],
+			]
+		);
+
 		if ( $this->has_cache_folder( 'ucss' ) ) {
 			$possible_url_tag = UCSS::get_url_tag();
 			$append_arr       = [];

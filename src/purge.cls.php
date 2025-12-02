@@ -63,11 +63,12 @@ class Purge extends Base {
 	const TYPE_PURGE_ALL_OBJECT   = 'purge_all_object';
 	const TYPE_PURGE_ALL_OPCACHE  = 'purge_all_opcache';
 
-	const TYPE_PURGE_FRONT     = 'purge_front';
-	const TYPE_PURGE_UCSS      = 'purge_ucss';
-	const TYPE_PURGE_FRONTPAGE = 'purge_frontpage';
-	const TYPE_PURGE_PAGES     = 'purge_pages';
-	const TYPE_PURGE_ERROR     = 'purge_error';
+	const TYPE_PURGE_FRONT        = 'purge_front';
+	const TYPE_PURGE_FRONT_CSS_JS = 'purge_front_CSS_JS';
+	const TYPE_PURGE_UCSS         = 'purge_ucss';
+	const TYPE_PURGE_FRONTPAGE    = 'purge_frontpage';
+	const TYPE_PURGE_PAGES        = 'purge_pages';
+	const TYPE_PURGE_ERROR        = 'purge_error';
 
 	/**
 	 * Init hooks.
@@ -173,6 +174,10 @@ class Purge extends Base {
 
 			case self::TYPE_PURGE_FRONT:
 				$this->_purge_front();
+				break;
+
+			case self::TYPE_PURGE_FRONT_CSS_JS:
+				$this->purge_post_css_js(false, 'Admin bar');
 				break;
 
 			case self::TYPE_PURGE_UCSS:
@@ -333,7 +338,7 @@ class Purge extends Base {
 
 		$post_id_or_url = untrailingslashit( (string) $post_id_or_url );
 
-		$existing_url_files = Data::cls()->mark_as_expired( $post_id_or_url, true );
+		$existing_url_files = Data::cls()->mark_as_expired( 'ucss', $post_id_or_url, true );
 		if ( $existing_url_files ) {
 			self::cls( 'UCSS' )->add_to_q( $existing_url_files );
 		}
@@ -1027,6 +1032,69 @@ class Purge extends Base {
 		}
 
 		do_action( 'litespeed_purged_post', $pid );
+	}
+
+
+	/**
+	 * Public purge all related CSS/JS for a post
+	 *
+	 * @since 7.7
+	 * @param bool|int|string  $post_id_or_url Post ID or URL.
+	 * @param bool|string $reason         Reason of purge.
+	 * @return void
+	 */
+	public static function purge_post_css_js( $post_id_or_url = false, $reason = false ) {
+		$url_to_purge = $post_id_or_url;
+		if( ! $post_id_or_url ){
+			if ( empty( $_SERVER['HTTP_REFERER'] ) ) {
+				exit( 'no referer' );
+			}
+			
+			$url_to_purge = esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) );
+		}
+		
+		// Add reason message
+		$reason = is_string( $reason ) ? "( $reason )" : '';
+		self::debug( 'Purge CSS/JS for post ' . $post_id_or_url . $reason );
+
+		// Mark expired
+		self::cls()->_purge_post_css_js( $url_to_purge );
+
+		if( !$post_id_or_url ){
+			wp_safe_redirect( $url_to_purge );
+			exit;
+		}
+	}
+
+	/**
+	 * Purge all related CSS/JS for a post.
+	 *
+	 * @since 7.7
+	 * @param int|string $post_id_or_url Post ID or URL.
+	 * @return void
+	 */
+	private function _purge_post_css_js( $post_id_or_url ) {
+		self::debug( 'Purge post CSS/JS: ' . $post_id_or_url );
+
+		do_action( 'litespeed_purge_post_css_js', $post_id_or_url );
+		
+		// If is post_id, generate URL.
+		if ( ! preg_match( '/\D/', (string) $post_id_or_url ) ) {
+			$post_id_or_url = get_permalink( (int) $post_id_or_url );
+		}
+		
+
+		// TODO: test permalink link to match DB + wait for fix in permalink
+		// $post_id_or_url = untrailingslashit( (string) $post_id_or_url );
+		
+		// CSS/JS mark as expired
+		Data::cls()->mark_as_expired( 'css', $post_id_or_url );
+		Data::cls()->mark_as_expired( 'js', $post_id_or_url );
+
+		// Clear LS Cache
+		$this->purge_all_lscache( 'Purge post CSS/JS: ' . $post_id_or_url );
+
+		do_action( 'litespeed_purged_post_css_js', $post_id_or_url );
 	}
 
 	/**

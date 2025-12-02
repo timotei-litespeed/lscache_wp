@@ -594,40 +594,42 @@ class Data extends Root {
 	}
 
 	/**
-	 * Mark all UCSS entries of one URL as expired (optionally return existing rows).
+	 * Mark resources type of one URL as expired.
 	 *
 	 * @since 4.5
+	 * @since 7.7 Convert to clear resources by type. Added parameter $type.
 	 * @access public
 	 *
+	 * @param string $type        Type to mark as expired.
 	 * @param string $request_url Target URL.
 	 * @param bool   $auto_q      If true, return existing active rows before expiring.
 	 * @return array Existing rows if $auto_q, otherwise empty array.
 	 */
-	public function mark_as_expired( $request_url, $auto_q = false ) {
+	public function mark_as_expired( $type, $request_url, $auto_q = false ) {
 		global $wpdb;
 		$tb_url = $this->tb( 'url' );
 
-		self::debug( 'Try to mark as expired: ' . $request_url );
+		self::debug( 'Try to mark as expired ' . $type . ': ' . $request_url );
 		$q       = "SELECT * FROM `$tb_url` WHERE url=%s";
 		$url_row = $wpdb->get_row( $wpdb->prepare( $q, $request_url ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 		if ( ! $url_row ) {
 			return [];
 		}
 
-		self::debug( 'Mark url_id=' . $url_row['id'] . ' as expired' );
+		self::debug( 'Mark url_id=' . $url_row['id'] . ' as expired ' . $type . '.' );
 
 		$tb_url_file = $this->tb( 'url_file' );
 
 		$existing_url_files = [];
 		if ( $auto_q ) {
 			$q                  = "SELECT a.*, b.url FROM `$tb_url_file` a LEFT JOIN `$tb_url` b ON b.id=a.url_id WHERE a.url_id=%d AND a.type=%d AND a.expired=0";
-			$q                  = $wpdb->prepare( $q, [ (int) $url_row['id'], $this->_url_file_types['ucss'] ] ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$q                  = $wpdb->prepare( $q, [ (int) $url_row['id'], $this->_url_file_types[$type] ] ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			$existing_url_files = $wpdb->get_results( $q, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 		}
 
 		$q       = "UPDATE `$tb_url_file` SET expired=%d WHERE url_id=%d AND type=%d AND expired=0";
 		$expired = time() + 86400 * apply_filters( 'litespeed_url_file_expired_days', 20 );
-		$wpdb->query( $wpdb->prepare( $q, [ $expired, (int) $url_row['id'], $this->_url_file_types['ucss'] ] ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query( $wpdb->prepare( $q, [ $expired, (int) $url_row['id'], $this->_url_file_types[$type] ] ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 
 		return $existing_url_files;
 	}
