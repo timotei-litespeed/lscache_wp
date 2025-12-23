@@ -62,6 +62,16 @@ class WCML {
 	 */
 	public static function apply_client_currency( $currency ) {
 		self::$_currency = $currency;
+		if( isset( $_COOKIE['wcml_client_currency'] ) ){
+			
+			error_log("-------detect----------\n", 3, '/home/wpml.litespeedtech.ro/public_html/wp-content/test.log');
+			error_log(date('Y-m-d-h-i-s')."\n", 3, '/home/wpml.litespeedtech.ro/public_html/wp-content/test.log');
+			error_log(print_r( $_COOKIE, true )."<-COOKIES\n", 3, '/home/wpml.litespeedtech.ro/public_html/wp-content/test.log');
+			error_log("--------detect---------\n", 3, '/home/wpml.litespeedtech.ro/public_html/wp-content/test.log');
+
+			self::$_currency = $_COOKIE['wcml_client_currency'];
+		}
+
 		add_filter('litespeed_vary', __CLASS__ . '::apply_vary');
 
 		return $currency;
