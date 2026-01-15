@@ -29,11 +29,11 @@ trait Img_Optm_Manage {
 		// Reset img_optm table's queue
 		if ( $this->__data->tb_exist( 'img_optming' ) ) {
 			// Get min post id to mark
-			$q = "SELECT MIN(post_id) FROM `$this->_table_img_optming`";
+			$q = "SELECT MAX(post_id) FROM `$this->_table_img_optming`";
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-			$min_pid = $wpdb->get_var( $q ) - 1;
-			if ( $this->_summary['next_post_id'] > $min_pid ) {
-				$this->_summary['next_post_id'] = $min_pid;
+			$max_pid = $wpdb->get_var( $q );
+			if ( $this->_summary['next_post_id'] < $max_pid ) {
+				$this->_summary['next_post_id'] = $max_pid;
 				self::save_summary();
 			}
 
@@ -47,6 +47,30 @@ trait Img_Optm_Manage {
 	}
 
 	/**
+	 * Get the latest picture ID from library.
+	 *
+	 * @since 7.8
+	 * @access public
+	 * @param string $position Which image ID to get. Possible value: max or min.
+	 */
+	public function get_library_picture_id( $position = 'max' ) {
+		global $wpdb;
+
+		$q = "SELECT b.post_id
+			FROM `$wpdb->posts` a
+			LEFT JOIN `$wpdb->postmeta` b ON b.post_id = a.ID
+			WHERE b.meta_key = '_wp_attachment_metadata'
+				AND a.post_type = 'attachment'
+				AND a.post_status = 'inherit'
+				AND a.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
+			ORDER BY a.ID " . ( 'max' === $position  ? 'DESC' : 'ASC' ) . '
+			LIMIT 1';
+		
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		return (int) $wpdb->get_var( $q );
+	}
+
+	/**
 	 * Reset image counter
 	 *
 	 * @since 7.0
@@ -54,7 +78,7 @@ trait Img_Optm_Manage {
 	 */
 	private function _reset_counter() {
 		self::debug( 'reset image optm counter' );
-		$this->_summary['next_post_id'] = 0;
+		$this->_summary['next_post_id'] = $this->get_library_picture_id() + 1;
 		self::save_summary();
 
 		$this->clean();
@@ -504,6 +528,9 @@ trait Img_Optm_Manage {
 	public function img_count() {
 		global $wpdb;
 
+		$max_id = $this->get_library_picture_id();
+		$min_id = $this->get_library_picture_id('min');
+
 		$q = "SELECT count(*)
 			FROM `$wpdb->posts` a
 			LEFT JOIN `$wpdb->postmeta` b ON b.post_id = a.ID
@@ -515,25 +542,13 @@ trait Img_Optm_Manage {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
 		$groups_all = $wpdb->get_var( $q );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$groups_new = $wpdb->get_var( $q . ' AND ID>' . (int) $this->_summary['next_post_id'] . ' ORDER BY ID' );
+		$groups_new = $wpdb->get_var( $q . ' AND ID<' . (int) $this->_summary['next_post_id'] . ' ORDER BY ID' );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$groups_done = $wpdb->get_var( $q . ' AND ID<=' . (int) $this->_summary['next_post_id'] . ' ORDER BY ID' );
-
-		$q = "SELECT b.post_id
-			FROM `$wpdb->posts` a
-			LEFT JOIN `$wpdb->postmeta` b ON b.post_id = a.ID
-			WHERE b.meta_key = '_wp_attachment_metadata'
-				AND a.post_type = 'attachment'
-				AND a.post_status = 'inherit'
-				AND a.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
-			ORDER BY a.ID DESC
-			LIMIT 1
-			";
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$max_id = $wpdb->get_var( $q );
+		$groups_done = $wpdb->get_var( $q . ' AND ID>=' . (int) $this->_summary['next_post_id'] . ' ORDER BY ID' );
 
 		$count_list = [
 			'max_id'      => $max_id,
+			'min_id'      => $min_id,
 			'groups_all'  => $groups_all,
 			'groups_new'  => $groups_new,
 			'groups_done' => $groups_done,
@@ -851,6 +866,67 @@ trait Img_Optm_Manage {
 
 		$msg = __( 'Reset the optimized data successfully.', 'litespeed-cache' );
 		Admin_Display::success( $msg );
+	}
+
+	/**
+	 * Add single image to optimization.
+	 *
+	 * @since 7.8
+	 * @access public
+	 * @param int $post_id The post ID to send.
+	 */
+	public function add_optimize_row( $post_id ) {
+		if ( ! $post_id ) {
+			return;
+		}
+
+		if ( !$this->test_image_in_optimization( $post_id ) ) {
+			$this->tmp_pid = $post_id;
+
+			self::debug( 'add row to optimization [pid] ' . $post_id );
+			$meta_value = get_post_meta( $post_id );
+
+			if ( !empty ( $meta_value ) && $meta_value['_wp_attachment_metadata'] ) {
+				$data = maybe_unserialize( $meta_value['_wp_attachment_metadata'][0] );
+				$this->wp_update_attachment_metadata( $data, (int) $post_id );
+				self::debug( 'row added to optimization [pid] ' . $post_id );
+
+				$msg = __( 'Image added to optimiztion successfully.', 'litespeed-cache' );
+				Admin_Display::success( $msg );
+			} else {
+				self::debug( 'cannot add to optimization(empty meta) [pid] ' . $post_id );
+
+				$msg = __( 'Cannot add image to optimiztion(empty meta).', 'litespeed-cache' );
+				Admin_Display::error( $msg );
+			}
+		} else {
+			self::debug( 'image already added to optimization [pid] ' . $post_id );
+
+			$msg = __( 'Image already added to optimization.', 'litespeed-cache' );
+			Admin_Display::error( $msg );
+		}
+	}
+
+	/**
+	 * Test if image is added to optimization.
+	 *
+	 * @since 7.8
+	 * @access public
+	 * @param int $post_id The post ID to send.
+	 */
+	public function test_image_in_optimization( $post_id ) {
+		global $wpdb;
+		
+		$q = "SELECT COUNT(id)
+			FROM `$this->_table_img_optming`
+			WHERE post_id =%d";
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		$q = $wpdb->prepare( $q, [ $post_id ] );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		$v = (int) $wpdb->get_var( $q );
+
+		return $v > 0;
 	}
 
 	/**

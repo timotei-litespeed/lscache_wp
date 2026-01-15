@@ -210,9 +210,9 @@ trait Img_Optm_Send {
 				WHERE b.meta_key = '_wp_attachment_metadata'
 					AND a.post_type = 'attachment'
 					AND a.post_status = 'inherit'
-					AND a.ID>%d
+					AND a.ID<%d
 					AND a.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
-				ORDER BY a.ID
+				ORDER BY a.ID DESC
 				LIMIT %d
 				";
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
@@ -375,6 +375,7 @@ trait Img_Optm_Send {
 	 */
 	private function _save_raw() {
 		if ( empty( $this->_img_in_queue ) ) {
+			self::debug( 'Empty _img_in_queue' );
 			return;
 		}
 		$data     = [];
@@ -578,7 +579,7 @@ trait Img_Optm_Send {
 	private function _send_request( $allowance ) {
 		global $wpdb;
 
-		$q = "SELECT id, src, post_id FROM `$this->_table_img_optming` WHERE optm_status=%d LIMIT %d";
+		$q = "SELECT id, src, post_id FROM `$this->_table_img_optming` WHERE optm_status=%d ORDER BY id ASC LIMIT %d";
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
 		$q = $wpdb->prepare( $q, [ self::STATUS_RAW, $allowance ] );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared

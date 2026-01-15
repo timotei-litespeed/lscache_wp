@@ -40,6 +40,7 @@ class Img_Optm extends Base {
 	const TYPE_BATCH_SWITCH_OPTM = 'batch_switch_optm';
 	const TYPE_CALC_BKUP         = 'calc_bkup';
 	const TYPE_RESET_ROW         = 'reset_row';
+	const TYPE_ADD_OPTIMIZE_ROW = 'optimize_row';
 	const TYPE_RM_BKUP           = 'rm_bkup';
 
 	const STATUS_NEW        = 0; // 'new';
@@ -188,7 +189,7 @@ class Img_Optm extends Base {
 
 		$this->_summary = self::get_summary();
 		if ( empty( $this->_summary['next_post_id'] ) ) {
-			$this->_summary['next_post_id'] = 0;
+			$this->_summary['next_post_id'] = self::get_library_picture_id() + 1;
 		}
 		if ( $this->conf( Base::O_IMG_OPTM_WEBP ) ) {
 			$this->_format = 'webp';
@@ -213,8 +214,14 @@ class Img_Optm extends Base {
 		switch ( $type ) {
 			case self::TYPE_RESET_ROW:
 				// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-				$id = ! empty( $_GET['id'] ) ? absint( wp_unslash( $_GET['id'] ) ) : false;
+				$id = ! empty( $_GET['reset_id'] ) ? absint( wp_unslash( $_GET['reset_id'] ) ) : false;
 				$this->reset_row( $id );
+				break;
+
+			case self::TYPE_ADD_OPTIMIZE_ROW:
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$id = ! empty( $_GET['optimize_id'] ) ? absint( wp_unslash( $_GET['optimize_id'] ) ) : false;
+				$this->add_optimize_row( $id );
 				break;
 
 			case self::TYPE_CALC_BKUP:

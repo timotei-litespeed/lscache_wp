@@ -84,6 +84,7 @@ class Media extends Root {
 	 *
 	 * @since 7.2
 	 * @since 7.4 Add media replace original with scaled.
+	 * @since 7.8 Auto add to queue images that are uploaded.
 	 * @return void
 	 */
 	public function after_user_init() {
@@ -539,10 +540,15 @@ class Media extends Root {
 		if ( $size_meta ) {
 			printf(
 				'<div class="row-actions"><span class="delete"><a href="%1$s" class="">%2$s</a></span></div>',
-				esc_url( Utility::build_url( Router::ACTION_IMG_OPTM, Img_Optm::TYPE_RESET_ROW, false, null, [ 'id' => $post_id ] ) ),
+				esc_url( Utility::build_url( Router::ACTION_IMG_OPTM, Img_Optm::TYPE_RESET_ROW, false, null, [ 'reset_id' => $post_id ] ) ),
 				esc_html__( 'Restore from backup', 'litespeed-cache' )
 			);
-			echo '</div>';
+		} else {
+			printf(
+				'<div class="row-actions"><span class="delete"><a href="%1$s" class="">%2$s</a></span></div>',
+				esc_url( Utility::build_url( Router::ACTION_IMG_OPTM, Img_Optm::TYPE_ADD_OPTIMIZE_ROW, false, null, [ 'optimize_id' => $post_id ] ) ),
+				esc_html__( 'Optimize the image', 'litespeed-cache' )
+			);
 		}
 	}
 
