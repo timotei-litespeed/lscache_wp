@@ -20,7 +20,7 @@ class Optimize extends Base {
 
 	const ITEM_TIMESTAMP_PURGE_CSS = 'timestamp_purge_css';
 
-	const DUMMY_CSS_REGEX = "#<link rel=['\"]stylesheet['\"] id=['\"]litespeed-cache-dummy-css['\"] href=['\"].+assets/css/litespeed-dummy\.css[?\w.=-]*['\"][ \w='\"/]*>#isU";
+	const DUMMY_CSS_REGEX = "#<link [ \w='\"/]*id=['\"]litespeed-cache-dummy-css['\"] href=['\"].+assets/css/litespeed-dummy\.css[?\w.=-]*['\"][ \w='\"/]*>#isU";
 
 	private $content;
 	private $content_ori;
@@ -274,10 +274,14 @@ class Optimize extends Base {
 	 */
 	private function _optimize() {
 		global $wp;
-		$this->_request_url = get_permalink();
-		// Backup, in case get_permalink() fails.
-		if (!$this->_request_url) {
-			$this->_request_url = home_url($wp->request);
+		
+		// get current request url
+		$permalink_structure = get_option( 'permalink_structure' );
+		if ( ! empty( $permalink_structure ) ) {
+			$this->_request_url = trailingslashit( home_url( $wp->request ) );
+		} else {
+			$qs_add             = $wp->query_string ? '?' . (string) $wp->query_string : '' ;
+			$this->_request_url = home_url( $wp->request ) . $qs_add;
 		}
 
 		$this->cfg_css_min            = defined('LITESPEED_GUEST_OPTM') || $this->conf(self::O_OPTM_CSS_MIN);

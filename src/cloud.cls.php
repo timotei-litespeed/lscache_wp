@@ -45,7 +45,7 @@ class Cloud extends Base {
 	 *
 	 * @var string
 	 */
-	private $_cloud_server_wp = 'https://wpapi.quic.cloud';
+	protected $_cloud_server_wp = 'https://wpapi.quic.cloud';
 
 	const SVC_D_ACTIVATE       = 'd/activate';
 	const SVC_U_ACTIVATE       = 'u/wp3/activate';
@@ -200,6 +200,10 @@ class Cloud extends Base {
 			$allowed_hosts[] = 'api.quic.cloud';
 		}
 		add_filter( 'allowed_redirect_hosts', function( $hosts ) use ( $allowed_hosts ) {
+			if ( ! is_array ( $hosts ) ) {
+				$hosts = [];
+			}
+
 			return array_merge( $hosts, $allowed_hosts );
 		} );
 		$this->_summary = self::get_summary();
@@ -605,7 +609,7 @@ class Cloud extends Base {
 			return self::err( 'Data validation from WPAPI REST Echo failed' );
 		}
 
-		$diff = time() - $ts;
+		$diff = time() - (int) $ts;
 		if ( abs( $diff ) > 86400 ) {
 			self::debugErr( 'WPAPI echo data timeout [diff] ' . $diff );
 			return self::err( 'Echo data expired' );
@@ -930,7 +934,7 @@ class Cloud extends Base {
 	 * @since 2.9.9.1
 	 */
 	private function _update_news() {
-		if ( ! empty( $this->_summary['news.utime'] ) && time() - $this->_summary['news.utime'] < 86400 * 7 ) {
+		if ( ! empty( $this->_summary['news.utime'] ) && time() - (int) $this->_summary['news.utime'] < 86400 * 7 ) {
 			return;
 		}
 
@@ -992,7 +996,7 @@ class Cloud extends Base {
 	 */
 	public function allowance( $service, &$err = false ) {
 		// Only auto sync usage at most one time per day
-		if ( empty( $this->_summary[ 'last_request.' . self::SVC_D_USAGE ] ) || time() - $this->_summary[ 'last_request.' . self::SVC_D_USAGE ] > 86400 ) {
+		if ( empty( $this->_summary[ 'last_request.' . self::SVC_D_USAGE ] ) || time() - (int) $this->_summary[ 'last_request.' . self::SVC_D_USAGE ] > 86400 ) {
 			$this->sync_usage();
 		}
 
@@ -1012,7 +1016,7 @@ class Cloud extends Base {
 			$allowance_max = self::IMG_OPTM_DEFAULT_GROUP;
 		}
 
-		$allowance = $usage['quota'] - $usage['used'];
+		$allowance = (int) $usage['quota'] - (int) $usage['used'];
 
 		$err = 'out_of_quota';
 
@@ -1111,7 +1115,7 @@ class Cloud extends Base {
 			if (
 				! empty( $this->_summary[ 'server.' . $service ] ) &&
 				! empty( $this->_summary[ 'server_date.' . $service ] ) &&
-				$this->_summary[ 'server_date.' . $service ] > time() - 86400 * self::TTL_NODE
+				(int) $this->_summary[ 'server_date.' . $service ] > time() - 86400 * self::TTL_NODE
 			) {
 				$server = $this->_summary[ 'server.' . $service ];
 				if ( false === strpos( $this->_cloud_server, 'preview.' ) && false === strpos( $server, 'preview.' ) ) {
@@ -1212,7 +1216,7 @@ class Cloud extends Base {
 		$speed_list = [];
 		foreach ( $nodes_list as $v ) {
 			// Exclude possible failed 503 nodes
-			if ( ! empty( $this->_summary['disabled_node'] ) && ! empty( $this->_summary['disabled_node'][ $v ] ) && time() - $this->_summary['disabled_node'][ $v ] < 86400 ) {
+			if ( ! empty( $this->_summary['disabled_node'] ) && ! empty( $this->_summary['disabled_node'][ $v ] ) && time() - (int) $this->_summary['disabled_node'][ $v ] < 86400 ) {
 				continue;
 			}
 			$speed_list[ $v ] = Utility::ping( $v );
@@ -1378,7 +1382,7 @@ class Cloud extends Base {
 
 		// Check TTL
 		if ( ! empty( $this->_summary[ 'ttl.' . $service_tag ] ) ) {
-			$ttl = $this->_summary[ 'ttl.' . $service_tag ] - time();
+			$ttl = (int) $this->_summary[ 'ttl.' . $service_tag ] - time();
 			if ( $ttl > 0 ) {
 				self::debug( '❌ TTL limit. [srv] ' . $service_tag . ' [TTL cool down] ' . $ttl . ' seconds' );
 				return 'svc_hot';
@@ -1395,7 +1399,7 @@ class Cloud extends Base {
 		// For all other requests, if is under debug mode, will always allow
 		if ( ! $this->conf( self::O_DEBUG ) ) {
 			if ( ! empty( $this->_summary[ $timestamp_tag . '_request.' . $service_tag ] ) ) {
-				$expired = $this->_summary[ $timestamp_tag . '_request.' . $service_tag ] + $expiration_req - time();
+				$expired = (int) $this->_summary[ $timestamp_tag . '_request.' . $service_tag ] + $expiration_req - time();
 				if ( $expired > 0 ) {
 					self::debug( '❌ try [' . $service_tag . '] after ' . $expired . ' seconds' );
 
@@ -1418,7 +1422,7 @@ class Cloud extends Base {
 				$file_path = $this->_qc_time_file( $service_tag, $timestamp_tag );
 				if ( file_exists( $file_path ) ) {
 					$last_request = File::read( $file_path );
-					$expired      = $last_request + $expiration_req * 10 - time();
+					$expired      = (int) $last_request + $expiration_req * 10 - time();
 					if ( $expired > 0 ) {
 						self::debug( '❌ try [' . $service_tag . '] after ' . $expired . ' seconds' );
 						return false;
@@ -1429,7 +1433,7 @@ class Cloud extends Base {
 					$file_path = $this->_qc_time_file( $service_tag );
 					if ( file_exists( $file_path ) ) {
 						$last_request = File::read( $file_path );
-						$expired      = $last_request + $expiration_req * 10 - time();
+						$expired      = (int) $last_request + $expiration_req * 10 - time();
 						if ( $expired > 0 ) {
 							self::debug( '❌❌ Unusual req! try [' . $service_tag . '] after ' . $expired . ' seconds' );
 							return false;
@@ -1485,7 +1489,7 @@ class Cloud extends Base {
 			return false;
 		}
 
-		$ttl = $this->_summary[ 'ttl.' . $service_tag ] - time();
+		$ttl = (int) $this->_summary[ 'ttl.' . $service_tag ] - time();
 		if ( $ttl <= 0 ) {
 			return false;
 		}
@@ -1509,11 +1513,11 @@ class Cloud extends Base {
 	 * @return string
 	 */
 	public function qc_link() {
-		$data = array(
+		$data = [
 			'site_url' => site_url(),
 			'ver' => LSCWP_V,
 			'ref' => $this->_get_ref_url(),
-		);
+		];
 		return $this->_cloud_server_dash . '/u/wp3/manage?data=' . rawurlencode( Utility::arr2str( $data ) ); // . (!empty($this->_summary['is_linked']) ? '?wplogin=1' : '');
 	}
 
@@ -1877,7 +1881,7 @@ class Cloud extends Base {
 				$this->_reset_qc_reg();
 			}
 
-			return array( $json, true );
+			return [ $json, true ];
 		}
 
 		unset( $json['_res'] );
@@ -1885,7 +1889,7 @@ class Cloud extends Base {
 			unset( $json['_msg'] );
 		}
 
-		return array( $json, false );
+		return [ $json, false ];
 	}
 
 	/**
@@ -1982,12 +1986,12 @@ class Cloud extends Base {
 			return false;
 		}
 		// Auto delete if too long ago
-		if ( time() - $this->_summary['err_domains'][ $site_url ] > 86400 * 10 ) {
+		if ( time() - (int) $this->_summary['err_domains'][ $site_url ] > 86400 * 10 ) {
 			$this->_remove_domain_from_err_list( $site_url );
 
 			return false;
 		}
-		if ( time() - $this->_summary['err_domains'][ $site_url ] > 86400 ) {
+		if ( time() - (int) $this->_summary['err_domains'][ $site_url ] > 86400 ) {
 			return false;
 		}
 		return true;
@@ -2070,7 +2074,7 @@ class Cloud extends Base {
 
 		self::debug( '__callback IP request hash: ' . $resp_hash );
 
-		return self::ok( array( 'hash' => $resp_hash ) );
+		return self::ok( [ 'hash' => $resp_hash ] );
 	}
 
 	/**
@@ -2090,7 +2094,7 @@ class Cloud extends Base {
 			self::debug( '❌ Not our cloud IP' );
 
 			// Auto check ip list again but need an interval limit safety.
-			if ( empty( $this->_summary['ips_ts_runner'] ) || time() - $this->_summary['ips_ts_runner'] > 600 ) {
+			if ( empty( $this->_summary['ips_ts_runner'] ) || time() - (int) $this->_summary['ips_ts_runner'] > 600 ) {
 				self::debug( 'Force updating ip as ips_ts_runner is older than 10mins' );
 				// Refresh IP list for future detection
 				$this->_update_ips();
@@ -2134,7 +2138,7 @@ class Cloud extends Base {
 		$json = \json_decode( $response['body'], true );
 
 		self::debug( 'Load ips', $json );
-		self::save_summary( array( 'ips' => $json ) );
+		self::save_summary( [ 'ips' => $json ] );
 	}
 
 	/**
@@ -2160,10 +2164,10 @@ class Cloud extends Base {
 	 */
 	public static function err( $code ) {
 		self::debug( '❌ Error response code: ' . $code );
-		return array(
+		return [
 			'_res' => 'err',
 			'_msg' => $code,
-		);
+		];
 	}
 
 	/**
@@ -2174,14 +2178,14 @@ class Cloud extends Base {
 	 * @return array
 	 */
 	public function ping() {
-		$resp = array(
+		$resp = [
 			'v_lscwp'     => Core::VER,
 			'v_lscwp_db'  => $this->conf( self::_VER ),
 			'v_php'       => PHP_VERSION,
 			'v_wp'        => $GLOBALS['wp_version'],
 			'home_url'    => home_url(),
 			'site_url'    => site_url(),
-		);
+		];
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing
 		if ( ! empty( $_POST['funcs'] ) ) {
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized

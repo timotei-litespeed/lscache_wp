@@ -37,7 +37,7 @@ class Base extends Root {
 	const O_GUEST_OPTM   = 'guest_optm';
 	const O_NEWS         = 'news';
 	const O_GUEST_UAS    = 'guest_uas';
-	const O_GUEST_IPS    = 'guest_ips';
+	const O_GUEST_IPS    = 'guest_ips'; // Deprecated since v7.7. TODO: Will drop after v9
 
 	// -------------------------------------------------- ##
 	// --------------       Cache       ----------------- ##
@@ -201,7 +201,6 @@ class Base extends Root {
 	// -------------------------------------------------- ##
 	// --------------        Media      ----------------- ##
 	// -------------------------------------------------- ##
-	const O_MEDIA_PRELOAD_FEATURED           = 'media-preload_featured'; // Deprecated since v6.2. TODO: Will drop after v6.5
 	const O_MEDIA_LAZY                       = 'media-lazy';
 	const O_MEDIA_LAZY_PLACEHOLDER           = 'media-lazy_placeholder';
 	const O_MEDIA_PLACEHOLDER_RESP           = 'media-placeholder_resp';
@@ -361,8 +360,6 @@ class Base extends Root {
 		self::O_GUEST => false,
 		self::O_GUEST_OPTM => false,
 		self::O_NEWS => false,
-		self::O_GUEST_UAS => [],
-		self::O_GUEST_IPS => [],
 
 		// Cache
 		self::O_CACHE => false,

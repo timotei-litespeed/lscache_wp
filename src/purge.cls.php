@@ -240,6 +240,21 @@ class Purge extends Base {
 	}
 
 	/**
+	 * Shortcut to purge lscache.
+	 *
+	 * @since 7.7
+	 * @param string|false $reason Optional reason to log.
+	 * @return void
+	 */
+	public static function purge_all_lscache( $reason = false ) {
+		if ( $reason ) {
+			self::debug( 'Purge lscache ' . $reason, 3 );
+		}
+
+		self::cls()->_purge_all_lscache();
+	}
+	
+	/**
 	 * Alerts LiteSpeed Web Server to purge all pages.
 	 *
 	 * @since 2.2
@@ -316,7 +331,11 @@ class Purge extends Base {
 			$post_id_or_url = get_permalink( (int) $post_id_or_url );
 		}
 
-		$post_id_or_url = untrailingslashit( (string) $post_id_or_url );
+		$post_id_or_url      = (string) $post_id_or_url;
+		$permalink_structure = get_option( 'permalink_structure' );
+		if ( ! empty( $permalink_structure ) ) {
+			$post_id_or_url = trailingslashit( (string) $post_id_or_url );
+		}
 
 		$existing_url_files = Data::cls()->mark_as_expired( $post_id_or_url, true );
 		if ( $existing_url_files ) {
