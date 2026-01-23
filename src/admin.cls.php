@@ -60,7 +60,7 @@ class Admin extends Root {
 	 */
 	public function admin_init() {
 		// Hook to reset optimization data when image is replaced.
-		add_filter( 'wp_generate_attachment_metadata', [ $this, 'wp_generate_attachment_metadata' ], 10, 3 );
+		add_filter( 'wp_handle_upload', [ $this, 'wp_handle_upload' ], 9, 2 );
 
 		// Hook attachment upload auto optimization.
 		if ( $this->conf( Base::O_IMG_OPTM_AUTO ) ) {
@@ -96,26 +96,31 @@ class Admin extends Root {
 	 *
 	 * @since 7.8
 	 *
-	 * @param array  $metadata      Attachment metadata.
-	 * @param int    $attachment_id Attachment ID.
-	 * @param string $context       Context: 'create' or 'update'.
-	 * @return array Filtered metadata.
+	 * @param array  $data    Uploaded data.
+	 * @param string $context Context: 'sideload' or 'upload'.
+	 * @return array Data.
 	 */
-	public function wp_generate_attachment_metadata( $metadata, $attachment_id, $context = 'create' ) {
-		// Only process on 'create' context (replacement also uses 'create')
-		if ( 'create' !== $context ) {
-			return $metadata;
+	public function wp_handle_upload( $data, $context ) {
+		// Only process on 'upload' and if is a image
+		if ( 'sideload' !== $context || false === strpos($data['type'], 'image/') ) {
+			return $data;
+		}
+
+		$attachment_id = attachment_url_to_postid( $data['url'] );
+		// No post found
+		if ( 0 === $attachment_id ) {
+			self::debug( 'Image reset - No post found' );
+			return $data;
 		}
 
 		$img_optm = $this->cls( 'Img_Optm' );
-
 		// Check if has existing optimization records, if so it's a replacement
-		if ( $img_optm->has_optm_record( $attachment_id, $metadata ) ) {
+		if ( $img_optm->has_optm_record( $attachment_id ) ) {
 			self::debug( 'Image replaced, resetting optimization data [pid] ' . $attachment_id );
 			$img_optm->reset_row( $attachment_id, true );
 		}
 
-		return $metadata;
+		return $data;
 	}
 
 	/**
