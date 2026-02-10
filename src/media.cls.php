@@ -1026,6 +1026,7 @@ class Media extends Root {
 	 * Detect the original sizes.
 	 *
 	 * @since 4.0
+	 * @since 7.8 Get image size from image URL
 	 *
 	 * @param string $src Source URL/path.
 	 * @return array|false getimagesize array or false.
@@ -1043,7 +1044,15 @@ class Media extends Root {
 		}
 
 		try {
-			$sizes = getimagesize( $src );
+			// Get array of sizes from $src. Work with -1 or -scaled
+			preg_match('/.*-(\d+)x(\d+)(?=[-|\.])/', $src, $matches);
+			// If size found and both values are different than 0
+			if ( !empty( $matches ) && !empty( $matches[1] ) && !empty( $matches[2] ) ) {
+				$sizes = [$matches[1], $matches[2]];
+			} else{
+				// If size is not found in $src, get image size from meta
+				$sizes = getimagesize( $src );
+			}
 		} catch ( \Exception $e ) {
 			return false;
 		}
