@@ -25,7 +25,7 @@ class WCML {
 
 	/**
 	 * Detect if WCML is active and register hooks.
-	 *
+	 * 
 	 * @since 3.0
 	 * @access public
 	 * @return void
@@ -34,6 +34,10 @@ class WCML {
 		if (!defined('WCML_VERSION')) {
 			return;
 		}
+
+		add_filter ('wcml_user_store_strategy', function($strategy, $key) {
+			return'cookie';
+		}, 10, 2);
 
 		add_filter('wcml_client_currency', __CLASS__ . '::apply_client_currency');
 		add_action('wcml_set_client_currency', __CLASS__ . '::set_client_currency');
