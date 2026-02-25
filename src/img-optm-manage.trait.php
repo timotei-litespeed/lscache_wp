@@ -687,12 +687,14 @@ trait Img_Optm_Manage {
 	 * Switch images per offset
 	 *
 	 * @since  1.6.2
+	 * @since  7.8 Added limit parameter
 	 * @access private
 	 * @param string $type   The switch type.
 	 * @param int    $offset The current offset.
+	 * @param array  $ids    Array of ids to switch.
 	 * @return int|string Next offset or 'done'.
 	 */
-	private function _batch_switch( $type, $offset ) {
+	private function _batch_switch( $type, $offset, $ids = [] ) {
 		global $wpdb;
 		$limit          = 500;
 		$this->tmp_type = $type;
@@ -703,15 +705,28 @@ trait Img_Optm_Manage {
 			WHERE b.meta_key = '_wp_attachment_metadata'
 				AND a.post_type = 'attachment'
 				AND a.post_status = 'inherit'
-				AND a.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
-			ORDER BY a.ID
-			LIMIT %d,%d
-			";
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$q = $wpdb->prepare( $img_q, [ $offset * $limit, $limit ] );
+				AND a.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')";
+
+		// Used batch optimization(LSC Image optimization settings page).
+		if ( empty( $ids ) ) {
+			$img_q .= '
+				ORDER BY a.ID
+				LIMIT %d,%d
+			';
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+			$q = $wpdb->prepare( $img_q, [ $offset * $limit, $limit ] );
+		} else {
+			// Used images IDS to switch.
+			$placeholders = implode( ',', array_fill( 0, count( $ids ), '%s' )  );
+			$img_q       .= " AND a.ID IN ( $placeholders ) ORDER BY a.ID";
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+			$q = $wpdb->prepare( $img_q, $ids );
+		}
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
 		$list = $wpdb->get_results( $q );
 		$i    = 0;
+		
 		foreach ( $list as $v ) {
 			if ( ! $v->post_id ) {
 				continue;
@@ -732,15 +747,25 @@ trait Img_Optm_Manage {
 			}
 		}
 
-		self::debug( 'batch switched images total: ' . $i . ' [type] ' . $type );
+		// Used batch optimization(LSC Image optimization settings page).
+		if ( empty( $ids ) ) {
+			self::debug( 'batch switched images total: ' . $i . ' [type] ' . $type );
 
-		++$offset;
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$to_be_continued = $wpdb->get_row( $wpdb->prepare( $img_q, [ $offset * $limit, 1 ] ) );
-		if ( $to_be_continued ) {
-			return $offset;
+			++$offset;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+			$to_be_continued = $wpdb->get_row( $wpdb->prepare( $img_q, [ $offset * $limit, 1 ] ) );
+
+			return $to_be_continued ? $offset : 'done';
+		} else {
+			// Used images IDS to switch.
+			self::debug( 'switched total images: ' . $i . ' [type] ' . $type );
+				
+			if( 0 < $i ) {
+				return 'done';
+			} else {
+				return 'error';
+			}
 		}
-		return 'done';
 	}
 
 	/**
@@ -767,6 +792,7 @@ trait Img_Optm_Manage {
 		if ( self::TYPE_BATCH_SWITCH_ORI === $this->tmp_type || 'orig' === $this->tmp_type ) {
 			// self::debug('switch to orig ' . $bk_file);
 			if ( ! $this->__media->info( $bk_file, $this->tmp_pid ) ) {
+				self::debug('no bk found ' . $bk_file);
 				return;
 			}
 			$this->__media->rename( $local_filename . '.' . $extension, $bk_optm_file, $this->tmp_pid );
@@ -775,6 +801,7 @@ trait Img_Optm_Manage {
 			// switch to optm
 			// self::debug('switch to optm ' . $bk_file);
 			if ( ! $this->__media->info( $bk_optm_file, $this->tmp_pid ) ) {
+				self::debug('no optm bk found ' . $bk_file);
 				return;
 			}
 			$this->__media->rename( $local_filename . '.' . $extension, $bk_file, $this->tmp_pid );
@@ -790,74 +817,17 @@ trait Img_Optm_Manage {
 	 * @param string $type The switch type (webpXXX, avifXXX, or origXXX where XXX is the post ID).
 	 */
 	private function _switch_optm_file( $type ) {
-		Admin_Display::success( __( 'Switched to optimized file successfully.', 'litespeed-cache' ) );
-		return;
-
-		// phpcs:disable Squiz.PHP.NonExecutableCode
-		global $wpdb;
-
 		$pid         = substr( $type, 4 );
-		$switch_type = substr( $type, 0, 4 );
-
-		$q = "SELECT src,post_id FROM `$this->_table_img_optm` WHERE post_id = %d AND optm_status = %d";
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$list = $wpdb->get_results( $wpdb->prepare( $q, [ $pid, self::STATUS_PULLED ] ) );
-
-		$msg = 'Unknown Msg';
-
-		foreach ( $list as $v ) {
-			// to switch webp file
-			if ( 'webp' === $switch_type ) {
-				if ( $this->__media->info( $v->src . '.webp', $v->post_id ) ) {
-					$this->__media->rename( $v->src . '.webp', $v->src . '.optm.webp', $v->post_id );
-					self::debug( 'Disabled WebP: ' . $v->src );
-
-					$msg = __( 'Disabled WebP file successfully.', 'litespeed-cache' );
-				} elseif ( $this->__media->info( $v->src . '.optm.webp', $v->post_id ) ) {
-					$this->__media->rename( $v->src . '.optm.webp', $v->src . '.webp', $v->post_id );
-					self::debug( 'Enable WebP: ' . $v->src );
-
-					$msg = __( 'Enabled WebP file successfully.', 'litespeed-cache' );
-				}
-			} elseif ( 'avif' === $switch_type ) {
-				// to switch avif file
-				if ( $this->__media->info( $v->src . '.avif', $v->post_id ) ) {
-					$this->__media->rename( $v->src . '.avif', $v->src . '.optm.avif', $v->post_id );
-					self::debug( 'Disabled AVIF: ' . $v->src );
-
-					$msg = __( 'Disabled AVIF file successfully.', 'litespeed-cache' );
-				} elseif ( $this->__media->info( $v->src . '.optm.avif', $v->post_id ) ) {
-					$this->__media->rename( $v->src . '.optm.avif', $v->src . '.avif', $v->post_id );
-					self::debug( 'Enable AVIF: ' . $v->src );
-
-					$msg = __( 'Enabled AVIF file successfully.', 'litespeed-cache' );
-				}
-			} else {
-				// to switch original file
-				$extension      = pathinfo( $v->src, PATHINFO_EXTENSION );
-				$local_filename = substr( $v->src, 0, -strlen( $extension ) - 1 );
-				$bk_file        = $local_filename . '.bk.' . $extension;
-				$bk_optm_file   = $local_filename . '.bk.optm.' . $extension;
-
-				// revert ori back
-				if ( $this->__media->info( $bk_file, $v->post_id ) ) {
-					$this->__media->rename( $v->src, $bk_optm_file, $v->post_id );
-					$this->__media->rename( $bk_file, $v->src, $v->post_id );
-					self::debug( 'Restore original img: ' . $bk_file );
-
-					$msg = __( 'Restored original file successfully.', 'litespeed-cache' );
-				} elseif ( $this->__media->info( $bk_optm_file, $v->post_id ) ) {
-					$this->__media->rename( $v->src, $bk_file, $v->post_id );
-					$this->__media->rename( $bk_optm_file, $v->src, $v->post_id );
-					self::debug( 'Switch to optm img: ' . $v->src );
-
-					$msg = __( 'Switched to optimized file successfully.', 'litespeed-cache' );
-				}
-			}
+		$switch_type = substr( $type, 0, 4 ) === 'orig' ? self::TYPE_BATCH_SWITCH_ORI : self::TYPE_BATCH_SWITCH_OPTM;
+		
+		$msg    = __( 'Error switching images.', 'litespeed-cache' );
+		$result = $this->_batch_switch( $switch_type, 0, [ $pid ] );
+		if ( 'done' === $result ) {
+			$msg = __( 'Switched images successfully.', 'litespeed-cache' );
+			Admin_Display::success( $msg );
+		} else {
+			Admin_Display::error( $msg );
 		}
-
-		Admin_Display::success( $msg );
-		// phpcs:enable Squiz.PHP.NonExecutableCode
 	}
 
 	/**

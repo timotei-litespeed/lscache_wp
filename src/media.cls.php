@@ -511,7 +511,7 @@ class Media extends Root {
 
 		$size_meta = get_post_meta( $post_id, Img_Optm::DB_SIZE, true );
 
-		echo '<p>';
+		echo '<p class="litespeed-wrap">';
 		// Original image info.
 		if ( $size_meta && ! empty( $size_meta['ori_saved'] ) ) {
 			$percent = (int) ceil( ( (int) $size_meta['ori_saved'] * 100 ) / max( 1, (int) $size_meta['ori_total'] ) );
@@ -579,7 +579,7 @@ class Media extends Root {
 		}
 		echo '</p>';
 
-		echo '<p>';
+		echo '<p class="litespeed-wrap">';
 		// WebP/AVIF info.
 		if ( $size_meta && $this->webp_support( true ) && ! empty( $size_meta[ $this->_sys_format . '_saved' ] ) ) {
 			$is_avif         = 'avif' === $this->_sys_format;
