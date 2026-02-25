@@ -557,6 +557,29 @@ class Core extends Root {
 		}
 		define( 'LITESPEED_DID_' . __FUNCTION__, true );
 
+		// During cron, headers are often already sent. Kick off an HTTP request to consume purge queue immediately instead of waiting for next visitor.
+		if ( wp_doing_cron() ) {
+			$purge_queue = Purge::get_option( Purge::DB_QUEUE );
+			if ( ! $purge_queue || '-1' === $purge_queue ) {
+				$purge_queue = Purge::get_option( Purge::DB_QUEUE2 );
+			}
+			if ( $purge_queue && '-1' !== $purge_queue ) {
+				self::debug( '[Core] Cron: Purge Queue found, issuing HTTP request to purge immediately: ' . $purge_queue );
+				$url  = admin_url( 'admin-ajax.php' );
+				$resp = wp_safe_remote_get( $url );
+				if ( is_wp_error( $resp ) ) {
+					$error_message = $resp->get_error_message();
+					self::debug( '[URL]' . $url );
+					self::debug( 'failed to request: ' . $error_message );
+				} else {
+					self::debug( '[Core] Cron: HTTP purge request sent successfully' );
+				}
+			} else {
+				self::debug( '[Core] Cron: No purge queue to process' );
+			}
+			return;
+		}
+
 		// Avoid PHP warning for headers sent out already
 		if ( headers_sent() ) {
 			self::debug( '❌ !!! Err: Header sent out already' );

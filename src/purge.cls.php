@@ -473,18 +473,20 @@ class Purge extends Base {
 	 * @return void
 	 */
 	private function _purge_all_cssjs( $silence = false ) {
-		if ( wp_doing_cron() || defined( 'LITESPEED_DID_send_headers' ) ) {
-			self::debug( '❌ Bypassed cssjs delete as header sent (lscache purge after this point will fail) or doing cron' );
-			return;
+		// Header-dependent operations: only when headers can still be sent
+		if ( ! wp_doing_cron() && ! defined( 'LITESPEED_DID_send_headers' ) ) {
+			$this->_purge_all_lscache( $silence ); // Purge CSSJS must purge lscache too to avoid 404
+			$this->_add( Tag::TYPE_MIN );
+		} else {
+			self::debug( '❌ Bypassed cssjs header ops (doing cron or headers sent), file cleanup will still proceed' );
 		}
 
 		$this->_purge_all_lscache( $silence ); // Purge CSSJS must purge lscache too to avoid 404
 
+		// File system operations: always safe to run regardless of header state
 		do_action( 'litespeed_purged_all_cssjs' );
 
 		Optimize::update_option( Optimize::ITEM_TIMESTAMP_PURGE_CSS, time() );
-
-		$this->_add( Tag::TYPE_MIN );
 
 		$this->cls( 'CSS' )->rm_cache_folder( 'css' );
 		$this->cls( 'CSS' )->rm_cache_folder( 'js' );
