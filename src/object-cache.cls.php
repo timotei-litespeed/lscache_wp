@@ -675,11 +675,12 @@ class Object_Cache extends Root {
 			return false;
 		}
 
-		$ttl = $expire ? $expire : $this->_cfg_life;
+		$ttl = !empty( $expire ) || $expire === 0 ? (int) $expire : $this->_cfg_life;
 
 		if ( 'Redis' === $this->_oc_driver ) {
 			try {
-				$res = $this->_conn->setEx( $key, $ttl, $data );
+				$options = ( $ttl > 0 ) ? [ 'ex' => $ttl ] : [];
+				$res = $this->_conn->set( $key, $data, $options );
 			} catch ( \RedisException $ex ) {
 				$res = false;
 				$msg = sprintf( __( 'Redis encountered a fatal error: %1$s (code: %2$d)', 'litespeed-cache' ), $ex->getMessage(), $ex->getCode() );
