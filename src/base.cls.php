@@ -184,7 +184,6 @@ class Base extends Root {
 	const O_OBJECT_LIFE                  = 'object-life';
 	const O_OBJECT_PERSISTENT            = 'object-persistent';
 	const O_OBJECT_ADMIN                 = 'object-admin';
-	const O_OBJECT_TRANSIENTS            = 'object-transients';
 	const O_OBJECT_DB_ID                 = 'object-db_id';
 	const O_OBJECT_USER                  = 'object-user';
 	const O_OBJECT_PSWD                  = 'object-pswd';
@@ -288,7 +287,9 @@ class Base extends Root {
 	// -------------------------------------------------- ##
 	// --------------      OptimaX      ----------------- ##
 	// -------------------------------------------------- ##
-	const O_OPTIMAX = 'optimax';
+	const O_OPTIMAX      = 'optimax';
+	const O_OPTIMAX_CRON = 'optimax-cron';
+	const O_OPTIMAX_EXC  = 'optimax-exc';
 
 	const NETWORK_O_USE_PRIMARY = 'use_primary_settings';
 
@@ -485,7 +486,6 @@ class Base extends Root {
 		self::O_OBJECT_LIFE => 0,
 		self::O_OBJECT_PERSISTENT => false,
 		self::O_OBJECT_ADMIN => false,
-		self::O_OBJECT_TRANSIENTS => false,
 		self::O_OBJECT_DB_ID => 0,
 		self::O_OBJECT_USER => '',
 		self::O_OBJECT_PSWD => '',
@@ -603,7 +603,6 @@ class Base extends Root {
 		self::O_OBJECT_LIFE => 0,
 		self::O_OBJECT_PERSISTENT => false,
 		self::O_OBJECT_ADMIN => false,
-		self::O_OBJECT_TRANSIENTS => false,
 		self::O_OBJECT_DB_ID => 0,
 		self::O_OBJECT_USER => '',
 		self::O_OBJECT_PSWD => '',
@@ -635,6 +634,67 @@ class Base extends Root {
 		self::O_OPTM_JS_DEFER => 2,
 		self::O_IMG_OPTM_WEBP => 2,
 	];
+
+	/**
+	 * Cache for blog options to avoid repeated switch_to_blog calls.
+	 * Structure: [ blog_id => [ option_name => value, ... ], ... ]
+	 *
+	 * @since 7.8
+	 * @var array<int,array<string,mixed>>
+	 */
+	private static $_blog_options_cache = [];
+
+	/**
+	 * Get option from another blog with batch preload optimization.
+	 *
+	 * Reduces N*2 switch_to_blog calls to just 2 by preloading all options on first call.
+	 *
+	 * @since 7.8
+	 * @param int    $blog_id   Blog ID to get option from.
+	 * @param string $id        Option ID (without prefix).
+	 * @param mixed  $default_v Default value if option not found.
+	 * @return mixed Option value.
+	 */
+	public static function get_blog_option( $blog_id, $id, $default_v = false ) {
+		$blog_id = (int) $blog_id;
+
+		// If current blog, use get_option directly (no switch needed).
+		if ( get_current_blog_id() === $blog_id ) {
+			return self::get_option( $id, $default_v );
+		}
+
+		// Preload all options for this blog if not cached.
+		if ( ! isset( self::$_blog_options_cache[ $blog_id ] ) ) {
+			self::_preload_blog_options( $blog_id );
+		}
+
+		$v = self::$_blog_options_cache[ $blog_id ][ $id ];
+
+		// Maybe decode array.
+		if ( is_array( $default_v ) ) {
+			$v = self::_maybe_decode( $v );
+		}
+
+		return $v;
+	}
+
+	/**
+	 * Preload all conf options for a blog into cache.
+	 *
+	 * @since 7.8
+	 * @param int $blog_id Blog ID to preload options from.
+	 */
+	private static function _preload_blog_options( $blog_id ) {
+		self::$_blog_options_cache[ $blog_id ] = [];
+
+		switch_to_blog( $blog_id );
+
+		foreach ( self::$_default_options as $id => $default_v ) {
+			self::$_blog_options_cache[ $blog_id ][ $id ] = get_option( self::name( $id ), $default_v );
+		}
+
+		restore_current_blog();
+	}
 
 	/**
 	 * Correct the option type.
@@ -1013,5 +1073,45 @@ class Base extends Root {
 		}
 
 		return $server_vars;
+	}
+
+	/**
+	 * Save CSS content (UCSS/CCSS) to file and register in DB.
+	 *
+	 * Shared by UCSS, CSS, and Optimax classes.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $type      CSS type ('ucss' or 'ccss').
+	 * @param string $css       CSS content.
+	 * @param string $url_tag   URL tag for DB mapping.
+	 * @param string $vary      Vary string.
+	 * @param string $queue_k   Queue key (for filter and purge tag).
+	 * @param bool   $is_mobile Whether is mobile.
+	 * @param bool   $is_webp   Whether supports webp.
+	 * @return void
+	 */
+	protected function _save_css_con( $type, $css, $url_tag, $vary, $queue_k, $is_mobile, $is_webp ) {
+		$css = apply_filters( 'litespeed_' . $type, $css, $queue_k );
+		// Font optimize
+		$css = $this->cls('Optimizer')->optm_font_face( $css );
+		// Sanitize: CSS must not contain HTML tags
+		$css = wp_strip_all_tags( $css );
+		self::debug2( 'con: ', $css );
+
+		if ( '/*' === substr( $css, 0, 2 ) && '*/' === substr( $css, -2 ) ) {
+			self::debug( '❌ empty ' . $type . ' [content] ' . $css );
+		}
+
+		$filecon_md5     = md5( $css );
+		$filepath_prefix = $this->_build_filepath_prefix( $type );
+		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.css';
+
+		File::save( $static_file, $css, true );
+		self::debug2( "Save URL to file [file] $static_file [vary] $vary" );
+
+		$this->cls( 'Data' )->save_url( $url_tag, $vary, $type, $filecon_md5, dirname( $static_file ), $is_mobile, $is_webp );
+
+		Purge::add( strtoupper( $type ) . '.' . md5( $queue_k ) );
 	}
 }
