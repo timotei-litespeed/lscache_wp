@@ -574,9 +574,15 @@ class Object_Cache extends Root {
 			$this->debug_oc( '❌ Failed to connect ' . $this->_oc_driver . ' server!' );
 			$this->_conn        = null;
 			$this->_cfg_enabled = false;
-			! defined( 'LITESPEED_OC_FAILURE' ) && define( 'LITESPEED_OC_FAILURE', true );
-
-			// NOTE: Do NOT call wp_using_ext_object_cache(false) — causes fatal on multisite.
+			if ( ! defined( 'LITESPEED_OC_FAILURE' ) ) {
+				define( 'LITESPEED_OC_FAILURE', true );
+				// If OC backend is unavailable, tell WP so transients fall back to wp_options.
+				// IMPORTANT: Cannot call wp_using_ext_object_cache(false) here directly — on
+				// multisite, wp_start_object_cache() is called a second time (ms-settings.php)
+				// and would try to load cache.php, causing "Cannot redeclare wp_cache_init()".
+				// Defer until after all wp_start_object_cache() calls are done.
+				add_action( 'muplugins_loaded', 'litespeed_oc_disable_ext_cache', -999 );
+			}
 
 			return false;
 		}
