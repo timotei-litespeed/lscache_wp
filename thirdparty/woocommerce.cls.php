@@ -580,6 +580,14 @@ class WooCommerce extends Base {
 				do_action( 'litespeed_control_set_nocache', '3rd party woocommerce not cache by constant' );
 				return;
 			} elseif ( version_compare( $woocom->version, '2.1.0', '>=' ) ) {
+				if ( version_compare( $woocom->version, '10.1.0', '>=' ) ) {
+					$page_ids = array_filter( array( wc_get_page_id( 'cart' ), wc_get_page_id( 'checkout' ), wc_get_page_id( 'myaccount' ) ) );
+
+					if ( ! is_page( $page_ids ) ) {
+						add_filter( 'litespeed_const_DONOTCACHEPAGE', '__return_false' );
+					}
+				}
+
 				$err = false;
 
 				if ( ! function_exists( 'wc_get_page_id' ) ) {
