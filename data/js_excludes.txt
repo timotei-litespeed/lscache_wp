@@ -36,3 +36,6 @@ _stq
 # Cloudflare turnstile - Tobolo
 turnstile
 challenges.cloudflare.com
+
+# CleanTalk Anti-Spam
+apbct-public-bundle
