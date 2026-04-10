@@ -187,6 +187,15 @@ class Conf extends Base {
 			return $options;
 		}
 
+		// Regenerate and persist the security hash if it was deleted from the DB.
+		// load_default_vals() only runs on version upgrades, so a manually-deleted
+		// hash would otherwise remain empty for the lifetime of the installation,
+		// silently weakening ESI URL security (md5('' . ...) instead of a secret).
+		if ( empty( $options[ self::HASH ] ) && null === $blog_id ) {
+			$options[ self::HASH ] = Str::rrand( 32 );
+			self::update_option( self::HASH, $options[ self::HASH ] );
+		}
+
 		// Bypass site special settings
 		if ( null !== $blog_id ) {
 			// This is to load the primary settings ONLY

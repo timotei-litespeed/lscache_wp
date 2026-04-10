@@ -503,15 +503,16 @@ class ESI extends Root {
 		// Append hash
 		$appended_params['_hash'] = $this->_gen_esi_md5($appended_params);
 
-		/**
-		 * Escape potential chars
-		 *
-		 * @since 2.9.4
-		 */
-		$appended_params = array_map('urlencode', $appended_params);
-
-		// Generate ESI URL
-		$url = add_query_arg($appended_params, trailingslashit(wp_make_link_relative(home_url())));
+		// Generate ESI URL — build query string manually to ensure values are encoded exactly
+		// once. add_query_arg() re-encodes its input, so pre-encoding with urlencode() before
+		// passing to it caused double-encoding: the URL held %253D instead of %3D, PHP decoded
+		// once leaving %3D in $_GET, but _gen_esi_md5() was computed from the plain '=' → hash
+		// mismatch → load_esi_block() returned early → empty buffer → only footer comment output.
+		$qs_parts = array();
+		foreach ($appended_params as $k => $v) {
+			$qs_parts[] = urlencode($k) . '=' . urlencode($v);
+		}
+		$url = trailingslashit(wp_make_link_relative(home_url())) . '?' . implode('&', $qs_parts);
 
 		$output = '';
 		if ($inline_param) {
@@ -618,8 +619,10 @@ class ESI extends Root {
 		 *
 		 * @since 2.9.6
 		 */
-		if (empty($_GET['_hash']) || $this->_gen_esi_md5($_GET) != $_GET['_hash']) {
+		if ( empty($_GET['_hash']) || $this->_gen_esi_md5($_GET) != $_GET['_hash'] ) {
 			Debug2::debug('[ESI] ❌ Failed to validate _hash');
+			Control::set_nocache('ESI _hash validation failed');
+			// Purge::purge_all_lscache('ESI _hash validation failed'); // Purge ESI tag only?!
 			return;
 		}
 
