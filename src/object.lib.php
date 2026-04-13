@@ -58,11 +58,28 @@ function wp_cache_init() {
 	// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 	$GLOBALS['wp_object_cache'] = WP_Object_Cache::get_instance();
 
-	// If OC backend is unavailable, tell WP so transients fall back to wp_options.
-	// IMPORTANT: Cannot call wp_using_ext_object_cache(false) here directly — on
+	// Eagerly probe the OC backend so a connection failure is detected NOW,
+	// before muplugins_loaded fires and before any plugin code (e.g. CAPTCHA
+	// plugins) stores transients that rely on the OC being available.
+	//
+	// Without this probe, the first connection attempt happens lazily on the
+	// first wp_cache_set() call — which may arrive during login-form rendering,
+	// after muplugins_loaded.  If that lazy connect fails, the transient lands
+	// only in the in-memory _cache (gone after the request) and never in the DB,
+	// because wp_using_ext_object_cache() was still TRUE when set_transient()
+	// was called.  The next request cannot find the token → "CAPTCHA EXPIRED".
+	//
+	// By probing here we ensure LITESPEED_OC_FAILURE is defined (if needed) so
+	// the muplugins_loaded hook below disables ext-OC before any plugin runs.
+	//
+	// IMPORTANT: Do NOT call wp_using_ext_object_cache(false) here directly — on
 	// multisite, wp_start_object_cache() is called a second time (ms-settings.php)
 	// and would try to load cache.php, causing "Cannot redeclare wp_cache_init()".
 	// Defer until after all wp_start_object_cache() calls are done.
+	if ( ! defined( 'LITESPEED_OC_FAILURE' ) ) {
+		\LiteSpeed\Object_Cache::cls()->test_connection();
+	}
+
 	if ( defined( 'LITESPEED_OC_FAILURE' ) ) {
 		add_action( 'muplugins_loaded', 'litespeed_oc_disable_ext_cache', -999 );
 	}
