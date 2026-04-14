@@ -1057,6 +1057,10 @@ class Purge extends Base {
 			self::add( Tag::TYPE_REST );
 		}
 
+		if ( $this->conf( self::O_CDN_CLOUDFLARE_CLEAR ) ) {
+			CDN\Cloudflare::purge_all( 'Purge All' );
+		}
+
 		do_action( 'litespeed_purged_post', $pid );
 	}
 
