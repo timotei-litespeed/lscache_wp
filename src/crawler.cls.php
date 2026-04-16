@@ -460,6 +460,12 @@ class Crawler extends Root {
 			$this->_crawler_conf['cookies'][ substr( $k, 7 ) ] = $v;
 		}
 
+		// Allow third-party plugins (e.g. WCML) to register their vary contributions
+		// for the simulated cookies, so the correct _lscache_vary is computed below.
+		if ( $this->_crawler_conf['cookies'] ) {
+			do_action( 'litespeed_crawler_cookie_init', $this->_crawler_conf['cookies'] );
+		}
+
 		// WebP/AVIF simulation.
 		if ( ! empty( $current_crawler['webp'] ) ) {
 			$this->_crawler_conf['headers'][] = 'Accept: image/' . ( 2 === (int) $this->conf( Base::O_IMG_OPTM_WEBP ) ? 'avif' : 'webp' ) . ',*/*';
@@ -498,16 +504,24 @@ class Crawler extends Root {
 			return false;
 		}
 
-		// Role simulation.
+		// Vary cookie: computed for both role simulation and guest+cookie simulation.
+		$vary_name = $this->cls( 'Vary' )->get_vary_name();
 		if ( ! empty( $current_crawler['uid'] ) ) {
+			// Role simulation.
 			if ( empty( $this->_server_ip ) ) {
 				self::debug( '🛑 Terminated crawler due to Server IP not set' );
 				return false;
 			}
-			$vary_name                                    = $this->cls( 'Vary' )->get_vary_name();
-			$vary_val                                     = $this->cls( 'Vary' )->finalize_default_vary( $current_crawler['uid'] );
-			$this->_crawler_conf['cookies'][ $vary_name ] = $vary_val;
+			$vary_val                                         = $this->cls( 'Vary' )->finalize_default_vary( $current_crawler['uid'] );
+			$this->_crawler_conf['cookies'][ $vary_name ]     = $vary_val;
 			$this->_crawler_conf['cookies']['litespeed_hash'] = Router::cls()->get_hash( $current_crawler['uid'] );
+		} else {
+			// Guest crawler: compute vary so cookie-based variants (e.g. WCML currency)
+			// get distinct _lscache_vary values and are not served from the same cache slot.
+			$vary_val = $this->cls( 'Vary' )->finalize_default_vary( 0 );
+			if ( $vary_val ) {
+				$this->_crawler_conf['cookies'][ $vary_name ] = $vary_val;
+			}
 		}
 
 		return true;

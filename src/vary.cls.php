@@ -550,6 +550,7 @@ class Vary extends Root {
 		 * @since 3.0 Used by 3rd hooks too
 		 */
 		$vary = apply_filters( 'litespeed_vary', $vary );
+		// error_log( "finalize_default_vary POST-FILTER (uid=" . (int) $uid . ", url=" . ( isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : 'CLI' ) . "):\n" . print_r( $vary, true )."\n", 3, "/home/wpml.litespeedtech.ro/public_html/wp-content/cookies.log" );
 
 		if ( ! $vary ) {
 			return false;
@@ -562,11 +563,9 @@ class Vary extends Root {
 		}
 
 		$res = implode( ';', $list );
-		if ( defined( 'LSCWP_LOG' ) ) {
-			return $res;
-		}
-		// Encrypt in production.
-		return md5( $this->conf( Base::HASH ) . $res );
+		$final = defined( 'LSCWP_LOG' ) ? $res : md5( $this->conf( Base::HASH ) . $res );
+		// error_log( "finalize_default_vary RESULT: raw=" . $res . " | final=" . $final . "\n", 3, "/home/wpml.litespeedtech.ro/public_html/wp-content/cookies.log" );
+		return $final;
 	}
 
 	/**
