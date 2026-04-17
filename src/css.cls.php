@@ -59,7 +59,33 @@ class CSS extends Base {
 	 * @return string
 	 */
 	public function prepare_html_lazy() {
-		return '<style>' . implode( ',', $this->conf( self::O_OPTM_HTML_LAZY ) ) . '{content-visibility:auto;contain-intrinsic-size:1px 1000px;}</style>';
+		$selectors = [];
+		foreach ( $this->conf( self::O_OPTM_HTML_LAZY ) as $sel ) {
+			$sel = trim( $sel );
+			if ( '' === $sel ) {
+				continue;
+			}
+
+			// Bare identifier (e.g. "example") → expand to "#example,.example".
+			if ( preg_match( '/^[A-Za-z_][\w-]*$/', $sel ) ) {
+				foreach ( [ '#' . $sel, '.' . $sel ] as $expanded ) {
+					if ( ! in_array( $expanded, $selectors, true ) ) {
+						$selectors[] = $expanded;
+					}
+				}
+				continue;
+			}
+
+			if ( ! in_array( $sel, $selectors, true ) ) {
+				$selectors[] = $sel;
+			}
+		}
+
+		if ( ! $selectors ) {
+			return '';
+		}
+
+		return '<style>' . implode( ',', $selectors ) . '{content-visibility:auto;contain-intrinsic-size:1px 1000px;}</style>';
 	}
 
 	/**
