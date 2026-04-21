@@ -449,6 +449,8 @@ class Purge extends Base {
 	 * Delete all localized resources.
 	 *
 	 * @since 3.3
+	 * @since 7.9 Add clear localization
+	 * 
 	 * @param bool $silence If true, don't show admin notice.
 	 * @return void
 	 */
@@ -456,6 +458,9 @@ class Purge extends Base {
 		do_action( 'litespeed_purged_all_localres' );
 
 		$this->_add( Tag::TYPE_LOCALRES );
+		
+		// Clear localisation folder
+		$this->cls('Localization')->clear_resources();
 
 		if ( ! $silence ) {
 			$msg = __( 'Cleaned all localized resource entries.', 'litespeed-cache' );
