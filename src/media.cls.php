@@ -511,7 +511,7 @@ class Media extends Root {
 
 		$size_meta = get_post_meta( $post_id, Img_Optm::DB_SIZE, true );
 
-		echo '<p>';
+		echo '<p class="litespeed-wrap">';
 		// Original image info.
 		if ( $size_meta && ! empty( $size_meta['ori_saved'] ) ) {
 			$percent = (int) ceil( ( (int) $size_meta['ori_saved'] * 100 ) / max( 1, (int) $size_meta['ori_total'] ) );
@@ -523,7 +523,8 @@ class Media extends Root {
 			$link = Utility::build_url( Router::ACTION_IMG_OPTM, 'orig' . $post_id );
 			$desc = false;
 
-			$cls = '';
+			$cls         = '';
+			$curr_status = '';
 
 			if ( $this->info( $bk_file, $post_id ) ) {
 				$curr_status = esc_html__( '(optm)', 'litespeed-cache' );
@@ -550,7 +551,7 @@ class Media extends Root {
 
 			printf(
 				esc_html__( 'Orig saved %s', 'litespeed-cache' ),
-				(int) $percent . '%'
+				'<span>' . esc_html( (int) $percent ) . '%</span>'
 			);
 
 			if ( $desc ) {
@@ -579,7 +580,7 @@ class Media extends Root {
 		}
 		echo '</p>';
 
-		echo '<p>';
+		echo '<p class="litespeed-wrap">';
 		// WebP/AVIF info.
 		if ( $size_meta && $this->webp_support( true ) && ! empty( $size_meta[ $this->_sys_format . '_saved' ] ) ) {
 			$is_avif         = 'avif' === $this->_sys_format;
@@ -591,7 +592,8 @@ class Media extends Root {
 			$link = Utility::build_url( Router::ACTION_IMG_OPTM, $this->_sys_format . $post_id );
 			$desc = false;
 
-			$cls = '';
+			$cls         = '';
+			$curr_status = '';
 
 			if ( $this->info( $short_path . '.' . $this->_sys_format, $post_id ) ) {
 				$curr_status = esc_html__( '(optm)', 'litespeed-cache' );
@@ -614,7 +616,7 @@ class Media extends Root {
 					24,
 					sprintf(
 						$is_avif ? esc_html__( 'AVIF file reduced by %1$s (%2$s)', 'litespeed-cache' ) : esc_html__( 'WebP file reduced by %1$s (%2$s)', 'litespeed-cache' ),
-						$percent . '%',
+						'<span>' . esc_html( (int) $percent ) . '%</span>',
 						Utility::real_size( $size_meta_saved )
 					),
 					'left'

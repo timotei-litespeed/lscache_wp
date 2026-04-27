@@ -790,18 +790,14 @@ trait Img_Optm_Manage {
 	 * @param string $type The switch type (webpXXX, avifXXX, or origXXX where XXX is the post ID).
 	 */
 	private function _switch_optm_file( $type ) {
-		Admin_Display::success( __( 'Switched to optimized file successfully.', 'litespeed-cache' ) );
-		return;
-
-		// phpcs:disable Squiz.PHP.NonExecutableCode
 		global $wpdb;
 
 		$pid         = substr( $type, 4 );
 		$switch_type = substr( $type, 0, 4 );
 
-		$q = "SELECT src,post_id FROM `$this->_table_img_optm` WHERE post_id = %d AND optm_status = %d";
+		$q = "SELECT meta_value AS src, post_id FROM `$wpdb->postmeta` WHERE post_id = %d AND meta_key = %s";
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$list = $wpdb->get_results( $wpdb->prepare( $q, [ $pid, self::STATUS_PULLED ] ) );
+		$list = $wpdb->get_results( $wpdb->prepare( $q, [ $pid, '_wp_attached_file' ] ) );
 
 		$msg = 'Unknown Msg';
 

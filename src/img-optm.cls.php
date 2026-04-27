@@ -208,7 +208,8 @@ class Img_Optm extends Base {
 	 * @access public
 	 */
 	public function handler() {
-		$type = Router::verify_type();
+		$type      = Router::verify_type();
+		$extension = substr( $type, 0, 4 );
 
 		switch ( $type ) {
 			case self::TYPE_RESET_ROW:
@@ -254,9 +255,9 @@ class Img_Optm extends Base {
 				$this->batch_switch( $type );
 				break;
 
-			case substr( $type, 0, 4 ) === 'avif':
-			case substr( $type, 0, 4 ) === 'webp':
-			case substr( $type, 0, 4 ) === 'orig':
+			case 'avif' === $extension:
+			case 'webp' === $extension:
+			case 'orig' === $extension:
 				$this->_switch_optm_file( $type );
 				break;
 
