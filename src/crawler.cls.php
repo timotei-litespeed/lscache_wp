@@ -575,10 +575,22 @@ class Crawler extends Root {
 	/**
 	 * Get server load.
 	 *
+	 * Prefers per-account LVE pressure on CloudLinux/CageFS so the crawler
+	 * backs off based on this account's usage instead of the node-wide load
+	 * average. Falls back to sys_getloadavg() elsewhere.
+	 *
 	 * @since 5.5
-	 * @return int Load or -1 if unsupported.
+	 * @return float Load or -1 if unsupported.
 	 */
 	public function get_server_load() {
+		if ( ! defined( 'LITESPEED_CRAWLER_LVE_DISABLE' ) || ! LITESPEED_CRAWLER_LVE_DISABLE ) {
+			$lve_load = $this->_get_lve_load();
+			if ( false !== $lve_load ) {
+				self::debug( 'LVE load: ' . $lve_load );
+				return $lve_load;
+			}
+		}
+
 		if ( ! function_exists( 'sys_getloadavg' ) ) {
 			return -1;
 		}
@@ -587,6 +599,54 @@ class Crawler extends Root {
 		$curload = (float) $curload[0];
 		self::debug( 'Server load: ' . $curload );
 		return $curload;
+	}
+
+	/**
+	 * Read this account's row from /proc/lve/list and return a load-equivalent
+	 * value scaled to ncpu, so the existing load_limit comparison in
+	 * _adjust_current_threads() keeps its meaning (1.0/CPU == fully loaded).
+	 *
+	 * @since 7.9
+	 * @access private
+	 * @return float|false  Load-equivalent value, or false if LVE not available.
+	 */
+	private function _get_lve_load() {
+		if ( ! @is_readable( '/proc/lve/list' ) || ! function_exists( 'posix_geteuid' ) ) {
+			return false;
+		}
+
+		$uid   = posix_geteuid();
+		$lines = @file( '/proc/lve/list', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES );
+		if ( ! $lines ) {
+			return false;
+		}
+
+		$cols = array();
+		foreach ( $lines as $line ) {
+			if ( '' !== $line && '%' === $line[0] ) {
+				$cols = preg_split( '/\s+/', trim( ltrim( $line, '%' ) ) );
+				continue;
+			}
+			if ( ! $cols ) {
+				continue;
+			}
+			$vals = preg_split( '/\s+/', trim( $line ) );
+			if ( count( $vals ) !== count( $cols ) ) {
+				continue;
+			}
+			$row = array_combine( $cols, $vals );
+			if ( ! isset( $row['Id'] ) || (int) $row['Id'] !== (int) $uid ) {
+				continue;
+			}
+
+			$ep_pressure  = ( isset( $row['lEP'] ) && (float) $row['lEP'] > 0 ) ? (float) $row['EP'] / (float) $row['lEP'] : 0.0;
+			$cpu_pressure = ( isset( $row['lCPU'] ) && (float) $row['lCPU'] > 0 ) ? (float) $row['CPU'] / (float) $row['lCPU'] : 0.0;
+			$pressure     = max( $ep_pressure, $cpu_pressure );
+
+			return $pressure * (float) $this->_ncpu;
+		}
+
+		return false;
 	}
 
 	/**
