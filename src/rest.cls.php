@@ -37,6 +37,52 @@ class REST extends Root {
 		add_filter( 'rest_request_after_callbacks', [ $this, 'set_internal_rest_off' ] );
 
 		add_action( 'rest_api_init', [ $this, 'rest_api_init' ] );
+
+		// Allow programmers to attach extra HTTP response headers per REST route.
+		add_filter( 'rest_post_dispatch', [ $this, 'apply_response_headers' ], 10, 3 );
+	}
+
+	/**
+	 * Apply the `litespeed_rest_response_headers` filter to the dispatched REST response.
+	 *
+	 * Programmers can return a `name => value` map keyed by HTTP header name; each entry is
+	 * appended to the response (replacing any existing header of the same name) before WP
+	 * serializes it to the client.
+	 *
+	 * @since 7.9
+	 * @param \WP_REST_Response $response Dispatched response.
+	 * @param \WP_REST_Server   $server   REST server instance (unused).
+	 * @param \WP_REST_Request  $request  Request being handled.
+	 * @return \WP_REST_Response
+	 */
+	public function apply_response_headers( $response, $server, $request ) {
+		$route = $request->get_route();
+
+		/**
+		 * Filter custom HTTP response headers for REST API responses.
+		 *
+		 * Return a `name => value` map. Each entry is sent as an HTTP response header,
+		 * replacing any existing header of the same name.
+		 *
+		 * @since 7.9
+		 * @param array            $headers Map of header name => value. Defaults to [].
+		 * @param string           $route   REST route, e.g. "/wp/v2/posts".
+		 * @param \WP_REST_Request $request Request object.
+		 */
+		$headers = apply_filters( 'litespeed_rest_response_headers', [], $route, $request );
+
+		if ( ! is_array( $headers ) ) {
+			return $response;
+		}
+
+		foreach ( $headers as $name => $value ) {
+			if ( ! is_string( $name ) || '' === $name ) {
+				continue;
+			}
+			$response->header( $name, (string) $value, true );
+		}
+
+		return $response;
 	}
 
 	/**
