@@ -198,6 +198,11 @@ class Core extends Root {
 			$this->cls( 'Admin' );
 		}
 
+		if ( $this->cls( 'Router' )->esi_enabled() ) {
+			add_action( 'in_widget_form', [ $this->cls( 'Admin_Display' ), 'show_widget_edit' ], 100, 3 );
+			add_filter( 'widget_update_callback', __NAMESPACE__ . '\Admin_Settings::validate_widget_save', 10, 4 );
+		}
+
 		if ( defined( 'LITESPEED_DISABLE_ALL' ) && LITESPEED_DISABLE_ALL ) {
 			Debug2::debug( '[Core] Bypassed due to debug disable all setting' );
 			return;
