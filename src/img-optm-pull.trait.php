@@ -397,8 +397,33 @@ trait Img_Optm_Pull {
 					}
 					$row_type    = isset( $row_data['type'] ) ? $row_data['type'] : 'ori';
 					$row_img     = $row_data['data'];
-					$local_file  = $this->wp_upload_dir['basedir'] . '/' . $row_img->src;
 					$server_info = \json_decode( $row_img->server_info, true );
+
+					// Resolve uploads dir at write time. The constructor-cached snapshot can be stale or empty
+					// (multisite/async cron, 3rd-party `upload_dir` filters), which would otherwise let WebP/AVIF/ori
+					// files land outside wp-content/uploads — e.g. resolved against PHP's CWD (WP root, wp-admin).
+					$wp_upload_dir = wp_upload_dir( null, false, true );
+					$basedir       = isset( $wp_upload_dir['basedir'] ) ? $wp_upload_dir['basedir'] : '';
+					if ( '' === $basedir || ! path_is_absolute( $basedir ) || ! empty( $wp_upload_dir['error'] ) ) {
+						self::debug( '❌ Failed to pull optimized img: invalid uploads basedir [basedir] ' . $basedir );
+						$this->_step_back_image( $row_img->id );
+
+						$msg = __( 'Image optimization aborted: invalid WordPress uploads directory.', 'litespeed-cache' );
+						Admin_Display::error( $msg );
+						return;
+					}
+
+					$local_file       = $basedir . '/' . $row_img->src;
+					$normalized_base  = trailingslashit( wp_normalize_path( $basedir ) );
+					$normalized_local = wp_normalize_path( $local_file );
+					if ( 0 !== strpos( $normalized_local, $normalized_base ) ) {
+						self::debug( '❌ Failed to pull optimized img: target path escapes uploads basedir [target] ' . $local_file );
+						$this->_step_back_image( $row_img->id );
+
+						$msg = __( 'Image optimization aborted: target path outside uploads directory.', 'litespeed-cache' );
+						Admin_Display::error( $msg );
+						return;
+					}
 
 					// Handle status_code 404/5xx too as its success=true
 					if ( empty( $response->success ) || empty( $response->status_code ) || 200 !== $response->status_code ) {
