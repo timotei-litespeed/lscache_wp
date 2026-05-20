@@ -466,11 +466,11 @@ class Core extends Root {
 				Debug2::debug( '[Core] Optimax served, skip litespeed_buffer_finalize' );
 				define( 'LITESPEED_OX_SERVED', true );
 				$buffer = $ox_html;
-			} else {
-				Debug2::debug( '[Core] run hook litespeed_buffer_finalize' );
-				$buffer = apply_filters( 'litespeed_buffer_finalize', $buffer );
 			}
 		}
+
+		Debug2::debug( '[Core] run hook litespeed_buffer_finalize' );
+		$buffer = apply_filters( 'litespeed_buffer_finalize', $buffer );
 
 		/**
 		 * Replace ESI preserved list
