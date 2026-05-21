@@ -1,0 +1,994 @@
+diff --git a/src/optimax.cls.php b/src/optimax.cls.php
+index 7c4f4a26..cd5833d9 100644
+--- a/src/optimax.cls.php
++++ b/src/optimax.cls.php
+@@ -38,227 +38,121 @@ class Optimax extends Cloud_Queue_Svc {
+ 	}
+ 
+ 	/**
+-	 * Generate URL tag for Optimax.
+-	 *
+-	 * @since 8.0
++	 * Svc id slug — drives queue type, Cloud::SVC_OPTIMAX, and summary key prefix.
+ 	 *
+-	 * @param string $request_url Current request URL.
+-	 * @return string The URL tag.
++	 * @return string
+ 	 */
+-	public static function get_url_tag( $request_url ) {
+-		if ( is_404() ) {
+-			return '404';
+-		}
+-
+-		return $request_url;
++	protected function _svc_id() {
++		return 'optimax';
+ 	}
+ 
+ 	/**
+-	 * Get User Agent.
+-	 *
+-	 * @since 8.0
++	 * Response field carrying the optimization payload (nested object).
+ 	 *
+-	 * @return string The user agent string.
++	 * @return string
+ 	 */
+-	private function _get_ua() {
+-		return ! empty( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
++	protected function _data_key() {
++		return 'data_optimax';
+ 	}
+ 
+ 	/**
+-	 * Cron handler for generation.
++	 * Optimax processes whole pages — needs a longer PHP execution window.
+ 	 *
+-	 * @since 8.0
+-	 *
+-	 * @param bool $keep_going Whether to continue processing.
+-	 * @return mixed The cron handler result.
++	 * @return int
+ 	 */
+-	public static function cron( $keep_going = false ) {
+-		$_instance = self::cls();
+-		return $_instance->_cron_handler( $keep_going );
++	protected function _php_time_limit() {
++		return 1200;
+ 	}
+ 
+ 	/**
+-	 * Handle Optimax generation cron.
++	 * Legacy summary key for the try_later deadline; kept across upgrades.
+ 	 *
+-	 * @since 8.0
+-	 *
+-	 * @param bool $keep_going Whether to continue processing.
+-	 * @return mixed The redirect result or void.
++	 * @return string
+ 	 */
+-	private function _cron_handler( $keep_going ) {
+-		$this->_queue = $this->load_queue( 'optimax' );
+-
+-		if ( empty( $this->_queue ) ) {
+-			return;
+-		}
+-
+-		// Check if we need to wait due to server's try_later request
+-		if ( ! empty( $this->_summary[ 'ox_next_run_after' ] ) && time() < $this->_summary['ox_next_run_after'] ) {
+-			$wait_seconds = $this->_summary['ox_next_run_after'] - time();
+-			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
+-			return;
+-		}
+-
+-		// Clear try_later flag if wait time has passed
+-		if ( ! empty( $this->_summary['ox_next_run_after'] ) ) {
+-			unset( $this->_summary['ox_next_run_after'] );
+-			self::save_summary();
+-			self::debug( 'Cleared try_later flag, resuming ox processing' );
+-		}
+-
+-		// Check request interval
+-		if ( ! $keep_going ) {
+-			if ( ! empty( $this->_summary['curr_request'] ) && time() - $this->_summary['curr_request'] < 300 && ! $this->conf( self::O_DEBUG ) ) {
+-				self::debug( 'Last request not done' );
+-				return;
+-			}
+-		}
+-
+-		foreach ( $this->_queue as $k => $v ) {
+-			self::debug( 'cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
+-
+-			$res = $this->_send_req( $v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $v['is_mobile'], $v['is_nextgen'] );
+-			if ( ! $res ) {
+-				// Status error, remove from queue
+-				$this->_queue = $this->load_queue( 'optimax' );
+-				unset( $this->_queue[ $k ] );
+-				$this->save_queue( 'optimax', $this->_queue );
+-
+-				if ( ! $keep_going ) {
+-					return;
+-				}
+-
+-				continue;
+-			}
+-
+-			// Exit queue if out of quota or service is hot
+-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+-				return;
+-			}
+-
+-			// Handle try_later response from server
+-			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
+-				$ttl                                 = (int) $res['try_later'];
+-				$next_run_time                       = time() + $ttl;
+-				$this->_summary['ox_next_run_after'] = $next_run_time;
+-				self::save_summary();
+-				self::debug( 'Set next ox cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
+-			}
+-
+-			// Handle completed response (sync mode)
+-			if ( 'completed' === $res ) {
+-				self::debug( 'Optimax completed for [k] ' . $k );
+-			}
+-
+-			// Only process first one
+-			if ( ! $keep_going ) {
+-				return;
+-			}
+-		}
++	protected function _next_run_after_key() {
++		return 'ox_next_run_after';
+ 	}
+ 
+ 	/**
+-	 * Send request to QC API for optimization.
++	 * Build the request body for Cloud::post.
+ 	 *
+-	 * @since 8.0
+-	 *
+-	 * @param string    $request_url The request URL.
+-	 * @param string    $queue_k     The queue key.
+-	 * @param int|false $uid         The user ID.
+-	 * @param string    $user_agent  The user agent.
+-	 * @param string    $vary        The vary string.
+-	 * @param string    $url_tag     The URL tag.
+-	 * @param bool      $is_mobile   Whether is mobile.
+-	 * @param string    $is_nextgen  Next-gen image format ('webp', 'avif', or '').
+-	 * @return string|bool|null The result status.
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return array
+ 	 */
+-	private function _send_req( $request_url, $queue_k, $uid, $user_agent, $vary, $url_tag, $is_mobile, $is_nextgen ) {
+-		// Check if has credit
+-		$err       = false;
+-		$allowance = $this->cls( 'Cloud' )->allowance( Cloud::SVC_OPTIMAX, $err );
+-		if ( ! $allowance ) {
+-			self::debug( '❌ No credit: ' . $err );
+-			$err && Admin_Display::error( Error::msg( $err ) );
+-			return 'out_of_quota';
+-		}
+-
+-		set_time_limit( 1200 );
+-
+-		// Update request status
+-		$this->_summary['curr_request'] = time();
+-		self::save_summary();
+-
+-		$data = [
+-			'url'        => $request_url,
++	protected function _build_payload( $queue_k, $v ) {
++		return [
++			'url'        => $v['url'],
+ 			'queue_k'    => $queue_k,
+-			'user_agent' => $user_agent,
+-			'is_mobile'  => $is_mobile ? 1 : 0,
+-			'is_nextgen' => $is_nextgen ? $is_nextgen : '',
++			'user_agent' => $v['user_agent'],
++			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
++			'is_nextgen' => ! empty( $v['is_nextgen'] ) ? $v['is_nextgen'] : '',
+ 		];
++	}
+ 
+-		self::debug( 'Generating: ', $data );
+-
+-		$json = Cloud::post( Cloud::SVC_OPTIMAX, $data, 30 );
+-		if ( ! is_array( $json ) ) {
+-			return $json;
+-		}
+-
+-		// Check if server asks to try later
+-		if ( ! empty( $json['try_later'] ) ) {
+-			$ttl = (int) $json['try_later'];
+-			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
+-			return [ 'try_later' => $ttl ];
+-		}
+-
+-		// Check response status
+-		if ( empty( $json['status'] ) ) {
+-			self::debug( '❌ No status in response' );
+-			return false;
+-		}
+-
+-		// Handle sync response with file data
+-		if ( empty( $json['data_optimax'] ) ) {
+-			self::debug( '❌ Unknown status: ' . $json['status'] );
+-			return false;
+-		}
+-
+-		self::debug( '✅ Received Optimax data, processing...' );
+-
+-		$ox = $json['data_optimax'];
+-
+-		// 1. Save HTML
++	/**
++	 * Fan out the nested optimization payload to four save targets.
++	 *
++	 * @param array  $ox      data_optimax payload.
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool False when HTML is missing (abort), true otherwise.
++	 */
++	protected function _save_result( $ox, $queue_k, $v ) {
+ 		if ( empty( $ox['html'] ) ) {
+ 			self::debug( '❌ No HTML in data_optimax [k] ' . $queue_k );
+ 			return false;
+ 		}
+-		$this->_save_con( $ox['html'], $queue_k, $is_mobile, $is_nextgen );
+ 
+-		// 2. Save UCSS
++		$is_mobile  = ! empty( $v['is_mobile'] );
++		$is_nextgen = ! empty( $v['is_nextgen'] ) ? $v['is_nextgen'] : '';
++
++		// 1. Save HTML.
++		$this->_save_con( $ox['html'], $queue_k, $is_mobile, $is_nextgen, $v );
++
++		// 2. Save UCSS.
+ 		if ( ! empty( $ox['ucss'] ) ) {
+-			$this->_save_ucss( $ox['ucss'], $queue_k, $is_mobile, $is_nextgen );
++			$this->_save_css_con( 'ucss', $ox['ucss'], $v['url_tag'], $v['vary'], $queue_k, $is_mobile, $is_nextgen );
+ 		}
+ 
+-		// 3. Save CCSS
++		// 3. Save CCSS.
+ 		if ( ! empty( $ox['ccss'] ) ) {
+-			$this->_save_ccss( $ox['ccss'], $queue_k, $is_mobile, $is_nextgen );
++			$this->_save_css_con( 'ccss', $ox['ccss'], $v['url_tag'], $v['vary'], $queue_k, $is_mobile, $is_nextgen );
+ 		}
+ 
+-		// 4. Save optimized images
++		// 4. Save optimized images.
+ 		if ( ! empty( $ox['imgs'] ) ) {
+ 			$this->_save_imgs( $ox['imgs'] );
+ 		}
+ 
+-		// Remove from queue
+-		unset( $this->_queue[ $queue_k ] );
+-		$this->save_queue( 'optimax', $this->_queue );
+-		self::debug( 'Removed from queue [q_k] ' . $queue_k );
++		return true;
++	}
+ 
+-		// Save summary data
+-		$this->_summary['last_request'] = $this->_summary['curr_request'];
+-		$this->_summary['curr_request'] = 0;
+-		self::save_summary();
++	/**
++	 * Generate URL tag for Optimax.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $request_url Current request URL.
++	 * @return string The URL tag.
++	 */
++	public static function get_url_tag( $request_url ) {
++		if ( is_404() ) {
++			return '404';
++		}
++
++		return $request_url;
++	}
+ 
+-		return 'completed';
++	/**
++	 * Get User Agent.
++	 *
++	 * @since 8.0
++	 *
++	 * @return string The user agent string.
++	 */
++	private function _get_ua() {
++		return ! empty( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+ 	}
+ 
+ 	/**
+@@ -358,40 +252,6 @@ class Optimax extends Cloud_Queue_Svc {
+ 		return home_url( $wp->request ) . $qs_add;
+ 	}
+ 
+-	/**
+-	 * Save UCSS content to ucss/ directory.
+-	 *
+-	 * @since 8.0
+-	 *
+-	 * @param string $ucss      The UCSS content.
+-	 * @param string $queue_k   The queue key.
+-	 * @param bool   $is_mobile Whether is mobile.
+-	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
+-	 * @return void
+-	 */
+-	private function _save_ucss( $ucss, $queue_k, $is_mobile, $is_nextgen ) {
+-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
+-		$vary    = $this->_queue[ $queue_k ]['vary'];
+-		$this->_save_css_con( 'ucss', $ucss, $url_tag, $vary, $queue_k, $is_mobile, $is_nextgen );
+-	}
+-
+-	/**
+-	 * Save CCSS content to ccss/ directory.
+-	 *
+-	 * @since 8.0
+-	 *
+-	 * @param string $ccss      The CCSS content.
+-	 * @param string $queue_k   The queue key.
+-	 * @param bool   $is_mobile Whether is mobile.
+-	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
+-	 * @return void
+-	 */
+-	private function _save_ccss( $ccss, $queue_k, $is_mobile, $is_nextgen ) {
+-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
+-		$vary    = $this->_queue[ $queue_k ]['vary'];
+-		$this->_save_css_con( 'ccss', $ccss, $url_tag, $vary, $queue_k, $is_mobile, $is_nextgen );
+-	}
+-
+ 	/**
+ 	 * Download and save optimized images locally.
+ 	 *
+@@ -466,16 +326,16 @@ class Optimax extends Cloud_Queue_Svc {
+ 	}
+ 
+ 	/**
+-	 * Save optimized content.
++	 * Save optimized HTML content.
+ 	 *
+-	 * @since 8.0
+-	 *
+-	 * @param string $content   The optimized content.
+-	 * @param string $queue_k   The queue key.
+-	 * @param bool   $is_mobile Whether is mobile.
++	 * @param string $content    The optimized content.
++	 * @param string $queue_k    The queue key.
++	 * @param bool   $is_mobile  Whether is mobile.
+ 	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
++	 * @param array  $v          Queue item.
++	 * @return void
+ 	 */
+-	private function _save_con( $content, $queue_k, $is_mobile, $is_nextgen ) {
++	private function _save_con( $content, $queue_k, $is_mobile, $is_nextgen, $v ) {
+ 		$content = apply_filters( 'litespeed_optimax', $content, $queue_k );
+ 		self::debug2( 'con: ', $content );
+ 
+@@ -487,38 +347,12 @@ class Optimax extends Cloud_Queue_Svc {
+ 
+ 		File::save( $static_file, $content, true );
+ 
+-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
+-		$vary    = $this->_queue[ $queue_k ]['vary'];
++		$url_tag = $v['url_tag'];
++		$vary    = $v['vary'];
+ 		self::debug2( "Save URL to file [file] $static_file [vary] $vary" );
+ 
+ 		$this->cls( 'Data' )->save_url( $url_tag, $vary, 'optimax', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
+ 
+ 		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
+ 	}
+-
+-	/**
+-	 * Handle all request actions from main cls.
+-	 *
+-	 * @since 8.0
+-	 *
+-	 * @return void
+-	 */
+-	public function handler() {
+-		$type = Router::verify_type();
+-
+-		switch ( $type ) {
+-			case self::TYPE_GEN:
+-				self::cron( true );
+-				break;
+-
+-			case self::TYPE_CLEAR_Q:
+-				$this->clear_q( 'optimax' );
+-				break;
+-
+-			default:
+-				break;
+-		}
+-
+-		Admin::redirect();
+-	}
+ }
+diff --git a/src/ucss.cls.php b/src/ucss.cls.php
+index 90e6d368..acbba07a 100644
+--- a/src/ucss.cls.php
++++ b/src/ucss.cls.php
+@@ -44,6 +44,73 @@ class UCSS extends Cloud_Queue_Svc {
+ 		add_filter( 'litespeed_ucss_whitelist', [ $this->cls( 'Data' ), 'load_ucss_whitelist' ] );
+ 	}
+ 
++	/**
++	 * Svc id slug — drives queue type, Cloud::SVC_UCSS, and summary key prefix.
++	 *
++	 * @return string
++	 */
++	protected function _svc_id() {
++		return 'ucss';
++	}
++
++	/**
++	 * Response field carrying the generated CSS.
++	 *
++	 * @return string
++	 */
++	protected function _data_key() {
++		return 'data_ucss';
++	}
++
++	/**
++	 * UI templates read `last_request` directly (settings_css.tpl.php,
++	 * dashboard.tpl.php). Keep the legacy unsuffixed key.
++	 *
++	 * @return string
++	 */
++	protected function _last_request_key() {
++		return 'last_request';
++	}
++
++	/**
++	 * Build the request body for Cloud::post.
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return array
++	 */
++	protected function _build_payload( $queue_k, $v ) {
++		if ( ! isset( $this->_ucss_whitelist ) ) {
++			$this->_ucss_whitelist = $this->_filter_whitelist();
++		}
++		return [
++			'url'        => $v['url'],
++			'queue_k'    => $queue_k,
++			'user_agent' => $v['user_agent'],
++			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
++			'is_webp'    => ! empty( $v['is_webp'] ) ? 1 : 0,
++			'whitelist'  => $this->_ucss_whitelist,
++		];
++	}
++
++	/**
++	 * Persist the generated UCSS to disk. Empty payload is treated as a
++	 * generation error (matches pre-refactor UCSS behavior at
++	 * commit b88b7e53): drop the queue item rather than persist a blank.
++	 *
++	 * @param string $data    UCSS content.
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool
++	 */
++	protected function _save_result( $data, $queue_k, $v ) {
++		if ( empty( $data ) ) {
++			return false;
++		}
++		$this->_save_css_con( 'ucss', $data, $v['url_tag'], $v['vary'], $queue_k, ! empty( $v['is_mobile'] ), ! empty( $v['is_webp'] ) );
++		return true;
++	}
++
+ 	/**
+ 	 * Uniform url tag for ucss usage
+ 	 *
+@@ -181,8 +248,8 @@ class UCSS extends Cloud_Queue_Svc {
+ 			$is_webp     = $url_file['webp'];
+ 			$url_tag     = self::get_url_tag( $request_url );
+ 
+-			$queue_k = (strlen($vary) > 32 ? md5($vary) : $vary) . ' ' . $url_tag;
+-			$q       = [
++			$queue_k                  = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
++			$this->_queue[ $queue_k ] = [
+ 				'url'        => apply_filters( 'litespeed_ucss_url', $request_url ),
+ 				'user_agent' => substr( $ua, 0, 200 ),
+ 				'is_mobile'  => $is_mobile,
+@@ -192,211 +259,9 @@ class UCSS extends Cloud_Queue_Svc {
+ 				'url_tag'    => $url_tag,
+ 			]; // Current UA will be used to request
+ 
+-			self::debug('Added queue_ucss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] false');
+-			$this->_queue[$queue_k] = $q;
+-		}
+-		$this->save_queue('ucss', $this->_queue);
+-	}
+-
+-	/**
+-	 * Generate UCSS
+-	 *
+-	 * @since  4.0
+-	 *
+-	 * @param bool $keep_going Whether to continue processing.
+-	 * @return mixed The cron handler result.
+-	 */
+-	public static function cron( $keep_going = false ) {
+-		$_instance = self::cls();
+-		return $_instance->_cron_handler( $keep_going );
+-	}
+-
+-	/**
+-	 * Handle UCSS cron
+-	 *
+-	 * @since 4.2
+-	 *
+-	 * @param bool $keep_going Whether to continue processing.
+-	 * @return mixed The redirect result or void.
+-	 */
+-	private function _cron_handler( $keep_going ) {
+-		$this->_queue = $this->load_queue( 'ucss' );
+-
+-		if ( empty( $this->_queue ) ) {
+-			return;
+-		}
+-
+-		// Check if we need to wait due to server's try_later request
+-		if ( ! empty( $this->_summary['ucss_next_run_after'] ) && time() < $this->_summary['ucss_next_run_after'] ) {
+-			$wait_seconds = $this->_summary['ucss_next_run_after'] - time();
+-			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
+-			return;
+-		}
+-
+-		// Clear try_later flag if wait time has passed
+-		if ( ! empty( $this->_summary['ucss_next_run_after'] ) ) {
+-			unset( $this->_summary['ucss_next_run_after'] );
+-			self::save_summary();
+-			self::debug( 'Cleared try_later flag, resuming UCSS processing' );
+-		}
+-
+-		// For cron, need to check request interval too
+-		if ( ! $keep_going ) {
+-			if (!empty($this->_summary['curr_request']) && time() - $this->_summary['curr_request'] < 300 && !$this->conf(self::O_DEBUG)) {
+-				self::debug('Last request not done');
+-				return;
+-			}
+-		}
+-
+-		foreach ($this->_queue as $k => $v) {
+-			self::debug('cron job [tag] ' . $k . ' [url] ' . $v['url'] . ($v['is_mobile'] ? ' 📱 ' : '') . ' [UA] ' . $v['user_agent']);
+-
+-			if (!isset($v['is_webp'])) {
+-				$v['is_webp'] = false;
+-			}
+-
+-			$res = $this->_send_req($v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $v['is_mobile'], $v['is_webp']);
+-			if (!$res) {
+-				// Status is wrong, drop this this->_queue
+-				$this->_queue = $this->load_queue('ucss');
+-				unset($this->_queue[$k]);
+-				$this->save_queue('ucss', $this->_queue);
+-
+-				if ( ! $keep_going ) {
+-					return;
+-				}
+-
+-				continue;
+-			}
+-
+-			// Exit queue if out of quota or service is hot
+-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+-				return;
+-			}
+-
+-			// Handle try_later response from server
+-			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
+-				$ttl                                   = (int) $res['try_later'];
+-				$next_run_time                         = time() + $ttl;
+-				$this->_summary['ucss_next_run_after'] = $next_run_time;
+-				self::save_summary();
+-				self::debug( 'Set next UCSS cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
+-			}
+-
+-			// Handle completed response (sync mode)
+-			if ( 'completed' === $res ) {
+-				self::debug( 'UCSS completed for [k] ' . $k );
+-			}
+-
+-			// only request first one
+-			if ( ! $keep_going ) {
+-				return;
+-			}
+-		}
+-	}
+-
+-	/**
+-	 * Send to QC API to generate UCSS
+-	 *
+-	 * @since  2.3
+-	 * @access private
+-	 *
+-	 * @param string    $request_url The request URL.
+-	 * @param string    $queue_k     The queue key.
+-	 * @param int|false $uid         The user ID.
+-	 * @param string    $user_agent  The user agent.
+-	 * @param string    $vary        The vary string.
+-	 * @param string    $url_tag     The URL tag.
+-	 * @param bool      $is_mobile   Whether is mobile.
+-	 * @param bool      $is_webp     Whether supports webp.
+-	 * @return string|bool|null The result status.
+-	 */
+-	private function _send_req( $request_url, $queue_k, $uid, $user_agent, $vary, $url_tag, $is_mobile, $is_webp ) {
+-		// Check if has credit to push or not
+-		$err       = false;
+-		$allowance = $this->cls('Cloud')->allowance(Cloud::SVC_UCSS, $err);
+-		if (!$allowance) {
+-			self::debug('❌ No credit: ' . $err);
+-			$err && Admin_Display::error(Error::msg($err));
+-			return 'out_of_quota';
+-		}
+-
+-		set_time_limit(120);
+-
+-		// Update css request status
+-		$this->_summary['curr_request'] = time();
+-		self::save_summary();
+-
+-		$data = [
+-			'url'        => $request_url,
+-			'queue_k'    => $queue_k,
+-			'user_agent' => $user_agent,
+-			'is_mobile'  => $is_mobile ? 1 : 0, // todo:compatible w/ tablet
+-			'is_webp'    => $is_webp ? 1 : 0,
+-		];
+-		if (!isset($this->_ucss_whitelist)) {
+-			$this->_ucss_whitelist = $this->_filter_whitelist();
+-		}
+-		$data['whitelist'] = $this->_ucss_whitelist;
+-
+-		self::debug('Generating: ', $data);
+-
+-		$json = Cloud::post(Cloud::SVC_UCSS, $data, 30);
+-		if (!is_array($json)) {
+-			return $json;
+-		}
+-
+-		// Check if server asks to try later
+-		if ( ! empty( $json['try_later'] ) ) {
+-			$ttl = (int) $json['try_later'];
+-			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
+-			return [ 'try_later' => $ttl ];
++			self::debug( 'Added queue_ucss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] false' );
+ 		}
+-
+-		// Check response status
+-		if ( empty( $json['status'] ) ) {
+-			self::debug( '❌ No status in response' );
+-			return false;
+-		}
+-
+-		// Handle sync response with data
+-		if ( ! empty( $json['data_ucss'] ) ) {
+-			self::debug( '✅ Received UCSS data, saving...' );
+-			$this->_save_con( 'ucss', $json['data_ucss'], $queue_k, $is_mobile, $is_webp );
+-
+-			// Remove from queue
+-			unset( $this->_queue[ $queue_k ] );
+-			$this->save_queue( 'ucss', $this->_queue );
+-			self::debug( 'Removed from queue [q_k] ' . $queue_k );
+-
+-			// Save summary data
+-			$this->_summary['last_request'] = $this->_summary['curr_request'];
+-			$this->_summary['curr_request'] = 0;
+-			self::save_summary();
+-
+-			return 'completed';
+-		}
+-
+-		// Unknown status
+-		self::debug( '❌ Unknown status: ' . $json['status'] );
+-		return false;
+-	}
+-
+-	/**
+-	 * Save UCSS content
+-	 *
+-	 * @since 4.2
+-	 *
+-	 * @param string $type      The content type.
+-	 * @param string $css       The CSS content.
+-	 * @param string $queue_k   The queue key.
+-	 * @param bool   $is_mobile Whether is mobile.
+-	 * @param bool   $is_webp   Whether supports webp.
+-	 */
+-	private function _save_con( $type, $css, $queue_k, $is_mobile, $is_webp ) {
+-		$url_tag = $this->_queue[$queue_k]['url_tag'];
+-		$vary    = $this->_queue[$queue_k]['vary'];
+-		$this->_save_css_con( $type, $css, $url_tag, $vary, $queue_k, $is_mobile, $is_webp );
++		$this->save_queue( 'ucss', $this->_queue );
+ 	}
+ 
+ 	/**
+diff --git a/src/vpi.cls.php b/src/vpi.cls.php
+index eee33837..628ab8a2 100644
+--- a/src/vpi.cls.php
++++ b/src/vpi.cls.php
+@@ -58,6 +58,74 @@ class VPI extends Cloud_Queue_Svc {
+ 		$this->_summary = self::get_summary();
+ 	}
+ 
++	/**
++	 * Svc id slug — drives queue type, Cloud::SVC_VPI, and summary key prefix.
++	 *
++	 * @return string
++	 */
++	protected function _svc_id() {
++		return 'vpi';
++	}
++
++	/**
++	 * Response field carrying the viewport image data.
++	 *
++	 * @return string
++	 */
++	protected function _data_key() {
++		return 'data_vpi';
++	}
++
++	/**
++	 * UI templates read `last_request` directly (settings_vpi.tpl.php,
++	 * dashboard.tpl.php). Keep the legacy unsuffixed key.
++	 *
++	 * @return string
++	 */
++	protected function _last_request_key() {
++		return 'last_request';
++	}
++
++	/**
++	 * Build the request body for Cloud::post.
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return array
++	 */
++	protected function _build_payload( $queue_k, $v ) {
++		return [
++			'url'        => $v['url'],
++			'queue_k'    => $queue_k,
++			'user_agent' => $v['user_agent'],
++			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
++		];
++	}
++
++	/**
++	 * Persist the viewport image list to post meta. Empty/null payload is
++	 * persisted as an empty list (matches pre-refactor VPI behavior) so the
++	 * post is marked processed and not re-queued.
++	 *
++	 * @param mixed  $data    VPI data (array, string, or null).
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool
++	 */
++	protected function _save_result( $data, $queue_k, $v ) {
++		$name = ! empty( $v['is_mobile'] ) ? self::POST_META_MOBILE : self::POST_META;
++		if ( is_array( $data ) ) {
++			$urldecode = array_map( 'urldecode', $data );
++		} elseif ( null === $data || '' === $data ) {
++			$urldecode = '';
++		} else {
++			$urldecode = urldecode( (string) $data );
++		}
++		self::debug( 'save data_vpi', $urldecode );
++		$this->cls( 'Metabox' )->save( (int) $v['post_id'], $name, $urldecode );
++		return true;
++	}
++
+ 	/**
+ 	 * Queue the current page for VPI generation.
+ 	 *
+@@ -114,200 +182,4 @@ class VPI extends Cloud_Queue_Svc {
+ 		// Prepare cache tag for later purge.
+ 		Tag::add( 'VPI.' . md5( $queue_k ) );
+ 	}
+-
+-	/**
+-	 * Cron entry point.
+-	 *
+-	 * @since 4.7
+-	 *
+-	 * @param bool $do_continue Continue processing multiple queue items within one cron tick.
+-	 * @return mixed Result of the handler.
+-	 */
+-	public static function cron( $do_continue = false ) {
+-		$_instance = self::cls();
+-		return $_instance->_cron_handler( $do_continue );
+-	}
+-
+-	/**
+-	 * Cron queue processor.
+-	 *
+-	 * @since 4.7
+-	 *
+-	 * @param bool $do_continue Continue processing multiple queue items within one cron tick.
+-	 * @return void
+-	 */
+-	private function _cron_handler( $do_continue = false ) {
+-		self::debug( 'cron start' );
+-		$this->_queue = $this->load_queue( 'vpi' );
+-
+-		if ( empty( $this->_queue ) ) {
+-			return;
+-		}
+-
+-		// TODO: uniformize with CCSS/UCSS cron
+-		// Check if we need to wait due to server's try_later request
+-		if ( ! empty( $this->_summary[ 'vpi_next_run_after' ] ) && time() < $this->_summary['vpi_next_run_after'] ) {
+-			$wait_seconds = $this->_summary['vpi_next_run_after'] - time();
+-			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
+-			return;
+-		}
+-
+-		// Clear try_later flag if wait time has passed
+-		if ( ! empty( $this->_summary['vpi_next_run_after'] ) ) {
+-			unset( $this->_summary['vpi_next_run_after'] );
+-			self::save_summary();
+-			self::debug( 'Cleared try_later flag, resuming vpi processing' );
+-		}
+-
+-		// For cron, need to check request interval too.
+-		if ( ! $do_continue ) {
+-			if ( ! empty( $this->_summary['curr_request_vpi'] ) && time() - (int) $this->_summary['curr_request_vpi'] < 300 && ! $this->conf( self::O_DEBUG ) ) {
+-				self::debug( 'Last request not done' );
+-				return;
+-			}
+-		}
+-
+-		foreach ( $this->_queue as $k => $v ) {
+-			self::debug( 'cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
+-
+-			$res = $this->_send_req( $v['url'], $k, $v['user_agent'], $v['is_mobile'], (int) $v['post_id'] );
+-			if ( ! $res ) {
+-				// Status is wrong, drop this item from queue.
+-				$this->_queue = $this->load_queue( 'vpi' );
+-				unset( $this->_queue[ $k ] );
+-				$this->save_queue( 'vpi', $this->_queue );
+-
+-				if ( ! $do_continue ) {
+-					return;
+-				}
+-			}
+-
+-			// Exit queue if out of quota or service is hot.
+-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+-				return;
+-			}
+-
+-			// Handle try_later response from server
+-			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
+-				$ttl                                  = (int) $res['try_later'];
+-				$next_run_time                        = time() + $ttl;
+-				$this->_summary['vpi_next_run_after'] = $next_run_time;
+-				self::save_summary();
+-				self::debug( 'Set next VPI cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
+-			}
+-
+-			// only request first one if not continuing.
+-			if ( ! $do_continue ) {
+-				return;
+-			}
+-		}
+-	}
+-
+-	/**
+-	 * Send request to QUIC.cloud API to generate VPI.
+-	 *
+-	 * @since 4.7
+-	 * @access private
+-	 *
+-	 * @param string $request_url The URL to analyze for VPI.
+-	 * @param string $queue_k     Queue key for this job.
+-	 * @param string $user_agent  Sanitized User-Agent string (<=200 chars).
+-	 * @param bool   $is_mobile   Whether the job is for mobile viewport.
+-	 * @param int    $post_id     The post ID associated with this VPI request.
+-	 * @return bool|string True on queued successfully, 'out_of_quota'/'svc_hot' on throttling, or false on error.
+-	 */
+-	private function _send_req( $request_url, $queue_k, $user_agent, $is_mobile, $post_id ) {
+-		$svc = Cloud::SVC_VPI;
+-
+-		// Check if has credit to push or not.
+-		$err       = false;
+-		$allowance = $this->cls( 'Cloud' )->allowance( $svc, $err );
+-		if ( ! $allowance ) {
+-			self::debug( '❌ No credit: ' . $err );
+-			$err && Admin_Display::error( Error::msg( $err ) );
+-			return 'out_of_quota';
+-		}
+-
+-		set_time_limit( 120 );
+-
+-		// Update request status.
+-		self::save_summary( [ 'curr_request_vpi' => time() ], true );
+-
+-		// Parse HTML to gather CSS content before requesting.
+-		$data = [
+-			'url'        => $request_url,
+-			'queue_k'    => $queue_k,
+-			'user_agent' => $user_agent,
+-			'is_mobile'  => $is_mobile ? 1 : 0, // todo: compatible w/ tablet.
+-		];
+-		self::debug( 'Generating: ', $data );
+-
+-		$json = Cloud::post( $svc, $data, 30 );
+-		if ( ! is_array( $json ) ) {
+-			return $json;
+-		}
+-
+-		// Check if server asks to try later
+-		if ( ! empty( $json['try_later'] ) ) {
+-			$ttl = (int) $json['try_later'];
+-			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
+-			return [ 'try_later' => $ttl ];
+-		}
+-
+-		// Check response status
+-		if ( empty( $json['status'] ) ) {
+-			self::debug( '❌ No status in response' );
+-			return false;
+-		}
+-
+-		if ( empty( $json['data_vpi'] ) ) {
+-			self::debug( '❌ No VPI data [status] ' . $json['status'] );
+-		}
+-
+-		// Save data.
+-		self::debug( '✅ Received VPI data, saving...' );
+-		$name      = $is_mobile ? self::POST_META_MOBILE : self::POST_META;
+-		$urldecode = is_array( $json['data_vpi'] ) ? array_map( 'urldecode', $json['data_vpi'] ) : urldecode( $json['data_vpi'] );
+-		self::debug( 'save data_vpi', $urldecode );
+-		$this->cls( 'Metabox' )->save( $post_id, $name, $urldecode );
+-
+-		// Remove from queue
+-		unset( $this->_queue[ $queue_k ] );
+-		$this->save_queue( 'vpi', $this->_queue );
+-		self::debug( 'Removed from queue [q_k] ' . $queue_k );
+-
+-		// Save summary data
+-		$this->_summary['last_request'] = $this->_summary['curr_request'];
+-		$this->_summary['curr_request'] = 0;
+-
+-		$this->_summary['curr_request_vpi'] = 0;
+-		self::save_summary();
+-
+-		return true;
+-	}
+-
+-	/**
+-	 * Handle all request actions from main controller.
+-	 *
+-	 * @since 4.7
+-	 * @return void
+-	 */
+-	public function handler() {
+-		$type = Router::verify_type();
+-
+-		switch ( $type ) {
+-			case self::TYPE_GEN:
+-            self::cron( true );
+-				break;
+-
+-			case self::TYPE_CLEAR_Q:
+-            $this->clear_q( 'vpi' );
+-				break;
+-
+-			default:
+-				break;
+-		}
+-
+-		Admin::redirect();
+-	}
+ }

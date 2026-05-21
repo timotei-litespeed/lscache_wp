@@ -1,0 +1,4822 @@
+diff --git a/assets/js/component.cdn.js b/assets/js/component.cdn.js
+index d186dc40..55b2be7a 100644
+--- a/assets/js/component.cdn.js
++++ b/assets/js/component.cdn.js
+@@ -156,6 +156,11 @@ class CDNMappingBlock extends React.Component {
+ 				<div className="litespeed-col-auto">
+ 					<label className="litespeed-form-label">{litespeed_data['lang']['cdn_mapping_filetype']}</label>
+ 					<textarea name={name_prefix + '[filetype][]'} rows={filetype.split('\n').length + 2} cols="18" value={filetype} data-type="filetype" onChange={this.onChange} />
++					<div className="litespeed-desc">
++						<a href={litespeed_data['lang']['cdn_file_types_url']} target="_blank" rel="noopener noreferrer">
++							{litespeed_data['lang']['cdn_file_types_link_text']}
++						</a>
++					</div>
+ 				</div>
+ 
+ 				<div className="litespeed-col-auto">
+diff --git a/assets/js/js_delay.js b/assets/js/js_delay.js
+index 4bbe123e..4a5f6507 100644
+--- a/assets/js/js_delay.js
++++ b/assets/js/js_delay.js
+@@ -1,4 +1,4 @@
+-window.litespeed_ui_events = window.litespeed_ui_events || ['mouseover', 'click', 'keydown', 'wheel', 'touchmove', 'touchstart'];
++window.litespeed_ui_events = window.litespeed_ui_events || ['mouseover', 'click', 'keydown', 'wheel', 'touchmove', 'touchstart', 'pointerup', 'pointerdown'];
+ var urlCreator = window.URL || window.webkitURL;
+ 
+ // const litespeed_js_delay_timer = setTimeout( litespeed_load_delayed_js, 70 );
+@@ -51,8 +51,16 @@ function litespeed_load_one(e, resolve) {
+ 
+ 	var e2 = document.createElement('script');
+ 
+-	e2.addEventListener('load', resolve);
+-	e2.addEventListener('error', resolve);
++	// Memory Cleanup & Resolution logic
++	var handler = function() {
++		if (e2.src.startsWith('blob:')) {
++			URL.revokeObjectURL(e2.src); // RECLAIM MEMORY
++		}
++		resolve();
++	};
++
++	e2.addEventListener('load', handler);
++	e2.addEventListener('error', handler);
+ 
+ 	var attrs = e.getAttributeNames();
+ 	attrs.forEach(aname => {
+@@ -61,24 +69,15 @@ function litespeed_load_one(e, resolve) {
+ 	});
+ 	e2.type = 'text/javascript';
+ 
+-	let is_inline = false;
+ 	// Inline script
+ 	if (!e2.src && e.textContent) {
+ 		e2.src = litespeed_inline2src(e.textContent);
+ 		// e2.textContent = e.textContent;
+-		is_inline = true;
+ 	}
+ 
+ 	// Deploy to dom
+ 	e.after(e2);
+ 	e.remove();
+-	// document.head.appendChild(e2);
+-	// e2 = e.cloneNode(true)
+-	// e2.setAttribute( 'type', 'text/javascript' );
+-	// e2.setAttribute( 'data-delayed', '1' );
+-
+-	// Kick off resolve for inline
+-	if (is_inline) resolve();
+ }
+ 
+ /**
+diff --git a/assets/js/js_delay.min.js b/assets/js/js_delay.min.js
+index 520f9893..46ff6f4e 100644
+--- a/assets/js/js_delay.min.js
++++ b/assets/js/js_delay.min.js
+@@ -1 +1 @@
+-window.litespeed_ui_events=window.litespeed_ui_events||["mouseover","click","keydown","wheel","touchmove","touchstart"];var urlCreator=window.URL||window.webkitURL;function litespeed_load_delayed_js_force(){console.log("[LiteSpeed] Start Load JS Delayed"),litespeed_ui_events.forEach(e=>{window.removeEventListener(e,litespeed_load_delayed_js_force,{passive:!0})}),document.querySelectorAll("iframe[data-litespeed-src]").forEach(e=>{e.setAttribute("src",e.getAttribute("data-litespeed-src"))}),"loading"==document.readyState?window.addEventListener("DOMContentLoaded",litespeed_load_delayed_js):litespeed_load_delayed_js()}litespeed_ui_events.forEach(e=>{window.addEventListener(e,litespeed_load_delayed_js_force,{passive:!0})});async function litespeed_load_delayed_js(){let t=[];for(var d in document.querySelectorAll('script[type="litespeed/javascript"]').forEach(e=>{t.push(e)}),t)await new Promise(e=>litespeed_load_one(t[d],e));document.dispatchEvent(new Event("DOMContentLiteSpeedLoaded")),window.dispatchEvent(new Event("DOMContentLiteSpeedLoaded"))}function litespeed_load_one(t,e){console.log("[LiteSpeed] Load ",t);var d=document.createElement("script");d.addEventListener("load",e),d.addEventListener("error",e),t.getAttributeNames().forEach(e=>{"type"!=e&&d.setAttribute("data-src"==e?"src":e,t.getAttribute(e))});let a=!(d.type="text/javascript");!d.src&&t.textContent&&(d.src=litespeed_inline2src(t.textContent),a=!0),t.after(d),t.remove(),a&&e()}function litespeed_inline2src(t){try{var d=urlCreator.createObjectURL(new Blob([t.replace(/^(?:<!--)?(.*?)(?:-->)?$/gm,"$1")],{type:"text/javascript"}))}catch(e){d="data:text/javascript;base64,"+btoa(t.replace(/^(?:<!--)?(.*?)(?:-->)?$/gm,"$1"))}return d}
+\ No newline at end of file
++window.litespeed_ui_events=window.litespeed_ui_events||["mouseover","click","keydown","wheel","touchmove","touchstart","pointerup","pointerdown"];var urlCreator=window.URL||window.webkitURL;function litespeed_load_delayed_js_force(){console.log("[LiteSpeed] Start Load JS Delayed"),litespeed_ui_events.forEach(e=>{window.removeEventListener(e,litespeed_load_delayed_js_force,{passive:!0})}),document.querySelectorAll("iframe[data-litespeed-src]").forEach(e=>{e.setAttribute("src",e.getAttribute("data-litespeed-src"))}),"loading"==document.readyState?window.addEventListener("DOMContentLoaded",litespeed_load_delayed_js):litespeed_load_delayed_js()}litespeed_ui_events.forEach(e=>{window.addEventListener(e,litespeed_load_delayed_js_force,{passive:!0})});async function litespeed_load_delayed_js(){let t=[];for(var d in document.querySelectorAll('script[type="litespeed/javascript"]').forEach(e=>{t.push(e)}),t)await new Promise(e=>litespeed_load_one(t[d],e));document.dispatchEvent(new Event("DOMContentLiteSpeedLoaded")),window.dispatchEvent(new Event("DOMContentLiteSpeedLoaded"))}function litespeed_load_one(t,e){console.log("[LiteSpeed] Load ",t);function d(){o.src.startsWith("blob:")&&URL.revokeObjectURL(o.src),e()}var o=document.createElement("script");o.addEventListener("load",d),o.addEventListener("error",d),t.getAttributeNames().forEach(e=>{"type"!=e&&o.setAttribute("data-src"==e?"src":e,t.getAttribute(e))}),o.type="text/javascript",!o.src&&t.textContent&&(o.src=litespeed_inline2src(t.textContent)),t.after(o),t.remove()}function litespeed_inline2src(t){try{var d=urlCreator.createObjectURL(new Blob([t.replace(/^(?:<!--)?(.*?)(?:-->)?$/gm,"$1")],{type:"text/javascript"}))}catch(e){d="data:text/javascript;base64,"+btoa(t.replace(/^(?:<!--)?(.*?)(?:-->)?$/gm,"$1"))}return d}
+\ No newline at end of file
+diff --git a/autoload.php b/autoload.php
+index 3df334a1..05c54daa 100644
+--- a/autoload.php
++++ b/autoload.php
+@@ -33,6 +33,7 @@ $litespeed_php_files = array(
+ 	'src/cloud-node.trait.php',
+ 	'src/cloud-misc.trait.php',
+ 	'src/cloud.cls.php',
++	'src/cloud-queue-svc.cls.php',
+ 	'src/conf.cls.php',
+ 	'src/control.cls.php',
+ 	'src/core.cls.php',
+@@ -61,6 +62,7 @@ $litespeed_php_files = array(
+ 	'src/media.cls.php',
+ 	'src/metabox.cls.php',
+ 	'src/object-cache.cls.php',
++	'src/optimax.cls.php',
+ 	'src/optimize.cls.php',
+ 	'src/optimizer.cls.php',
+ 	'src/placeholder.cls.php',
+diff --git a/data/const.default.json b/data/const.default.json
+index 5be17f30..9d7141f1 100644
+--- a/data/const.default.json
++++ b/data/const.default.json
+@@ -7,7 +7,7 @@
+ 	"cache-priv": "1",
+ 	"cache-commenter": "1",
+ 	"cache-rest": "1",
+-	"cache-page_login": "1",
++	"cache-page_login": "0",
+ 	"cache-resources": "1",
+ 	"cache-browser": "",
+ 	"cache-mobile": "",
+@@ -181,6 +181,6 @@
+ 		"inc_js": ["1"],
+ 		"inc_css": ["1"],
+ 		"inc_img": ["1"],
+-		"filetype": [".aac\n.css\n.eot\n.gif\n.jpeg\n.jpg\n.js\n.less\n.mp3\n.mp4\n.ogg\n.otf\n.pdf\n.png\n.svg\n.ttf\n.webp\n.woff\n.woff2"]
++		"filetype": [".aac\n.eot\n.less\n.mp3\n.mp4\n.ogg\n.otf\n.pdf\n.ttf\n.woff\n.woff2"]
+ 	}
+ }
+diff --git a/litespeed-cache.php b/litespeed-cache.php
+index 03171b33..758370b5 100644
+--- a/litespeed-cache.php
++++ b/litespeed-cache.php
+@@ -3,7 +3,7 @@
+  * Plugin Name:       LiteSpeed Cache
+  * Plugin URI:        https://www.litespeedtech.com/products/cache-plugins/wordpress-acceleration
+  * Description:       High-performance page caching and site optimization from LiteSpeed
+- * Version:           7.8
++ * Version:           7.9-a26
+  * Author:            LiteSpeed Technologies
+  * Author URI:        https://www.litespeedtech.com
+  * License:           GPLv3
+@@ -35,7 +35,7 @@ if ( defined( 'LSCWP_V' ) ) {
+ 	return;
+ }
+ 
+-! defined( 'LSCWP_V' ) && define( 'LSCWP_V', '7.8' );
++! defined( 'LSCWP_V' ) && define( 'LSCWP_V', '7.9-a26' );
+ 
+ ! defined( 'LSCWP_CONTENT_DIR' ) && define( 'LSCWP_CONTENT_DIR', WP_CONTENT_DIR );
+ ! defined( 'LSCWP_DIR' ) && define( 'LSCWP_DIR', __DIR__ . '/' ); // Full absolute path '/var/www/html/***/wp-content/plugins/litespeed-cache/' or MU
+diff --git a/readme.txt b/readme.txt
+index 18452da0..2a3aa304 100644
+--- a/readme.txt
++++ b/readme.txt
+@@ -4,7 +4,7 @@ Tags: caching, optimize, performance, pagespeed, seo, image optimize, object cac
+ Requires at least: 5.3
+ Requires PHP: 7.2
+ Tested up to: 6.9
+-Stable tag: 7.8
++Stable tag: 7.8.0.1
+ License: GPLv3
+ License URI: http://www.gnu.org/licenses/gpl.html
+ 
+@@ -257,9 +257,14 @@ You can report security bugs through the Patchstack Vulnerability Disclosure Pro
+ 
+ == Changelog ==
+ 
+-= 7.8 - Mar 3 2026 =
+-* **Cloud** Changed Health service to run asynchronously.
++= 8.0 - May 2026 =
++* 🌱**OptiMax** OptiMax to maximize the page score.
++* **Cloud** Changed Health service to async run.
+ * **Object Cache** Dropped `Store Transients` option. Transients now always use Object Cache when available, preventing potential database bloat from expired transients not being cleared. (ravanh)
++* **Object Cache** Fixed methods returning `null` instead of `false` on failure, matching WordPress Object Cache API convention.(jkolodziej)
++* **Object Cache** Enabled Redis zstd compression via phpredis. (Octavian)
++* **UCSS** Dropped notification step. Added try_later handling and sync mode support for CCSS generation.
++* **CCSS** Dropped notification step.
+ * **Media** Added extension check for WebP/AVIF replacement efficiency - only processes jpg/jpeg/png/gif, skips svg/ico/bmp etc.
+ * **Media** Added WebP/AVIF support for macOS Safari >= 16.4. (PR#948)
+ * **Media** Fixed pie chart not displaying in media library.
+@@ -268,13 +273,18 @@ You can report security bugs through the Patchstack Vulnerability Disclosure Pro
+ * **Image Optimize** Fixed reset single image not deleting records from img_optm and img_optming database tables.
+ * **Page Optimize** Fixed font optimization in certain themes. (rbabt PR#955)
+ * **Page Optimize** Filtered HTML tags when saving CSS content.
+-* **Object Cache** Fixed methods returning `null` instead of `false` on failure, matching WordPress Object Cache API convention.(jkolodziej)
+ * **Conf** Improved network subsites config loading efficiency. (dassels43)
+ * **Toolbox** Added download button for log files to download complete logs.
+ * **3rd** Purge product cache when orders are cancelled in WooCommerce. (haralampiev12 PR#954)
+ * **Misc** Added Apache rewrite rule support for security check. (PR#948)
+ * **Misc** Split Cloud and Image Optimization classes into traits for better maintainability.
+ 
++= 7.8.1 - Apr 1 2026 =
++* **CDN** Fixed Cloudflare API key type detection for the compatibility w/ the new key format.
++
++= 7.8.0.1 - Mar 17 2026 =
++* **Object Cache** Improved Object Cache resilience: auto disable when connection fails, network subsites fallback to database, and dropped TTL setting to respect never-expired transients.
++
+ = 7.7 - Dec 16 2025 =
+ * **Task** Increased default cron interval from 1 minute to 15 minutes.
+ * **Conf** Enabled `litespeed_conf_load_option_{$option}` to allow modifying configuration values.
+diff --git a/src/admin-display.cls.php b/src/admin-display.cls.php
+index 88e4adea..5fcf883b 100644
+--- a/src/admin-display.cls.php
++++ b/src/admin-display.cls.php
+@@ -244,6 +244,7 @@ class Admin_Display extends Base {
+ 	 * Initialize the class and set its properties.
+ 	 *
+ 	 * @since 1.0.7
++	 * @since 1.9.0 Change admin bar items hook from wp_before_admin_bar_render to admin_bar_menu.
+ 	 */
+ 	public function __construct() {
+ 		$this->_pages = [
+@@ -273,7 +274,7 @@ class Admin_Display extends Base {
+ 		$manage = ( $this->_is_multisite && $this->_is_network_admin ) ? 'manage_network_options' : 'manage_options';
+ 
+ 		if ( current_user_can( $manage ) ) {
+-			add_action( 'wp_before_admin_bar_render', [ GUI::cls(), 'backend_shortcut' ] );
++			add_action( 'admin_bar_menu', [ GUI::cls(), 'backend_shortcut' ], 95 );
+ 
+ 			// `admin_notices` is after `admin_enqueue_scripts`.
+ 			add_action( $this->_is_network_admin ? 'network_admin_notices' : 'admin_notices', [ $this, 'display_messages' ] );
+@@ -473,18 +474,20 @@ class Admin_Display extends Base {
+ 				$cdn_url = 'https://cdn.' . substr( $home_url, 2 );
+ 
+ 				wp_enqueue_script( Core::PLUGIN_NAME . '-cdn', LSWCP_PLUGIN_URL . 'assets/js/component.cdn.js', [], Core::VER, false );
+-				$localize_data['lang']                         = [];
+-				$localize_data['lang']['cdn_mapping_url']      = Lang::title( self::CDN_MAPPING_URL );
+-				$localize_data['lang']['cdn_mapping_inc_img']  = Lang::title( self::CDN_MAPPING_INC_IMG );
+-				$localize_data['lang']['cdn_mapping_inc_css']  = Lang::title( self::CDN_MAPPING_INC_CSS );
+-				$localize_data['lang']['cdn_mapping_inc_js']   = Lang::title( self::CDN_MAPPING_INC_JS );
+-				$localize_data['lang']['cdn_mapping_filetype'] = Lang::title( self::CDN_MAPPING_FILETYPE );
+-				$localize_data['lang']['cdn_mapping_url_desc'] = sprintf( __( 'CDN URL to be used. For example, %s', 'litespeed-cache' ), '<code>' . esc_html( $cdn_url ) . '</code>' );
+-				$localize_data['lang']['one_per_line']         = Doc::one_per_line( true );
+-				$localize_data['lang']['cdn_mapping_remove']   = __( 'Remove CDN URL', 'litespeed-cache' );
+-				$localize_data['lang']['add_cdn_mapping_row']  = __( 'Add new CDN URL', 'litespeed-cache' );
+-				$localize_data['lang']['on']                   = __( 'ON', 'litespeed-cache' );
+-				$localize_data['lang']['off']                  = __( 'OFF', 'litespeed-cache' );
++				$localize_data['lang']                             = [];
++				$localize_data['lang']['cdn_mapping_url']          = Lang::title( self::CDN_MAPPING_URL );
++				$localize_data['lang']['cdn_mapping_inc_img']      = Lang::title( self::CDN_MAPPING_INC_IMG );
++				$localize_data['lang']['cdn_mapping_inc_css']      = Lang::title( self::CDN_MAPPING_INC_CSS );
++				$localize_data['lang']['cdn_mapping_inc_js']       = Lang::title( self::CDN_MAPPING_INC_JS );
++				$localize_data['lang']['cdn_mapping_filetype']     = Lang::title( self::CDN_MAPPING_FILETYPE );
++				$localize_data['lang']['cdn_mapping_url_desc']     = sprintf( __( 'CDN URL to be used. For example, %s', 'litespeed-cache' ), '<code>' . esc_html( $cdn_url ) . '</code>' );
++				$localize_data['lang']['one_per_line']             = Doc::one_per_line( true );
++				$localize_data['lang']['cdn_mapping_remove']       = __( 'Remove CDN URL', 'litespeed-cache' );
++				$localize_data['lang']['add_cdn_mapping_row']      = __( 'Add new CDN URL', 'litespeed-cache' );
++				$localize_data['lang']['cdn_file_types_url']       = 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#include-file-types';
++				$localize_data['lang']['cdn_file_types_link_text'] = __( 'Learn more about file types', 'litespeed-cache' );
++				$localize_data['lang']['on']                       = __( 'ON', 'litespeed-cache' );
++				$localize_data['lang']['off']                      = __( 'OFF', 'litespeed-cache' );
+ 				if ( empty( $localize_data['ids'] ) ) {
+ 					$localize_data['ids'] = [];
+ 				}
+@@ -1662,7 +1665,7 @@ class Admin_Display extends Base {
+ 
+ 		switch ( $type ) {
+ 			case self::TYPE_QC_HIDE_BANNER:
+-				self::set_qc_hide_banner();
++            self::set_qc_hide_banner();
+ 				break;
+ 
+ 			default:
+diff --git a/src/admin-settings.cls.php b/src/admin-settings.cls.php
+index 2cdf35c8..b66a77df 100644
+--- a/src/admin-settings.cls.php
++++ b/src/admin-settings.cls.php
+@@ -252,6 +252,27 @@ class Admin_Settings extends Base {
+ 				}
+ 			}
+ 
++			// Auto-strip filetypes whose row toggle is ON, mirroring CDN::init() so the saved list stays clean while preserving opt-out for toggles that are OFF.
++			if ( self::O_CDN_MAPPING === $id ) {
++				$auto_managed = CDN::auto_managed_filetypes();
++				foreach ( $the_matrix[ $id ] as $k => $row ) {
++					if ( empty( $row[ self::CDN_MAPPING_FILETYPE ] ) || ! is_array( $row[ self::CDN_MAPPING_FILETYPE ] ) ) {
++						continue;
++					}
++					$strip = [];
++					foreach ( $auto_managed as $toggle => $exts ) {
++						if ( ! empty( $row[ $toggle ] ) ) {
++							$strip = array_merge( $strip, $exts );
++						}
++					}
++					if ( ! empty( $strip ) ) {
++						$the_matrix[ $id ][ $k ][ self::CDN_MAPPING_FILETYPE ] = array_values(
++							array_diff( $row[ self::CDN_MAPPING_FILETYPE ], $strip )
++						);
++					}
++				}
++			}
++
+ 			// Don't allow repeated cookie names.
+ 			if ( self::O_CRAWLER_COOKIES === $id ) {
+ 				$existed = [];
+diff --git a/src/base.cls.php b/src/base.cls.php
+index 346a236b..95a4dc7c 100644
+--- a/src/base.cls.php
++++ b/src/base.cls.php
+@@ -181,7 +181,7 @@ class Base extends Root {
+ 	const O_OBJECT_KIND                  = 'object-kind';
+ 	const O_OBJECT_HOST                  = 'object-host';
+ 	const O_OBJECT_PORT                  = 'object-port';
+-	const O_OBJECT_LIFE                  = 'object-life';
++	const O_OBJECT_LIFE                  = 'object-life'; // @deprecated Since v8.0. Will be removed in v8.5. TTL now follows WP API: expire=0 means no expiration.
+ 	const O_OBJECT_PERSISTENT            = 'object-persistent';
+ 	const O_OBJECT_ADMIN                 = 'object-admin';
+ 	const O_OBJECT_DB_ID                 = 'object-db_id';
+diff --git a/src/cdn.cls.php b/src/cdn.cls.php
+index aeca11d1..185290fa 100644
+--- a/src/cdn.cls.php
++++ b/src/cdn.cls.php
+@@ -71,6 +71,29 @@ class CDN extends Root {
+ 	 */
+ 	private $cdn_mapping_hosts = [];
+ 
++	/**
++	 * Auto-managed CDN filetype map keyed by mapping toggle.
++	 *
++	 * Single source of truth for the filetypes implicitly handled by the
++	 * Include Images / Include CSS / Include JS toggles. Used by both
++	 * CDN::init() (auto-injection) and Admin_Settings::save() (auto-stripping)
++	 * so that the two sides stay in sync.
++	 *
++	 * @since 8.0
++	 * @access public
++	 * @return array<string,string[]>
++	 */
++	public static function auto_managed_filetypes() {
++		return apply_filters(
++			'litespeed_cdn_auto_managed_filetypes',
++			[
++				Base::CDN_MAPPING_INC_IMG => [ '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.avif' ],
++				Base::CDN_MAPPING_INC_CSS => [ '.css' ],
++				Base::CDN_MAPPING_INC_JS  => [ '.js' ],
++			]
++		);
++	}
++
+ 	/**
+ 	 * Initialize CDN integration and register filters if enabled.
+ 	 *
+@@ -103,6 +126,7 @@ class CDN extends Root {
+ 		$this->_cfg_url_ori = $this->conf( Base::O_CDN_ORI );
+ 		// Parse cdn mapping data to array( 'filetype' => 'url' )
+ 		$mapping_to_check = [ Base::CDN_MAPPING_INC_IMG, Base::CDN_MAPPING_INC_CSS, Base::CDN_MAPPING_INC_JS ];
++		$auto_managed     = self::auto_managed_filetypes();
+ 		foreach ( $this->conf( Base::O_CDN_MAPPING ) as $v ) {
+ 			if ( ! $v[ Base::CDN_MAPPING_URL ] ) {
+ 				continue;
+@@ -117,6 +141,15 @@ class CDN extends Root {
+ 					// If filetype to url is one to many, make url be an array
+ 					$this->_append_cdn_mapping( $to_check, $this_url );
+ 
++					// Auto-inject extensions managed by this toggle via _append_cdn_mapping() to preserve multi-CDN one-to-many semantics.
++					if ( ! empty( $auto_managed[ $to_check ] ) ) {
++						foreach ( $auto_managed[ $to_check ] as $ext ) {
++							$this->_append_cdn_mapping( $ext, $this_url );
++						}
++						// Set the FILETYPE sentinel so _replace_file_types() runs even with an empty manual textarea, otherwise CSS/JS replacement is silently broken.
++						$this->_cfg_cdn_mapping[ Base::CDN_MAPPING_FILETYPE ] = true;
++					}
++
+ 					if ( ! in_array( $this_host, $this->cdn_mapping_hosts, true ) ) {
+ 						$this->cdn_mapping_hosts[] = $this_host;
+ 					}
+diff --git a/src/cdn/cloudflare.cls.php b/src/cdn/cloudflare.cls.php
+index 88cdde67..ea517bd5 100644
+--- a/src/cdn/cloudflare.cls.php
++++ b/src/cdn/cloudflare.cls.php
+@@ -244,17 +244,23 @@ class Cloudflare extends Base {
+ 	private function cloudflare_call( $url, $method = 'GET', $data = false, $show_msg = true ) {
+ 		Debug2::debug("[Cloudflare] cloudflare_call \t\t[URL] $url");
+ 
+-		if (strlen($this->conf(self::O_CDN_CLOUDFLARE_KEY)) === 40) {
+-			$headers = array(
+-				'Content-Type'  => 'application/json',
+-				'Authorization' => 'Bearer ' . $this->conf(self::O_CDN_CLOUDFLARE_KEY),
+-			);
++		/**
++		 * Detect key type: Global API Key (37-char hex) vs API Token (Bearer)
++		 *
++		 * @since 1.9.0
++		 */
++		$cf_key = $this->conf( self::O_CDN_CLOUDFLARE_KEY );
++		if ( strlen( $cf_key ) === 37 && preg_match( '/^[0-9a-f]+$/', $cf_key ) ) {
++			$headers = [
++				'Content-Type' => 'application/json',
++				'X-Auth-Email' => $this->conf( self::O_CDN_CLOUDFLARE_EMAIL ),
++				'X-Auth-Key'   => $cf_key,
++			];
+ 		} else {
+-			$headers = array(
++			$headers = [
+ 				'Content-Type'  => 'application/json',
+-				'X-Auth-Email' => $this->conf(self::O_CDN_CLOUDFLARE_EMAIL),
+-				'X-Auth-Key'   => $this->conf(self::O_CDN_CLOUDFLARE_KEY),
+-			);
++				'Authorization' => 'Bearer ' . $cf_key,
++			];
+ 		}
+ 
+ 		$wp_args = array(
+@@ -268,7 +274,12 @@ class Cloudflare extends Base {
+ 			}
+ 			$wp_args['body'] = $data;
+ 		}
+-		$resp = wp_remote_request($url, $wp_args);
++		add_filter( 'http_api_curl', $fn = function ( $handle ) {
++			defined( 'CURLOPT_SSL_ENABLE_ALPN' ) && \curl_setopt( $handle, CURLOPT_SSL_ENABLE_ALPN, false ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- http_api_curl filter requires direct curl handle manipulation; wp_remote_get() is not applicable here.
++			return $handle;
++		}, 9999 );
++		$resp = wp_remote_request( $url, $wp_args );
++		remove_filter( 'http_api_curl', $fn, 9999 );
+ 		if (is_wp_error($resp)) {
+ 			Debug2::debug('[Cloudflare] error in response');
+ 			if ($show_msg) {
+@@ -312,16 +323,16 @@ class Cloudflare extends Base {
+ 
+ 		switch ($type) {
+ 			case self::TYPE_PURGE_ALL:
+-				$this->purge_all_private();
++            $this->purge_all_private();
+ 				break;
+ 
+ 			case self::TYPE_GET_DEVMODE:
+-				$this->get_devmode();
++            $this->get_devmode();
+ 				break;
+ 
+ 			case self::TYPE_SET_DEVMODE_ON:
+ 			case self::TYPE_SET_DEVMODE_OFF:
+-				$this->set_devmode($type);
++            $this->set_devmode($type);
+ 				break;
+ 
+ 			default:
+diff --git a/src/cloud-queue-svc.cls.php b/src/cloud-queue-svc.cls.php
+new file mode 100644
+index 00000000..643283e0
+--- /dev/null
++++ b/src/cloud-queue-svc.cls.php
+@@ -0,0 +1,353 @@
++<?php
++/**
++ * Shared base for QC queue-driven svcs.
++ *
++ * Hosts the cron loop, try_later throttling, allowance check, and Cloud::post
++ * orchestration that UCSS / CCSS / VPI / Optimax all share. Each concrete
++ * svc supplies only the bits that actually differ: svc id, payload
++ * builder, response data key, and save action.
++ *
++ * @since   8.1
++ * @package LiteSpeed
++ */
++
++namespace LiteSpeed;
++
++defined( 'WPINC' ) || exit();
++
++/**
++ * Abstract base for queue-driven QUIC.cloud svcs.
++ *
++ * @since 8.1
++ */
++abstract class Cloud_Queue_Svc extends Base {
++
++	const TYPE_GEN     = 'gen';
++	const TYPE_CLEAR_Q = 'clear_q';
++
++	/**
++	 * In-memory working queue.
++	 *
++	 * @var array
++	 */
++	protected $_queue;
++
++	/**
++	 * Svc id slug.
++	 *
++	 * Used as queue type, Cloud::SVC_* suffix, and summary key prefix.
++	 *
++	 * @return string
++	 */
++	abstract protected function _svc_id();
++
++	/**
++	 * Response field name that carries the generated payload.
++	 *
++	 * @return string
++	 */
++	abstract protected function _data_key();
++
++	/**
++	 * Build the request body sent to Cloud::post.
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return array
++	 */
++	abstract protected function _build_payload( $queue_k, $v );
++
++	/**
++	 * Persist the generated data.
++	 *
++	 * Returning false signals the caller to treat the item as failed and drop
++	 * it from the queue without claiming success.
++	 *
++	 * @param mixed  $data    Value at the response data key.
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool|void True / void on success, false to abort.
++	 */
++	abstract protected function _save_result( $data, $queue_k, $v );
++
++	/**
++	 * Cloud::post HTTP timeout in seconds.
++	 *
++	 * @return int
++	 */
++	protected function _post_timeout() {
++		return 30;
++	}
++
++	/**
++	 * PHP max_execution_time set before issuing the request.
++	 *
++	 * @return int
++	 */
++	protected function _php_time_limit() {
++		return 120;
++	}
++
++	/**
++	 * Maximum queue length before refusing further enqueues. Concrete classes
++	 * call _max_queue_size() at enqueue sites; the base loop does not enforce.
++	 *
++	 * @return int
++	 */
++	protected function _max_queue_size() {
++		return 500;
++	}
++
++	/**
++	 * Summary key for the in-flight request timestamp (300s gate).
++	 *
++	 * @return string
++	 */
++	protected function _curr_request_key() {
++		return 'curr_request_' . $this->_svc_id();
++	}
++
++	/**
++	 * Summary key for the last successful request timestamp. Read by admin
++	 * templates; concrete classes whose tpl reads a legacy key (e.g. UCSS/VPI
++	 * read `last_request`) must override.
++	 *
++	 * @return string
++	 */
++	protected function _last_request_key() {
++		return 'last_request_' . $this->_svc_id();
++	}
++
++	/**
++	 * Summary key for the last successful request duration. Mirrors
++	 * _last_request_key() naming so UCSS/VPI emit the unsuffixed `last_spent`
++	 * the dashboard expects.
++	 *
++	 * @return string
++	 */
++	protected function _last_spent_key() {
++		return str_replace( 'last_request', 'last_spent', $this->_last_request_key() );
++	}
++
++	/**
++	 * Summary key for the server-driven try_later deadline.
++	 *
++	 * @return string
++	 */
++	protected function _next_run_after_key() {
++		return $this->_svc_id() . '_next_run_after';
++	}
++
++	/**
++	 * Resolve the Cloud::SVC_* constant for this svc.
++	 *
++	 * @return string
++	 */
++	protected function _svc_const() {
++		return constant( Cloud::class . '::SVC_' . strtoupper( $this->_svc_id() ) );
++	}
++
++	/**
++	 * Validate a queue item before dispatching to Cloud. Concrete classes
++	 * override to guard against malformed legacy rows that would otherwise
++	 * burn a QC request and persist a bogus mapping.
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool True to dispatch, false to silently drop.
++	 */
++	protected function _valid_queue_item( $queue_k, $v ) {
++		return true;
++	}
++
++	/**
++	 * Static cron entry point invoked by WP cron and admin actions.
++	 *
++	 * @param bool $keep_going Process the whole queue when true; otherwise stop
++	 *                         after the first item.
++	 * @return mixed
++	 */
++	public static function cron( $keep_going = false ) {
++		$_instance = static::cls();
++		return $_instance->_cron_handler( $keep_going );
++	}
++
++	/**
++	 * Cron loop. Walks the queue, honors throttling, and dispatches each item
++	 * to _send_req().
++	 *
++	 * @param bool $keep_going Process the whole queue when true.
++	 * @return void
++	 */
++	protected function _cron_handler( $keep_going ) {
++		$type         = $this->_svc_id();
++		$this->_queue = $this->load_queue( $type );
++
++		if ( empty( $this->_queue ) ) {
++			return;
++		}
++
++		$next_run_key = $this->_next_run_after_key();
++		if ( ! empty( $this->_summary[ $next_run_key ] ) && time() < $this->_summary[ $next_run_key ] ) {
++			$wait_seconds = $this->_summary[ $next_run_key ] - time();
++			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
++			return;
++		}
++
++		if ( ! empty( $this->_summary[ $next_run_key ] ) ) {
++			unset( $this->_summary[ $next_run_key ] );
++			self::save_summary();
++			self::debug( 'Cleared try_later flag, resuming ' . $type . ' processing' );
++		}
++
++		$curr_key = $this->_curr_request_key();
++		if ( ! $keep_going ) {
++			if ( ! empty( $this->_summary[ $curr_key ] )
++				&& time() - (int) $this->_summary[ $curr_key ] < 300
++				&& ! $this->conf( self::O_DEBUG ) ) {
++				self::debug( 'Last request not done' );
++				return;
++			}
++		}
++
++		foreach ( $this->_queue as $k => $v ) {
++			if ( ! $this->_valid_queue_item( $k, $v ) ) {
++				self::debug( 'invalid queue item, dropping [tag] ' . $k );
++				$this->_queue = $this->load_queue( $type );
++				unset( $this->_queue[ $k ] );
++				$this->save_queue( $type, $this->_queue );
++				continue;
++			}
++
++			self::debug( 'cron job [tag] ' . $k . ' [url] ' . ( isset( $v['url'] ) ? $v['url'] : '' ) . ( ! empty( $v['is_mobile'] ) ? ' 📱 ' : '' ) );
++
++			$res = $this->_send_req( $k, $v );
++
++			if ( ! $res ) {
++				// Reload to avoid clobbering concurrent writes, then drop the item.
++				$this->_queue = $this->load_queue( $type );
++				unset( $this->_queue[ $k ] );
++				$this->save_queue( $type, $this->_queue );
++
++				if ( ! $keep_going ) {
++					return;
++				}
++				continue;
++			}
++
++			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
++				return;
++			}
++
++			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
++				$ttl                             = (int) $res['try_later'];
++				$next_run_time                   = time() + $ttl;
++				$this->_summary[ $next_run_key ] = $next_run_time;
++				self::save_summary();
++				self::debug( 'Set next ' . $type . ' cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
++			}
++
++			if ( ! $keep_going ) {
++				return;
++			}
++		}
++	}
++
++	/**
++	 * Dispatch one queue item to Cloud::post and persist the result.
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool|string|array True on success, 'out_of_quota'/'svc_hot' to abort, [try_later=>ttl] to throttle, false on error.
++	 */
++	private function _send_req( $queue_k, $v ) {
++		$svc = $this->_svc_const();
++
++		$err       = false;
++		$allowance = $this->cls( 'Cloud' )->allowance( $svc, $err );
++		if ( ! $allowance ) {
++			self::debug( '❌ No credit: ' . $err );
++			$err && Admin_Display::error( Error::msg( $err ) );
++			return 'out_of_quota';
++		}
++
++		set_time_limit( $this->_php_time_limit() );
++
++		$curr_key                    = $this->_curr_request_key();
++		$this->_summary[ $curr_key ] = time();
++		self::save_summary();
++
++		$data = $this->_build_payload( $queue_k, $v );
++		self::debug( 'Generating: ', $data );
++
++		$json = Cloud::post( $svc, $data, $this->_post_timeout() );
++		if ( ! is_array( $json ) ) {
++			return $json;
++		}
++
++		if ( ! empty( $json['try_later'] ) ) {
++			$ttl = (int) $json['try_later'];
++			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
++			return [ 'try_later' => $ttl ];
++		}
++
++		if ( empty( $json['status'] ) ) {
++			self::debug( '❌ No status in response' );
++			return false;
++		}
++
++		$data_key = $this->_data_key();
++		$data_val = isset( $json[ $data_key ] ) ? $json[ $data_key ] : null;
++		if ( empty( $data_val ) ) {
++			self::debug( '❌ No ' . $data_key . ' data [status] ' . $json['status'] );
++		}
++
++		self::debug( '✅ Received ' . $data_key . ', saving...' );
++		// Concrete _save_result decides whether empty data is a hard error
++		// (returns false to drop without success accounting) or a sentinel to
++		// persist as-is (returns true to mark the URL as processed).
++		if ( false === $this->_save_result( $data_val, $queue_k, $v ) ) {
++			self::debug( '❌ _save_result returned false [k] ' . $queue_k );
++			return false;
++		}
++
++		// Reload to avoid clobbering concurrent writes, then drop the item.
++		$type         = $this->_svc_id();
++		$this->_queue = $this->load_queue( $type );
++		unset( $this->_queue[ $queue_k ] );
++		$this->save_queue( $type, $this->_queue );
++		self::debug( 'Removed from queue [q_k] ' . $queue_k );
++
++		$curr_time                                    = (int) $this->_summary[ $curr_key ];
++		$this->_summary[ $this->_last_spent_key() ]   = time() - $curr_time;
++		$this->_summary[ $this->_last_request_key() ] = $curr_time;
++		$this->_summary[ $curr_key ]                  = 0;
++		self::save_summary();
++
++		return true;
++	}
++
++	/**
++	 * Admin action handler dispatched by Router.
++	 *
++	 * @return void
++	 */
++	public function handler() {
++		$type = Router::verify_type();
++
++		switch ( $type ) {
++			case static::TYPE_GEN:
++            static::cron( true );
++				break;
++
++			case static::TYPE_CLEAR_Q:
++            $this->clear_q( $this->_svc_id() );
++				break;
++
++			default:
++				break;
++		}
++
++		Admin::redirect();
++	}
++}
+diff --git a/src/core.cls.php b/src/core.cls.php
+index 885567c5..e699f854 100644
+--- a/src/core.cls.php
++++ b/src/core.cls.php
+@@ -460,8 +460,16 @@ class Core extends Root {
+ 		 * CDN
+ 		 */
+ 		if ( ! defined( 'LITESPEED_NO_OPTM' ) || ! LITESPEED_NO_OPTM ) {
+-			Debug2::debug( '[Core] run hook litespeed_buffer_finalize' );
+-			$buffer = apply_filters( 'litespeed_buffer_finalize', $buffer );
++			// Optimax: first priority check — skip all hooks if ox HTML is cached
++			$ox_html = $this->cls( 'Optimax' )->serve();
++			if ( false !== $ox_html ) {
++				Debug2::debug( '[Core] Optimax served, skip litespeed_buffer_finalize' );
++				define( 'LITESPEED_OX_SERVED', true );
++				$buffer = $ox_html;
++			} else {
++				Debug2::debug( '[Core] run hook litespeed_buffer_finalize' );
++				$buffer = apply_filters( 'litespeed_buffer_finalize', $buffer );
++			}
+ 		}
+ 
+ 		/**
+@@ -597,7 +605,7 @@ class Core extends Root {
+ 		// Send Control header
+ 		if ( defined( 'LITESPEED_ON' ) && $control_header ) {
+ 			$this->http_header( $control_header );
+-			if ( ! Control::is_cacheable() && !is_admin() ) {
++			if ( ! Control::is_cacheable() && ! is_admin() && ! preg_grep( '/^Cache-Control:/i', headers_list() ) ) {
+ 				$ori_wp_header = wp_get_nocache_headers();
+ 				if ( isset( $ori_wp_header['Cache-Control'] ) ) {
+ 					$this->http_header( 'Cache-Control: ' . $ori_wp_header['Cache-Control'] ); // @ref: https://github.com/litespeedtech/lscache_wp/issues/889
+diff --git a/src/crawler.cls.php b/src/crawler.cls.php
+index 6f5f5506..34972a2a 100644
+--- a/src/crawler.cls.php
++++ b/src/crawler.cls.php
+@@ -1210,60 +1210,6 @@ class Crawler extends Root {
+ 		return $options;
+ 	}
+ 
+-	/**
+-	 * Self curl to get HTML content.
+-	 *
+-	 * @since 3.3
+-	 *
+-	 * @param string       $url URL.
+-	 * @param string       $ua  User agent.
+-	 * @param int|false    $uid Optional user ID for simulation.
+-	 * @param string|false $accept Optional Accept header value.
+-	 * @return string|false HTML on success, false on failure.
+-	 */
+-	public function self_curl( $url, $ua, $uid = false, $accept = false ) {
+-		$this->_crawler_conf['base'] = site_url();
+-		$this->_crawler_conf['ua']   = $ua;
+-		if ( $accept ) {
+-			$this->_crawler_conf['headers'] = [ 'Accept: ' . $accept ];
+-		}
+-		$options = $this->_get_curl_options();
+-
+-		if ( $uid ) {
+-			$this->_crawler_conf['cookies']['litespeed_flash_hash'] = Router::cls()->get_flash_hash( $uid );
+-			$parsed_url = wp_parse_url( $url );
+-
+-			if ( ! empty( $parsed_url['host'] ) ) {
+-				$dom                                     = $parsed_url['host'];
+-				$port                                    = defined( 'LITESPEED_CRAWLER_LOCAL_PORT' ) ? (int) LITESPEED_CRAWLER_LOCAL_PORT : 443;
+-				$resolved                                = $dom . ':' . $port . ':' . $this->_server_ip;
+-				$options[ CURLOPT_RESOLVE ]              = [ $resolved ];
+-				$options[ CURLOPT_DNS_USE_GLOBAL_CACHE ] = false;
+-				$options[ CURLOPT_PORT ]                 = $port;
+-				self::debug( 'Resolved DNS for ' . $resolved );
+-			}
+-		}
+-
+-		$options[ CURLOPT_HEADER ]         = false;
+-		$options[ CURLOPT_FOLLOWLOCATION ] = true;
+-
+-		// phpcs:disable WordPress.WP.AlternativeFunctions
+-		$ch = curl_init();
+-		curl_setopt_array( $ch, $options );
+-		curl_setopt( $ch, CURLOPT_URL, $url );
+-		$result = curl_exec( $ch );
+-		$code   = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+-		unset( $ch );
+-		// phpcs:enable
+-
+-		if ( 200 !== $code ) {
+-			self::debug( '❌ Response code is not 200 in self_curl() [code] ' . $code );
+-			return false;
+-		}
+-
+-		return $result;
+-	}
+-
+ 	/**
+ 	 * Terminate crawling.
+ 	 *
+@@ -1353,17 +1299,28 @@ class Crawler extends Root {
+ 			$crawler_factors['uid'][ $v ] = ucfirst( $role_title );
+ 		}
+ 
+-		// Cookie crawler.
+-		foreach ( $this->conf( Base::O_CRAWLER_COOKIES ) as $v ) {
++		// Cookie crawler. Filter lets 3rd-party integrations inject crawler-scoped cookie rows (e.g. WCML _lscache_vary per-currency)
++		$cookie_list = apply_filters( 'litespeed_crawler_cookies', $this->conf( Base::O_CRAWLER_COOKIES ) );
++		if ( ! is_array( $cookie_list ) ) {
++			$cookie_list = [];
++		}
++		foreach ( $cookie_list as $v ) {
+ 			if ( empty( $v['name'] ) ) {
+ 				continue;
+ 			}
+ 
+ 			$this_cookie_key = 'cookie:' . $v['name'];
+ 
+-			$crawler_factors[ $this_cookie_key ] = [];
++			// Preserves Guest Mode preset when same-name cookie row arrives.
++			if ( ! isset( $crawler_factors[ $this_cookie_key ] ) ) {
++				$crawler_factors[ $this_cookie_key ] = [];
++			}
+ 
+ 			foreach ( $v['vals'] as $v2 ) {
++				// Preserve existing labels (e.g. Guest Mode 👒 marker on `_null`) — skip if value already mapped.
++				if ( isset( $crawler_factors[ $this_cookie_key ][ $v2 ] ) ) {
++					continue;
++				}
+ 				$crawler_factors[ $this_cookie_key ][ $v2 ] =
+ 					( '_null' === $v2 ? '' : '<font data-balloon-pos="up" aria-label="Cookie">🍪</font>' . esc_html( $v['name'] ) . '=' . esc_html( $v2 ) );
+ 			}
+diff --git a/src/css.cls.php b/src/css.cls.php
+index fe3f4734..e4ae8a91 100644
+--- a/src/css.cls.php
++++ b/src/css.cls.php
+@@ -13,12 +13,12 @@ defined( 'WPINC' ) || exit();
+ /**
+  * Optimize CSS handler class.
+  */
+-class CSS extends Base {
++class CSS extends Cloud_Queue_Svc {
+ 
+-	const LOG_TAG = '[CSS]';
++	const LOG_TAG = '[CCSS]';
+ 
+-	const TYPE_GEN_CCSS     = 'gen_ccss';
+-	const TYPE_CLEAR_Q_CCSS = 'clear_q_ccss';
++	const TYPE_GEN     = 'gen_ccss';
++	const TYPE_CLEAR_Q = 'clear_q_ccss';
+ 
+ 	/**
+ 	 * Summary cache.
+@@ -34,13 +34,6 @@ class CSS extends Base {
+ 	 */
+ 	private $_ccss_whitelist;
+ 
+-	/**
+-	 * Request queue.
+-	 *
+-	 * @var array
+-	 */
+-	private $_queue;
+-
+ 	/**
+ 	 * Init.
+ 	 *
+@@ -52,6 +45,87 @@ class CSS extends Base {
+ 		add_filter( 'litespeed_ccss_whitelist', [ $this->cls( 'Data' ), 'load_ccss_whitelist' ] );
+ 	}
+ 
++	/**
++	 * Svc id slug — drives queue type, Cloud::SVC_CCSS, and summary key prefix.
++	 *
++	 * @return string
++	 */
++	protected function _svc_id() {
++		return 'ccss';
++	}
++
++	/**
++	 * Response field carrying the generated CSS.
++	 *
++	 * @return string
++	 */
++	protected function _data_key() {
++		return 'data_ccss';
++	}
++
++	/**
++	 * Stale legacy queue rows with empty url_tag would consume a QC request
++	 * and persist a bogus URL mapping. Drop them silently. (Pre-refactor CSS
++	 * had this guard inline in its cron loop.)
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool
++	 */
++	protected function _valid_queue_item( $queue_k, $v ) {
++		if ( empty( $v['url_tag'] ) ) {
++			return false;
++		}
++		return true;
++	}
++
++	/**
++	 * Build the request body for Cloud::post.
++	 *
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return array
++	 */
++	protected function _build_payload( $queue_k, $v ) {
++		if ( ! isset( $this->_ccss_whitelist ) ) {
++			$this->_ccss_whitelist = $this->_filter_whitelist();
++		}
++		return [
++			'url'        => $v['url'],
++			'queue_k'    => $queue_k,
++			'user_agent' => $v['user_agent'],
++			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
++			'is_webp'    => ! empty( $v['is_webp'] ) ? 1 : 0,
++			'whitelist'  => $this->_ccss_whitelist,
++		];
++	}
++
++	/**
++	 * Persist the generated CCSS to disk. Empty payload is persisted as the
++	 * "no critical CSS for this page" sentinel (matches pre-refactor CCSS
++	 * behavior) so subsequent loads don't re-queue the same URL forever.
++	 *
++	 * @param string $data    CSS content (may be empty / null).
++	 * @param string $queue_k Queue key.
++	 * @param array  $v       Queue item.
++	 * @return bool
++	 */
++	protected function _save_result( $data, $queue_k, $v ) {
++		$css = null === $data ? '' : (string) $data;
++		$this->_save_css_con( 'ccss', $css, $v['url_tag'], $v['vary'], $queue_k, ! empty( $v['is_mobile'] ), ! empty( $v['is_webp'] ) );
++		return true;
++	}
++
++	/**
++	 * Legacy alias kept for task.cls.php cron hook registration.
++	 *
++	 * @param bool $should_continue Continue processing multiple items.
++	 * @return mixed
++	 */
++	public static function cron_ccss( $should_continue = false ) {
++		return self::cron( $should_continue );
++	}
++
+ 	/**
+ 	 * HTML lazyload CSS.
+ 	 *
+@@ -111,7 +185,7 @@ class CSS extends Base {
+ 			$hit = Utility::str_hit_array( $request_url, $sep_uri );
+ 		}
+ 		if ( $sep_uri && $hit ) {
+-			Debug2::debug( '[CCSS] Separate CCSS due to separate URI setting: ' . $hit );
++			self::debug( 'Separate CCSS due to separate URI setting: ' . $hit );
+ 			return $request_url;
+ 		}
+ 
+@@ -119,7 +193,7 @@ class CSS extends Base {
+ 
+ 		$sep_pt = $this->conf( self::O_OPTM_CCSS_SEP_POSTTYPE );
+ 		if ( in_array( $pt, $sep_pt, true ) ) {
+-			Debug2::debug( '[CCSS] Separate CCSS due to posttype setting: ' . $pt );
++			self::debug( 'Separate CCSS due to posttype setting: ' . $pt );
+ 			return $request_url;
+ 		}
+ 
+@@ -141,7 +215,7 @@ class CSS extends Base {
+ 		if ( ! empty( $permalink_structure ) ) {
+ 			$request_url = trailingslashit( home_url( $wp->request ) );
+ 		} else {
+-			$qs_add      = $wp->query_string ? '?' . (string) $wp->query_string : '' ;
++			$qs_add      = $wp->query_string ? '?' . (string) $wp->query_string : '';
+ 			$request_url = home_url( $wp->request ) . $qs_add;
+ 		}
+ 
+@@ -153,7 +227,7 @@ class CSS extends Base {
+ 			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.css';
+ 
+ 			if ( file_exists( $static_file ) ) {
+-				Debug2::debug2( '[CSS] existing ccss ' . $static_file );
++				self::debug2( 'existing ccss ' . $static_file );
+ 				Core::comment( 'QUIC.cloud CCSS loaded ✅ ' . $filepath_prefix . $filename . '.css' );
+ 				return File::read( $static_file );
+ 			}
+@@ -169,8 +243,8 @@ class CSS extends Base {
+ 		Core::comment( 'QUIC.cloud CCSS in queue' );
+ 		$this->_queue = $this->load_queue( 'ccss' );
+ 
+-		if ( count( $this->_queue ) > 500 ) {
+-			self::debug( 'CCSS Queue is full - 500' );
++		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
++			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
+ 			return null;
+ 		}
+ 
+@@ -193,382 +267,6 @@ class CSS extends Base {
+ 		return null;
+ 	}
+ 
+-	/**
+-	 * Cron ccss generation.
+-	 *
+-	 * @since  2.3
+-	 * @access private
+-	 *
+-	 * @param bool $should_continue Continue processing multiple items.
+-	 * @return mixed
+-	 */
+-	public static function cron_ccss( $should_continue = false ) {
+-		$_instance = self::cls();
+-		return $_instance->_cron_handler( 'ccss', $should_continue );
+-	}
+-
+-	/**
+-	 * Handle UCSS/CCSS cron.
+-	 *
+-	 * @since 4.2
+-	 *
+-	 * @param string $type            Job type: 'ccss' or 'ucss'.
+-	 * @param bool   $should_continue Continue processing multiple items.
+-	 * @return void
+-	 */
+-	private function _cron_handler( $type, $should_continue ) {
+-		$this->_queue = $this->load_queue( $type );
+-
+-		if ( empty( $this->_queue ) ) {
+-			return;
+-		}
+-
+-		$type_tag = strtoupper( $type );
+-
+-		// For cron, need to check request interval too
+-		if ( ! $should_continue ) {
+-			if ( ! empty( $this->_summary[ 'curr_request_' . $type ] ) && time() - (int) $this->_summary[ 'curr_request_' . $type ] < 300 && ! $this->conf( self::O_DEBUG ) ) {
+-				Debug2::debug( '[' . $type_tag . '] Last request not done' );
+-				return;
+-			}
+-		}
+-
+-		$i = 0;
+-		foreach ( $this->_queue as $k => $v ) {
+-			if ( ! empty( $v['_status'] ) ) {
+-				continue;
+-			}
+-
+-			Debug2::debug( '[' . $type_tag . '] cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
+-
+-			if ( 'ccss' === $type && empty( $v['url_tag'] ) ) {
+-				unset( $this->_queue[ $k ] );
+-				$this->save_queue( $type, $this->_queue );
+-				Debug2::debug( '[CCSS] wrong queue_ccss format' );
+-				continue;
+-			}
+-
+-			if ( ! isset( $v['is_webp'] ) ) {
+-				$v['is_webp'] = false;
+-			}
+-
+-			++$i;
+-			$res = $this->_send_req( $v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $type, $v['is_mobile'], $v['is_webp'] );
+-			if ( ! $res ) {
+-				// Status is wrong, drop this this->_queue
+-				unset( $this->_queue[ $k ] );
+-				$this->save_queue( $type, $this->_queue );
+-
+-				if ( ! $should_continue ) {
+-					return;
+-				}
+-
+-				if ( $i > 3 ) {
+-					GUI::print_loading( count( $this->_queue ), $type_tag );
+-					return Router::self_redirect( Router::ACTION_CSS, self::TYPE_GEN_CCSS );
+-				}
+-
+-				continue;
+-			}
+-
+-			// Exit queue if out of quota or service is hot
+-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+-				return;
+-			}
+-
+-			$this->_queue[ $k ]['_status'] = 'requested';
+-			$this->save_queue( $type, $this->_queue );
+-
+-			// only request first one
+-			if ( ! $should_continue ) {
+-				return;
+-			}
+-
+-			if ( $i > 3 ) {
+-				GUI::print_loading( count( $this->_queue ), $type_tag );
+-				return Router::self_redirect( Router::ACTION_CSS, self::TYPE_GEN_CCSS );
+-			}
+-		}
+-	}
+-
+-	/**
+-	 * Send to QC API to generate CCSS/UCSS.
+-	 *
+-	 * @since  2.3
+-	 * @access private
+-	 *
+-	 * @param string $request_url Request URL.
+-	 * @param string $queue_k     Queue key.
+-	 * @param int    $uid         WP User ID.
+-	 * @param string $user_agent  User agent string.
+-	 * @param string $vary        Vary string.
+-	 * @param string $url_tag     URL tag.
+-	 * @param string $type        Type: 'ccss' or 'ucss'.
+-	 * @param bool   $is_mobile   Is mobile.
+-	 * @param bool   $is_webp     Has webp support.
+-	 * @return bool|string True on success, 'out_of_quota' / 'svc_hot' on special cases, false on failure.
+-	 */
+-	private function _send_req( $request_url, $queue_k, $uid, $user_agent, $vary, $url_tag, $type, $is_mobile, $is_webp ) {
+-		// Check if has credit to push or not
+-		$err       = false;
+-		$allowance = $this->cls( 'Cloud' )->allowance( Cloud::SVC_CCSS, $err );
+-		if ( ! $allowance ) {
+-			Debug2::debug( '[CCSS] ❌ No credit: ' . $err );
+-			$err && Admin_Display::error( Error::msg( $err ) );
+-			return 'out_of_quota';
+-		}
+-
+-		set_time_limit( 120 );
+-
+-		// Update css request status
+-		$this->_summary[ 'curr_request_' . $type ] = time();
+-		self::save_summary();
+-
+-		// Gather guest HTML to send
+-		$html = $this->prepare_html( $request_url, $user_agent, $uid );
+-
+-		if ( ! $html ) {
+-			return false;
+-		}
+-
+-		// Parse HTML to gather all CSS content before requesting
+-		list( $css, $html ) = $this->prepare_css( $html, $is_webp );
+-
+-		if ( ! $css ) {
+-			$type_tag = strtoupper( $type );
+-			Debug2::debug( '[' . $type_tag . '] ❌ No combined css' );
+-			return false;
+-		}
+-
+-		// Generate critical css
+-		$data = [
+-			'url'        => $request_url,
+-			'queue_k'    => $queue_k,
+-			'user_agent' => $user_agent,
+-			'is_mobile'  => $is_mobile ? 1 : 0, // todo:compatible w/ tablet
+-			'is_webp'    => $is_webp ? 1 : 0,
+-			'html'       => $html,
+-			'css'        => $css,
+-		];
+-		if ( ! isset( $this->_ccss_whitelist ) ) {
+-			$this->_ccss_whitelist = $this->_filter_whitelist();
+-		}
+-		$data['whitelist'] = $this->_ccss_whitelist;
+-
+-		self::debug( 'Generating: ', $data );
+-
+-		$json = Cloud::post( Cloud::SVC_CCSS, $data, 30 );
+-		if ( ! is_array( $json ) ) {
+-			return $json;
+-		}
+-
+-		// Old version compatibility
+-		if ( empty( $json['status'] ) ) {
+-			if ( ! empty( $json[ $type ] ) ) {
+-				$this->_save_con( $type, $json[ $type ], $queue_k, $is_mobile, $is_webp );
+-			}
+-
+-			// Delete the row
+-			return false;
+-		}
+-
+-		// Unknown status, remove this line
+-		if ( 'queued' !== $json['status'] ) {
+-			return false;
+-		}
+-
+-		// Save summary data
+-		$this->_summary[ 'last_spent_' . $type ]   = time() - (int) $this->_summary[ 'curr_request_' . $type ];
+-		$this->_summary[ 'last_request_' . $type ] = $this->_summary[ 'curr_request_' . $type ];
+-		$this->_summary[ 'curr_request_' . $type ] = 0;
+-		self::save_summary();
+-
+-		return true;
+-	}
+-
+-	/**
+-	 * Save CCSS/UCSS content.
+-	 *
+-	 * @since 4.2
+-	 *
+-	 * @param string $type    Type: 'ccss' or 'ucss'.
+-	 * @param string $css     CSS content.
+-	 * @param string $queue_k Queue key.
+-	 * @param bool   $mobile  Is mobile.
+-	 * @param bool   $webp    Has webp support.
+-	 * @return void
+-	 */
+-	private function _save_con( $type, $css, $queue_k, $mobile, $webp ) {
+-		// Add filters
+-		$css = apply_filters( 'litespeed_' . $type, $css, $queue_k );
+-		// Sanitize: CSS must not contain HTML tags
+-		$css = wp_strip_all_tags( $css );
+-		Debug2::debug2( '[CSS] con: ' . $css );
+-
+-		if ( substr( $css, 0, 2 ) === '/*' && substr( $css, -2 ) === '*/' ) {
+-			self::debug( '❌ empty ' . $type . ' [content] ' . $css );
+-			// continue; // Save the error info too
+-		}
+-
+-		// Write to file
+-		$filecon_md5 = md5( $css );
+-
+-		$filepath_prefix = $this->_build_filepath_prefix( $type );
+-		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.css';
+-
+-		File::save( $static_file, $css, true );
+-
+-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
+-		$vary    = $this->_queue[ $queue_k ]['vary'];
+-		Debug2::debug2( "[CSS] Save URL to file [file] $static_file [vary] $vary" );
+-
+-		$this->cls( 'Data' )->save_url( $url_tag, $vary, $type, $filecon_md5, dirname( $static_file ), $mobile, $webp );
+-
+-		Purge::add( strtoupper( $type ) . '.' . md5( $queue_k ) );
+-	}
+-
+-	/**
+-	 * Play for fun.
+-	 *
+-	 * @since  3.4.3
+-	 *
+-	 * @param string $request_url URL to test.
+-	 * @return void
+-	 */
+-	public function test_url( $request_url ) {
+-		$user_agent         = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+-		$html               = $this->prepare_html( $request_url, $user_agent );
+-		list( $css, $html ) = $this->prepare_css( $html, true, true );
+-
+-		$data = [
+-			'url'        => $request_url,
+-			'ccss_type'  => 'test',
+-			'user_agent' => $user_agent,
+-			'is_mobile'  => 0,
+-			'html'       => $html,
+-			'css'        => $css,
+-			'type'       => 'CCSS',
+-		];
+-
+-		$json = Cloud::post( Cloud::SVC_CCSS, $data, 180 );
+-
+-		Debug2::debug2( '[CSS][test_url] response', $json );
+-	}
+-
+-	/**
+-	 * Prepare HTML from URL.
+-	 *
+-	 * @since  3.4.3
+-	 *
+-	 * @param string   $request_url URL to fetch.
+-	 * @param string   $user_agent  User agent to use.
+-	 * @param int|bool $uid         Optional user ID for simulation.
+-	 * @return string|false
+-	 */
+-	public function prepare_html( $request_url, $user_agent, $uid = false ) {
+-		$html = $this->cls( 'Crawler' )->self_curl( add_query_arg( 'LSCWP_CTRL', 'before_optm', $request_url ), $user_agent, $uid );
+-		Debug2::debug2( '[CSS] self_curl result....', $html );
+-
+-		if ( ! $html ) {
+-			return false;
+-		}
+-
+-		$html = $this->cls( 'Optimizer' )->html_min( $html, true );
+-		// Drop <noscript>xxx</noscript>
+-		$html = preg_replace( '#<noscript>.*</noscript>#isU', '', $html );
+-
+-		return $html;
+-	}
+-
+-	/**
+-	 * Prepare CSS from HTML for CCSS generation only. UCSS will use combined CSS directly.
+-	 * Prepare refined HTML for both CCSS and UCSS.
+-	 *
+-	 * @since  3.4.3
+-	 *
+-	 * @param string $html    HTML content.
+-	 * @param bool   $is_webp Convert backgrounds to WebP when supported.
+-	 * @param bool   $dryrun  If true, do not fetch external CSS files.
+-	 * @return array{0:string,1:string} [combined CSS, refined HTML]
+-	 */
+-	public function prepare_css( $html, $is_webp = false, $dryrun = false ) {
+-		$css = '';
+-		preg_match_all( '#<link ([^>]+)/?>|<style([^>]*)>([^<]+)</style>#isU', $html, $matches, PREG_SET_ORDER );
+-		foreach ( $matches as $match ) {
+-			$debug_info = '';
+-			if ( strpos( $match[0], '<link' ) === 0 ) {
+-				$attrs = Utility::parse_attr( $match[1] );
+-
+-				if ( empty( $attrs['rel'] ) ) {
+-					continue;
+-				}
+-
+-				if ( 'stylesheet' !== $attrs['rel'] ) {
+-					if ( 'preload' !== $attrs['rel'] || empty( $attrs['as'] ) || 'style' !== $attrs['as'] ) {
+-						continue;
+-					}
+-				}
+-
+-				if ( ! empty( $attrs['media'] ) && false !== strpos( $attrs['media'], 'print' ) ) {
+-					continue;
+-				}
+-
+-				if ( empty( $attrs['href'] ) ) {
+-					continue;
+-				}
+-
+-				// Check Google fonts hit
+-				if ( false !== strpos( $attrs['href'], 'fonts.googleapis.com' ) ) {
+-					$html = str_replace( $match[0], '', $html );
+-					continue;
+-				}
+-
+-				$debug_info = $attrs['href'];
+-
+-				// Load CSS content
+-				if ( ! $dryrun ) {
+-					// Dryrun will not load CSS but just drop them
+-					$con = $this->cls( 'Optimizer' )->load_file( $attrs['href'] );
+-					if ( ! $con ) {
+-						continue;
+-					}
+-				} else {
+-					$con = '';
+-				}
+-			} else {
+-				// Inline style
+-				$attrs = Utility::parse_attr( $match[2] );
+-
+-				if ( ! empty( $attrs['media'] ) && false !== strpos( $attrs['media'], 'print' ) ) {
+-					continue;
+-				}
+-
+-				Debug2::debug2( '[CSS] Load inline CSS ' . substr( $match[3], 0, 100 ) . '...', $attrs );
+-				$con = $match[3];
+-
+-				$debug_info = '__INLINE__';
+-			}
+-
+-			$con = Optimizer::minify_css( $con );
+-			if ( $is_webp && $this->cls( 'Media' )->webp_support() ) {
+-				$con = $this->cls( 'Media' )->replace_background_webp( $con );
+-			}
+-
+-			if ( ! empty( $attrs['media'] ) && 'all' !== $attrs['media'] ) {
+-				$con = '@media ' . $attrs['media'] . '{' . $con . "}\n";
+-			} else {
+-				$con = $con . "\n";
+-			}
+-
+-			$con  = '/* ' . $debug_info . ' */' . $con;
+-			$css .= $con;
+-
+-			$html = str_replace( $match[0], '', $html );
+-		}
+-
+-		return [ $css, $html ];
+-	}
+-
+ 	/**
+ 	 * Filter the comment content, add quotes to selector from whitelist. Return the json.
+ 	 *
+@@ -587,92 +285,4 @@ class CSS extends Base {
+ 
+ 		return $whitelist;
+ 	}
+-
+-	/**
+-	 * Notify finished from server.
+-	 *
+-	 * @since 7.1
+-	 * @return array
+-	 */
+-	public function notify() {
+-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+-		$post_data = \json_decode( file_get_contents( 'php://input' ), true );
+-		if ( is_null( $post_data ) ) {
+-			// Fallback for form-encoded payloads
+-			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+-			$post_data = $_POST;
+-		}
+-		self::debug( 'notify() data', $post_data );
+-
+-		$this->_queue = $this->load_queue( 'ccss' );
+-
+-		list( $post_data ) = $this->cls( 'Cloud' )->extract_msg( $post_data, 'ccss' );
+-
+-		$notified_data = $post_data['data'];
+-		if ( empty( $notified_data ) || ! is_array( $notified_data ) ) {
+-			self::debug( '❌ notify exit: no notified data' );
+-			return Cloud::err( 'no notified data' );
+-		}
+-
+-		// Check if its in queue or not
+-		$valid_i = 0;
+-		foreach ( $notified_data as $v ) {
+-			if ( empty( $v['request_url'] ) ) {
+-				self::debug( '❌ notify bypass: no request_url', $v );
+-				continue;
+-			}
+-			if ( empty( $v['queue_k'] ) ) {
+-				self::debug( '❌ notify bypass: no queue_k', $v );
+-				continue;
+-			}
+-
+-			if ( empty( $this->_queue[ $v['queue_k'] ] ) ) {
+-				self::debug( '❌ notify bypass: no this queue [q_k]' . $v['queue_k'] );
+-				continue;
+-			}
+-
+-			// Save data
+-			if ( ! empty( $v['data_ccss'] ) ) {
+-				$is_mobile = $this->_queue[ $v['queue_k'] ]['is_mobile'];
+-				$is_webp   = $this->_queue[ $v['queue_k'] ]['is_webp'];
+-				$this->_save_con( 'ccss', $v['data_ccss'], $v['queue_k'], $is_mobile, $is_webp );
+-
+-				++$valid_i;
+-			}
+-
+-			unset( $this->_queue[ $v['queue_k'] ] );
+-			self::debug( 'notify data handled, unset queue [q_k] ' . $v['queue_k'] );
+-		}
+-		$this->save_queue( 'ccss', $this->_queue );
+-
+-		self::debug( 'notified' );
+-
+-		return Cloud::ok( [ 'count' => $valid_i ] );
+-	}
+-
+-	/**
+-	 * Handle all request actions from main cls.
+-	 *
+-	 * @since  2.3
+-	 * @access public
+-	 * @return void
+-	 */
+-	public function handler() {
+-		$type = Router::verify_type();
+-
+-		switch ( $type ) {
+-			case self::TYPE_GEN_CCSS:
+-            self::cron_ccss( true );
+-				break;
+-
+-			case self::TYPE_CLEAR_Q_CCSS:
+-            $this->clear_q( 'ccss' );
+-				break;
+-
+-			default:
+-				break;
+-		}
+-
+-		Admin::redirect();
+-	}
+ }
+diff --git a/src/data.cls.php b/src/data.cls.php
+index a978a101..f3688980 100644
+--- a/src/data.cls.php
++++ b/src/data.cls.php
+@@ -46,10 +46,11 @@ class Data extends Root {
+ 	 * @var array<string,int>
+ 	 */
+ 	private $_url_file_types = [
+-		'css'  => 1,
+-		'js'   => 2,
+-		'ccss' => 3,
+-		'ucss' => 4,
++		'css'     => 1,
++		'js'      => 2,
++		'ccss'    => 3,
++		'ucss'    => 4,
++		'optimax' => 5,
+ 	];
+ 
+ 	/** Table: image optimization results. */
+@@ -426,7 +427,7 @@ class Data extends Root {
+ 	 * @since 4.0
+ 	 * @access public
+ 	 *
+-	 * @param string $file_type One of 'css','js','ccss','ucss'.
++	 * @param string $file_type One of 'css','js','ccss','ucss','optimax'.
+ 	 * @return void
+ 	 */
+ 	public function url_file_clean( $file_type ) {
+@@ -464,7 +465,7 @@ class Data extends Root {
+ 	 *
+ 	 * @param string $request_url  Full request URL.
+ 	 * @param string $vary         Vary string (may be long; will be md5 if >32).
+-	 * @param string $file_type    One of 'css','js','ccss','ucss'.
++	 * @param string $file_type    One of 'css','js','ccss','ucss','optimax'.
+ 	 * @param string $filecon_md5  MD5 of the generated file content.
+ 	 * @param string $path         Base path where files live.
+ 	 * @param bool   $mobile       Whether mapping is for mobile.
+@@ -538,7 +539,7 @@ class Data extends Root {
+ 			$list = $wpdb->get_results( $q, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+ 			if ( $list ) {
+ 				foreach ( $list as $v ) {
+-					$ext         = 'js' === $file_type ? 'js' : 'css';
++					$ext         = 'optimax' === $file_type ? 'html' : ( 'js' === $file_type ? 'js' : 'css' );
+ 					$file_to_del = trailingslashit( $path ) . $v['filename'] . '.' . $ext;
+ 					if ( file_exists( $file_to_del ) ) {
+ 						self::debug( 'Delete expired unused file: ' . $file_to_del );
+@@ -559,7 +560,7 @@ class Data extends Root {
+ 	 *
+ 	 * @param string $request_url Full request URL or tag.
+ 	 * @param string $vary        Vary string (may be md5 if previously stored).
+-	 * @param string $file_type   One of 'css','js','ccss','ucss'.
++	 * @param string $file_type   One of 'css','js','ccss','ucss','optimax'.
+ 	 * @return string|false Filename md5 (without extension) or false if none.
+ 	 */
+ 	public function load_url_file( $request_url, $vary, $file_type ) {
+diff --git a/src/doc.cls.php b/src/doc.cls.php
+index 0df365d2..443e0ab3 100644
+--- a/src/doc.cls.php
++++ b/src/doc.cls.php
+@@ -157,7 +157,7 @@ class Doc {
+ 	public static function notice_htaccess() {
+ 		echo '<span class="litespeed-primary">';
+ 		echo '⚠️ ' . esc_html__( 'This setting will edit the .htaccess file.', 'litespeed-cache' ) . ' ';
+-		self::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/toolbox/#edit-htaccess-tab' );
++		self::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/toolbox/#view-htaccess-tab' );
+ 		echo '</span>';
+ 	}
+ 
+diff --git a/src/file.cls.php b/src/file.cls.php
+index 1945aa17..888e54a0 100644
+--- a/src/file.cls.php
++++ b/src/file.cls.php
+@@ -16,6 +16,106 @@ class File {
+ 
+ 	const MARKER = 'LiteSpeed Operator';
+ 
++	/**
++	 * Marker name embedded in the seeded .htaccess. Bump the suffix when the rule template changes so ensure_static_protection() re-seeds outdated copies on existing sites.
++	 *
++	 * @since 7.9
++	 */
++	const STATIC_DIR_HTACCESS_MARKER = 'LSCACHE_STATIC_PROTECT_V2';
++
++	/**
++	 * Build the whitelist .htaccess content for LITESPEED_STATIC_DIR
++	 * Anything not explicitly allowed returns 403.
++	 * Lazy-gen folders (avatar/localres) hand missing requests off to WP's index.php directly
++	 *
++	 * @since 7.9
++	 *
++	 * @return string Full .htaccess body.
++	 */
++	public static function build_static_dir_htaccess() {
++		$home_path = parse_url(home_url('/'), PHP_URL_PATH);
++		if (!is_string($home_path) || '' === $home_path) {
++			$home_path = '/';
++		}
++		$wp_index = rtrim($home_path, '/') . '/index.php';
++		$marker   = self::STATIC_DIR_HTACCESS_MARKER;
++
++		return <<<HTACCESS
++# BEGIN {$marker}
++# DO NOT EDIT — auto-generated by LiteSpeed Cache.
++# Whitelist: only listed root files and folders are publicly readable.
++
++Options -Indexes
++
++<IfModule mod_rewrite.c>
++    RewriteEngine On
++
++    # Block dotfiles (.litespeed_conf.dat, .htaccess, etc.) anywhere in the tree
++    RewriteRule (^|/)\.[^/]+$ - [F,L]
++
++    # Whitelisted root-level public files
++    RewriteRule ^robots\.txt$ - [L]
++
++    # Pre-generated public asset folders: serve as-is, 404 if missing
++    RewriteRule ^(css|js|ucss|ccss|lqip|optimax|crawler)(/|$) - [L]
++
++    # Lazy-gen folders: serve existing files directly
++    RewriteCond %{REQUEST_FILENAME} -f
++    RewriteRule ^(avatar|localres)(/|$) - [L]
++
++    # Lazy-gen folders: missing file → hand off to WP index.php for on-the-fly generation
++    RewriteCond %{REQUEST_FILENAME} !-f
++    RewriteRule ^(avatar|localres)/.+ {$wp_index} [L]
++
++    # Default deny
++    RewriteRule .* - [F,L]
++</IfModule>
++# END {$marker}
++HTACCESS;
++	}
++
++	/**
++	 * Seed .htaccess + robots.txt into LITESPEED_STATIC_DIR if missing or outdated.
++	 *
++	 * Re-seeds whenever the on-disk body differs from the freshly built template — covers template
++	 * bumps, hand edits that drop critical rules, partial writes, and home_url() changes that would
++	 * otherwise leave a stale rewrite target in the file.
++	 *
++	 * @since 7.9
++	 */
++	public static function ensure_static_protection() {
++		if (!is_dir(LITESPEED_STATIC_DIR)) {
++			return;
++		}
++		$htaccess_path = LITESPEED_STATIC_DIR . '/.htaccess';
++		$content       = self::build_static_dir_htaccess();
++
++		if (is_file($htaccess_path)) {
++			$existing = @file_get_contents($htaccess_path);
++			if (false !== $existing && $existing === $content) {
++				return;
++			}
++		}
++
++		$bytes = @file_put_contents($htaccess_path, $content, LOCK_EX);
++
++		$robots_path = LITESPEED_STATIC_DIR . '/robots.txt';
++		if (!is_file($robots_path)) {
++			@file_put_contents($robots_path, "User-agent: *\nDisallow: /\n", LOCK_EX);
++		}
++
++		$banner = sprintf(
++			/* translators: %s: full path to the .htaccess file LiteSpeed Cache failed to create. */
++			__('LiteSpeed Cache could not create %s. Sensitive files (configuration backups, debug logs) under this folder may be publicly accessible. Fix the directory permissions to restore protection.', 'litespeed-cache'),
++			'<code>' . esc_html($htaccess_path) . '</code>'
++		);
++		if ($bytes === strlen($content)) {
++			Admin_Display::dismiss_pin_by_content($banner, Admin_Display::NOTICE_RED, true);
++		} else {
++			Admin_Display::error($banner, false, true);
++		}
++	}
++
+ 	/**
+ 	 * Detect if an URL is 404
+ 	 *
+@@ -146,10 +246,6 @@ class File {
+ 
+ 			try {
+ 				mkdir($folder, 0755, true);
+-				// Create robots.txt file to forbid search engine indexes
+-				if (!file_exists(LITESPEED_STATIC_DIR . '/robots.txt')) {
+-					file_put_contents(LITESPEED_STATIC_DIR . '/robots.txt', "User-agent: *\nDisallow: /\n");
+-				}
+ 			} catch (\ErrorException $ex) {
+ 				return $silence ? false : sprintf(__('Can not create folder: %1$s. Error: %2$s', 'litespeed-cache'), $folder, $ex->getMessage());
+ 			}
+@@ -157,6 +253,10 @@ class File {
+ 			restore_error_handler();
+ 		}
+ 
++		if (strpos($filename, LITESPEED_STATIC_DIR . '/') === 0) {
++			self::ensure_static_protection();
++		}
++
+ 		if (!file_exists($filename)) {
+ 			if (!is_writable($folder)) {
+ 				return $silence ? false : sprintf(__('Folder is not writable: %s.', 'litespeed-cache'), $folder);
+diff --git a/src/gui.cls.php b/src/gui.cls.php
+index 785195f0..e30626cd 100644
+--- a/src/gui.cls.php
++++ b/src/gui.cls.php
+@@ -824,13 +824,12 @@ class GUI extends Base {
+ 	 * Adds links to the admin bar so users can quickly manage/purge.
+ 	 *
+ 	 * @since 1.7.2 Moved from admin_display.cls to gui.cls; Renamed from `add_quick_purge` to `backend_shortcut`.
++	 * @since 1.9.0 Added $wp_admin_bar as parameter.
+ 	 * @access public
+-	 * @global \WP_Admin_Bar $wp_admin_bar
++	 * @param \WP_Admin_Bar $wp_admin_bar Admin menu bar info.
+ 	 * @return void
+ 	 */
+-	public function backend_shortcut() {
+-		global $wp_admin_bar;
+-
++	public function backend_shortcut( &$wp_admin_bar ) {
+ 		if ( defined( 'LITESPEED_DISABLE_ALL' ) && LITESPEED_DISABLE_ALL ) {
+ 			$wp_admin_bar->add_menu(
+ 				[
+diff --git a/src/health.cls.php b/src/health.cls.php
+index 6f53c4c2..ac0a0b70 100644
+--- a/src/health.cls.php
++++ b/src/health.cls.php
+@@ -1,20 +1,32 @@
+ <?php
+-// phpcs:ignoreFile
+ /**
+  * The page health
+  *
+  * @since      3.0
+  * @package    LiteSpeed
+  */
++
+ namespace LiteSpeed;
+ 
+-defined('WPINC') || exit();
++defined( 'WPINC' ) || exit();
+ 
++/**
++ * Health check handler.
++ *
++ * @since 3.0
++ */
+ class Health extends Base {
+ 
++	const LOG_TAG = '[Health]';
++
+ 	const TYPE_SPEED = 'speed';
+ 	const TYPE_SCORE = 'score';
+ 
++	/**
++	 * Cached summary data.
++	 *
++	 * @var array
++	 */
+ 	protected $_summary;
+ 
+ 	/**
+@@ -27,26 +39,89 @@ class Health extends Base {
+ 	}
+ 
+ 	/**
+-	 * Test latest speed
++	 * Cron entry point — called by WP cron to process pending health request.
+ 	 *
+-	 * @since 3.0
++	 * @since 8.0
+ 	 */
+-	private function _ping( $type ) {
+-		$data = array( 'action' => $type );
++	public static function cron() {
++		$_instance = self::cls();
++		if ( empty( $_instance->_summary['pending'] ) ) {
++			return;
++		}
++		$_instance->_run( $_instance->_summary['pending'] );
++	}
++
++	/**
++	 * Run health check request for given type.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $type TYPE_SPEED or TYPE_SCORE.
++	 */
++	private function _run( $type ) {
++		// If try_later cooldown is still active, defer to cron
++		if ( ! empty( $this->_summary['health_next_run_after'] ) && time() < $this->_summary['health_next_run_after'] ) {
++			$this->_summary['pending'] = $type;
++			self::save_summary();
++			self::debug( 'Deferred to cron (try_later active) [type] ' . $type );
++			return;
++		}
++
++		// Clear expired try_later flag
++		unset( $this->_summary['health_next_run_after'] );
+ 
+-		$json = Cloud::post(Cloud::SVC_HEALTH, $data, 600);
++		self::debug( 'Running [type] ' . $type );
++
++		$res = $this->_send_req( $type );
++
++		if ( $res ) {
++			unset( $this->_summary['pending'] );
++		} else {
++			// Failed or got try_later — mark pending for cron retry
++			$this->_summary['pending'] = $type;
++		}
++		self::save_summary();
++	}
++
++	/**
++	 * Send health check request to cloud service.
++	 *
++	 * @since 6.0
++	 *
++	 * @param string $type TYPE_SPEED or TYPE_SCORE.
++	 * @return bool
++	 */
++	private function _send_req( $type ) {
++		$data = [ 'action' => $type ];
++
++		$json = Cloud::post( Cloud::SVC_HEALTH, $data, 600 );
++
++		if ( ! is_array( $json ) ) {
++			self::debug( 'Invalid response' );
++			return false;
++		}
++
++		// Handle try_later from QC
++		if ( ! empty( $json['try_later'] ) ) {
++			$ttl                                     = (int) $json['try_later'];
++			$this->_summary['health_next_run_after'] = time() + $ttl;
++			self::save_summary();
++			self::debug( 'Server requested try_later: ' . $ttl . 's' );
++			return false;
++		}
+ 
+-		if (empty($json['data']['before']) || empty($json['data']['after'])) {
+-			Debug2::debug('[Health] ❌ no data');
++		if ( empty( $json['data']['before'] ) || empty( $json['data']['after'] ) ) {
++			self::debug( 'No data returned from cloud' );
+ 			return false;
+ 		}
+ 
+-		$this->_summary[$type . '.before'] = $json['data']['before'];
+-		$this->_summary[$type . '.after']  = $json['data']['after'];
++		$this->_summary[ $type . '.before' ] = $json['data']['before'];
++		$this->_summary[ $type . '.after' ]  = $json['data']['after'];
+ 
+ 		self::save_summary();
+ 
+-		Debug2::debug('[Health] saved result');
++		self::debug( 'Saved result' );
++		return true;
+ 	}
+ 
+ 	/**
+@@ -55,52 +130,56 @@ class Health extends Base {
+ 	 * @since 3.0
+ 	 */
+ 	public function scores() {
+-		$speed_before = $speed_after = $speed_improved = 0;
+-		if (!empty($this->_summary['speed.before']) && !empty($this->_summary['speed.after'])) {
++		$speed_before   = 0;
++		$speed_after    = 0;
++		$speed_improved = 0;
++		if ( ! empty( $this->_summary['speed.before'] ) && ! empty( $this->_summary['speed.after'] ) ) {
+ 			// Format loading time
+ 			$speed_before = $this->_summary['speed.before'] / 1000;
+-			if ($speed_before < 0.01) {
++			if ( $speed_before < 0.01 ) {
+ 				$speed_before = 0.01;
+ 			}
+-			$speed_before = number_format($speed_before, 2);
++			$speed_before = number_format( $speed_before, 2 );
+ 
+ 			$speed_after = $this->_summary['speed.after'] / 1000;
+-			if ($speed_after < 0.01) {
+-				$speed_after = number_format($speed_after, 3);
++			if ( $speed_after < 0.01 ) {
++				$speed_after = number_format( $speed_after, 3 );
+ 			} else {
+-				$speed_after = number_format($speed_after, 2);
++				$speed_after = number_format( $speed_after, 2 );
+ 			}
+ 
+-			$speed_improved = (($this->_summary['speed.before'] - $this->_summary['speed.after']) * 100) / $this->_summary['speed.before'];
+-			if ($speed_improved > 99) {
+-				$speed_improved = number_format($speed_improved, 2);
++			$speed_improved = ( ( $this->_summary['speed.before'] - $this->_summary['speed.after'] ) * 100 ) / $this->_summary['speed.before'];
++			if ( $speed_improved > 99 ) {
++				$speed_improved = number_format( $speed_improved, 2 );
+ 			} else {
+-				$speed_improved = number_format($speed_improved);
++				$speed_improved = number_format( $speed_improved );
+ 			}
+ 		}
+ 
+-		$score_before = $score_after = $score_improved = 0;
+-		if (!empty($this->_summary['score.before']) && !empty($this->_summary['score.after'])) {
++		$score_before   = 0;
++		$score_after    = 0;
++		$score_improved = 0;
++		if ( ! empty( $this->_summary['score.before'] ) && ! empty( $this->_summary['score.after'] ) ) {
+ 			$score_before = $this->_summary['score.before'];
+ 			$score_after  = $this->_summary['score.after'];
+ 
+ 			// Format Score
+-			$score_improved = (($score_after - $score_before) * 100) / $score_after;
+-			if ($score_improved > 99) {
+-				$score_improved = number_format($score_improved, 2);
++			$score_improved = ( ( $score_after - $score_before ) * 100 ) / $score_after;
++			if ( $score_improved > 99 ) {
++				$score_improved = number_format( $score_improved, 2 );
+ 			} else {
+-				$score_improved = number_format($score_improved);
++				$score_improved = number_format( $score_improved );
+ 			}
+ 		}
+ 
+-		return array(
+-			'speed_before' => $speed_before,
+-			'speed_after' => $speed_after,
++		return [
++			'speed_before'   => $speed_before,
++			'speed_after'    => $speed_after,
+ 			'speed_improved' => $speed_improved,
+-			'score_before' => $score_before,
+-			'score_after' => $score_after,
++			'score_before'   => $score_before,
++			'score_after'    => $score_after,
+ 			'score_improved' => $score_improved,
+-		);
++		];
+ 	}
+ 
+ 	/**
+@@ -112,10 +191,10 @@ class Health extends Base {
+ 	public function handler() {
+ 		$type = Router::verify_type();
+ 
+-		switch ($type) {
++		switch ( $type ) {
+ 			case self::TYPE_SPEED:
+ 			case self::TYPE_SCORE:
+-            $this->_ping($type);
++				$this->_run( $type );
+ 				break;
+ 
+ 			default:
+diff --git a/src/object-cache.cls.php b/src/object-cache.cls.php
+index 5a17de90..356d9be2 100644
+--- a/src/object-cache.cls.php
++++ b/src/object-cache.cls.php
+@@ -155,13 +155,6 @@ class Object_Cache extends Root {
+ 	 */
+ 	private $_cfg_port;
+ 
+-	/**
+-	 * TTL in seconds.
+-	 *
+-	 * @var int
+-	 */
+-	private $_cfg_life;
+-
+ 	/**
+ 	 * Use persistent connection.
+ 	 *
+@@ -198,18 +191,18 @@ class Object_Cache extends Root {
+ 	private $_cfg_pswd;
+ 
+ 	/**
+-	 * Default TTL in seconds.
++	 * 'Redis' or 'Memcached'.
+ 	 *
+-	 * @var int
++	 * @var string
+ 	 */
+-	private $_default_life = 360;
++	private $_oc_driver = 'Memcached'; // Redis or Memcached.
+ 
+ 	/**
+-	 * 'Redis' or 'Memcached'.
++	 * Whether an admin notice has already been pushed for a Redis failure this request.
+ 	 *
+-	 * @var string
++	 * @var bool
+ 	 */
+-	private $_oc_driver = 'Memcached'; // Redis or Memcached.
++	private $_redis_error_notified = false;
+ 
+ 	/**
+ 	 * Global groups.
+@@ -246,7 +239,6 @@ class Object_Cache extends Root {
+ 			$this->_cfg_method            = $cfg[ Base::O_OBJECT_KIND ] ? true : false;
+ 			$this->_cfg_host              = $cfg[ Base::O_OBJECT_HOST ];
+ 			$this->_cfg_port              = $cfg[ Base::O_OBJECT_PORT ];
+-			$this->_cfg_life              = $cfg[ Base::O_OBJECT_LIFE ];
+ 			$this->_cfg_persistent        = $cfg[ Base::O_OBJECT_PERSISTENT ];
+ 			$this->_cfg_admin             = $cfg[ Base::O_OBJECT_ADMIN ];
+ 			$this->_cfg_db                = $cfg[ Base::O_OBJECT_DB_ID ];
+@@ -264,7 +256,6 @@ class Object_Cache extends Root {
+ 			$this->_cfg_method            = $this->conf( Base::O_OBJECT_KIND ) ? true : false;
+ 			$this->_cfg_host              = $this->conf( Base::O_OBJECT_HOST );
+ 			$this->_cfg_port              = $this->conf( Base::O_OBJECT_PORT );
+-			$this->_cfg_life              = $this->conf( Base::O_OBJECT_LIFE );
+ 			$this->_cfg_persistent        = $this->conf( Base::O_OBJECT_PERSISTENT );
+ 			$this->_cfg_admin             = $this->conf( Base::O_OBJECT_ADMIN );
+ 			$this->_cfg_db                = $this->conf( Base::O_OBJECT_DB_ID );
+@@ -286,7 +277,6 @@ class Object_Cache extends Root {
+ 				$this->_cfg_method            = ! empty( $cfg[ self::O_OBJECT_KIND ] ) ? $cfg[ self::O_OBJECT_KIND ] : false;
+ 				$this->_cfg_host              = $cfg[ self::O_OBJECT_HOST ];
+ 				$this->_cfg_port              = $cfg[ self::O_OBJECT_PORT ];
+-				$this->_cfg_life              = ! empty( $cfg[ self::O_OBJECT_LIFE ] ) ? $cfg[ self::O_OBJECT_LIFE ] : $this->_default_life;
+ 				$this->_cfg_persistent        = ! empty( $cfg[ self::O_OBJECT_PERSISTENT ] ) ? $cfg[ self::O_OBJECT_PERSISTENT ] : false;
+ 				$this->_cfg_admin             = ! empty( $cfg[ self::O_OBJECT_ADMIN ] ) ? $cfg[ self::O_OBJECT_ADMIN ] : false;
+ 				$this->_cfg_db                = ! empty( $cfg[ self::O_OBJECT_DB_ID ] ) ? $cfg[ self::O_OBJECT_DB_ID ] : 0;
+@@ -305,6 +295,14 @@ class Object_Cache extends Root {
+ 		} else {
+ 			$this->_cfg_enabled = false;
+ 		}
++
++		// If OC not available, mark failure so OC methods return false early.
++		// NOTE: Do NOT call wp_using_ext_object_cache(false) here — it causes
++		// "Cannot redeclare wp_cache_init()" fatal on multisite (second call
++		// to wp_start_object_cache() would load cache.php again).
++		if ( ! $this->_cfg_enabled ) {
++			! defined( 'LITESPEED_OC_FAILURE' ) && define( 'LITESPEED_OC_FAILURE', true );
++		}
+ 	}
+ 
+ 	/**
+@@ -500,13 +498,22 @@ class Object_Cache extends Root {
+ 					}
+ 				}
+ 
+-				if (defined('Redis::OPT_REPLY_LITERAL')) {
++				if ( defined( 'Redis::OPT_REPLY_LITERAL' ) ) {
+ 					$this->debug_oc( 'Redis set OPT_REPLY_LITERAL' );
+-					$this->_conn->setOption(\Redis::OPT_REPLY_LITERAL, true);
++					$this->_conn->setOption( \Redis::OPT_REPLY_LITERAL, true );
++				}
++
++				// Enable phpredis-level zstd compression to cut Redis memory use. Payload-level only: do NOT set OPT_SERIALIZER, LSCWP already runs maybe_serialize upstream and a second serializer would corrupt reads.
++				if ( defined( 'Redis::OPT_COMPRESSION' ) && defined( 'Redis::COMPRESSION_ZSTD' ) ) {
++					$this->debug_oc( 'Redis set OPT_COMPRESSION to ZSTD' );
++					$this->_conn->setOption( \Redis::OPT_COMPRESSION, \Redis::COMPRESSION_ZSTD );
+ 				}
+ 
+ 				if ( $this->_cfg_db ) {
+-					$this->_conn->select( $this->_cfg_db );
++					if ( ! $this->_conn->select( $this->_cfg_db ) ) {
++						$this->debug_oc( 'Database ID is invalid' );
++						$failed = true;
++					}
+ 				}
+ 
+ 				$res = $this->_conn->rawCommand('PING');
+@@ -567,7 +574,22 @@ class Object_Cache extends Root {
+ 			$this->_conn        = null;
+ 			$this->_cfg_enabled = false;
+ 			! defined( 'LITESPEED_OC_FAILURE' ) && define( 'LITESPEED_OC_FAILURE', true );
+-			// error_log( 'Object: false!' );
++
++			// Disable ext OC flag so WP transients fall back to wp_options table.
++			// After muplugins_loaded, all wp_start_object_cache() calls are done — safe to call directly.
++			// Before that (early bootstrap), defer via hook to avoid multisite "Cannot redeclare" fatal.
++			if ( function_exists( 'did_action' ) && did_action( 'muplugins_loaded' ) ) {
++				wp_using_ext_object_cache( false );
++			} elseif ( function_exists( 'add_action' ) ) {
++				add_action(
++					'muplugins_loaded',
++					function () {
++						wp_using_ext_object_cache( false );
++					},
++					-999
++				);
++			}
++
+ 			return false;
+ 		}
+ 
+@@ -642,7 +664,16 @@ class Object_Cache extends Root {
+ 			return false;
+ 		}
+ 
+-		$res = $this->_conn->get( $key );
++		if ( 'Redis' === $this->_oc_driver ) {
++			try {
++				$res = $this->_conn->get( $key );
++			} catch ( \RedisException $ex ) {
++				$this->_redis_error( $ex );
++				return false;
++			}
++		} else {
++			$res = $this->_conn->get( $key );
++		}
+ 
+ 		return $res;
+ 	}
+@@ -675,16 +706,17 @@ class Object_Cache extends Root {
+ 			return false;
+ 		}
+ 
+-		$ttl = $expire ? $expire : $this->_cfg_life;
++		// Per WP Object Cache API, expire=0 means "no expiration".
++		// Key eviction is handled by the cache backend (Redis maxmemory / Memcached LRU).
++		$ttl = (int) $expire;
+ 
+ 		if ( 'Redis' === $this->_oc_driver ) {
+ 			try {
+-				$res = $this->_conn->setEx( $key, $ttl, $data );
++				$options = ( $ttl > 0 ) ? [ 'ex' => $ttl ] : [];
++				$res     = $this->_conn->set( $key, $data, $options );
+ 			} catch ( \RedisException $ex ) {
+ 				$res = false;
+-				$msg = sprintf( __( 'Redis encountered a fatal error: %1$s (code: %2$d)', 'litespeed-cache' ), $ex->getMessage(), $ex->getCode() );
+-				$this->debug_oc( $msg );
+-				Admin_Display::error( $msg );
++				$this->_redis_error( $ex );
+ 			}
+ 		} else {
+ 			$res = $this->_conn->set( $key, $data, $ttl );
+@@ -732,7 +764,12 @@ class Object_Cache extends Root {
+ 		}
+ 
+ 		if ( 'Redis' === $this->_oc_driver ) {
+-			$res = $this->_conn->del( $key );
++			try {
++				$res = $this->_conn->del( $key );
++			} catch ( \RedisException $ex ) {
++				$this->_redis_error( $ex );
++				return false;
++			}
+ 		} else {
+ 			$res = $this->_conn->delete( $key );
+ 		}
+@@ -761,7 +798,12 @@ class Object_Cache extends Root {
+ 		$this->debug_oc( 'flush!' );
+ 
+ 		if ( 'Redis' === $this->_oc_driver ) {
+-			$res = $this->_conn->flushDb();
++			try {
++				$res = $this->_conn->flushDb();
++			} catch ( \RedisException $ex ) {
++				$this->_redis_error( $ex );
++				return false;
++			}
+ 		} else {
+ 			$res = $this->_conn->flush();
+ 			$this->_conn->resetServerList();
+@@ -770,6 +812,24 @@ class Object_Cache extends Root {
+ 		return $res;
+ 	}
+ 
++	/**
++	 * Log a Redis exception and surface it as an admin notice.
++	 *
++	 * @since 7.9
++	 * @access private
++	 *
++	 * @param \RedisException $ex Exception raised by phpredis.
++	 * @return void
++	 */
++	private function _redis_error( $ex ) {
++		$this->debug_oc( sprintf( 'Redis op failed: %s (code: %d)', $ex->getMessage(), $ex->getCode() ) );
++
++		if ( ! $this->_redis_error_notified ) {
++			Admin_Display::error( \__( 'LiteSpeed Object Cache: Redis is unavailable. Check Redis server status (memory, connectivity) and the plugin debug log for details.', 'litespeed-cache' ) );
++			$this->_redis_error_notified = true;
++		}
++	}
++
+ 	/**
+ 	 * Add global groups.
+ 	 *
+diff --git a/src/object.lib.php b/src/object.lib.php
+index 4c58bd8d..2a8d001c 100644
+--- a/src/object.lib.php
++++ b/src/object.lib.php
+@@ -42,6 +42,21 @@ require_once __DIR__ . '/object-cache-wp.cls.php';
+ function wp_cache_init() {
+ 	// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+ 	$GLOBALS['wp_object_cache'] = WP_Object_Cache::get_instance();
++
++	// If OC backend is unavailable, tell WP so transients fall back to wp_options.
++	// IMPORTANT: Cannot call wp_using_ext_object_cache(false) here directly — on
++	// multisite, wp_start_object_cache() is called a second time (ms-settings.php)
++	// and would try to load cache.php, causing "Cannot redeclare wp_cache_init()".
++	// Defer until after all wp_start_object_cache() calls are done.
++	if ( defined( 'LITESPEED_OC_FAILURE' ) ) {
++		add_action(
++			'muplugins_loaded',
++			function () {
++				wp_using_ext_object_cache( false );
++			},
++			-999
++		);
++	}
+ }
+ 
+ /**
+diff --git a/src/optimax.cls.php b/src/optimax.cls.php
+new file mode 100644
+index 00000000..7c4f4a26
+--- /dev/null
++++ b/src/optimax.cls.php
+@@ -0,0 +1,524 @@
++<?php
++/**
++ * The Optimax class for full page optimization.
++ *
++ * Sends entire page (HTML/JS/CSS/Images) to cloud for optimization.
++ *
++ * @since   8.0
++ * @package LiteSpeed
++ */
++
++namespace LiteSpeed;
++
++defined( 'WPINC' ) || exit();
++
++/**
++ * Optimax - Full Page Optimization class.
++ *
++ * @since 8.0
++ */
++class Optimax extends Cloud_Queue_Svc {
++
++	const LOG_TAG = '🚀';
++
++	/**
++	 * Summary data cache.
++	 *
++	 * @var array
++	 */
++	protected $_summary;
++
++	/**
++	 * Init.
++	 *
++	 * @since 8.0
++	 */
++	public function __construct() {
++		$this->_summary = self::get_summary();
++	}
++
++	/**
++	 * Generate URL tag for Optimax.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $request_url Current request URL.
++	 * @return string The URL tag.
++	 */
++	public static function get_url_tag( $request_url ) {
++		if ( is_404() ) {
++			return '404';
++		}
++
++		return $request_url;
++	}
++
++	/**
++	 * Get User Agent.
++	 *
++	 * @since 8.0
++	 *
++	 * @return string The user agent string.
++	 */
++	private function _get_ua() {
++		return ! empty( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
++	}
++
++	/**
++	 * Cron handler for generation.
++	 *
++	 * @since 8.0
++	 *
++	 * @param bool $keep_going Whether to continue processing.
++	 * @return mixed The cron handler result.
++	 */
++	public static function cron( $keep_going = false ) {
++		$_instance = self::cls();
++		return $_instance->_cron_handler( $keep_going );
++	}
++
++	/**
++	 * Handle Optimax generation cron.
++	 *
++	 * @since 8.0
++	 *
++	 * @param bool $keep_going Whether to continue processing.
++	 * @return mixed The redirect result or void.
++	 */
++	private function _cron_handler( $keep_going ) {
++		$this->_queue = $this->load_queue( 'optimax' );
++
++		if ( empty( $this->_queue ) ) {
++			return;
++		}
++
++		// Check if we need to wait due to server's try_later request
++		if ( ! empty( $this->_summary[ 'ox_next_run_after' ] ) && time() < $this->_summary['ox_next_run_after'] ) {
++			$wait_seconds = $this->_summary['ox_next_run_after'] - time();
++			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
++			return;
++		}
++
++		// Clear try_later flag if wait time has passed
++		if ( ! empty( $this->_summary['ox_next_run_after'] ) ) {
++			unset( $this->_summary['ox_next_run_after'] );
++			self::save_summary();
++			self::debug( 'Cleared try_later flag, resuming ox processing' );
++		}
++
++		// Check request interval
++		if ( ! $keep_going ) {
++			if ( ! empty( $this->_summary['curr_request'] ) && time() - $this->_summary['curr_request'] < 300 && ! $this->conf( self::O_DEBUG ) ) {
++				self::debug( 'Last request not done' );
++				return;
++			}
++		}
++
++		foreach ( $this->_queue as $k => $v ) {
++			self::debug( 'cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
++
++			$res = $this->_send_req( $v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $v['is_mobile'], $v['is_nextgen'] );
++			if ( ! $res ) {
++				// Status error, remove from queue
++				$this->_queue = $this->load_queue( 'optimax' );
++				unset( $this->_queue[ $k ] );
++				$this->save_queue( 'optimax', $this->_queue );
++
++				if ( ! $keep_going ) {
++					return;
++				}
++
++				continue;
++			}
++
++			// Exit queue if out of quota or service is hot
++			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
++				return;
++			}
++
++			// Handle try_later response from server
++			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
++				$ttl                                 = (int) $res['try_later'];
++				$next_run_time                       = time() + $ttl;
++				$this->_summary['ox_next_run_after'] = $next_run_time;
++				self::save_summary();
++				self::debug( 'Set next ox cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
++			}
++
++			// Handle completed response (sync mode)
++			if ( 'completed' === $res ) {
++				self::debug( 'Optimax completed for [k] ' . $k );
++			}
++
++			// Only process first one
++			if ( ! $keep_going ) {
++				return;
++			}
++		}
++	}
++
++	/**
++	 * Send request to QC API for optimization.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string    $request_url The request URL.
++	 * @param string    $queue_k     The queue key.
++	 * @param int|false $uid         The user ID.
++	 * @param string    $user_agent  The user agent.
++	 * @param string    $vary        The vary string.
++	 * @param string    $url_tag     The URL tag.
++	 * @param bool      $is_mobile   Whether is mobile.
++	 * @param string    $is_nextgen  Next-gen image format ('webp', 'avif', or '').
++	 * @return string|bool|null The result status.
++	 */
++	private function _send_req( $request_url, $queue_k, $uid, $user_agent, $vary, $url_tag, $is_mobile, $is_nextgen ) {
++		// Check if has credit
++		$err       = false;
++		$allowance = $this->cls( 'Cloud' )->allowance( Cloud::SVC_OPTIMAX, $err );
++		if ( ! $allowance ) {
++			self::debug( '❌ No credit: ' . $err );
++			$err && Admin_Display::error( Error::msg( $err ) );
++			return 'out_of_quota';
++		}
++
++		set_time_limit( 1200 );
++
++		// Update request status
++		$this->_summary['curr_request'] = time();
++		self::save_summary();
++
++		$data = [
++			'url'        => $request_url,
++			'queue_k'    => $queue_k,
++			'user_agent' => $user_agent,
++			'is_mobile'  => $is_mobile ? 1 : 0,
++			'is_nextgen' => $is_nextgen ? $is_nextgen : '',
++		];
++
++		self::debug( 'Generating: ', $data );
++
++		$json = Cloud::post( Cloud::SVC_OPTIMAX, $data, 30 );
++		if ( ! is_array( $json ) ) {
++			return $json;
++		}
++
++		// Check if server asks to try later
++		if ( ! empty( $json['try_later'] ) ) {
++			$ttl = (int) $json['try_later'];
++			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
++			return [ 'try_later' => $ttl ];
++		}
++
++		// Check response status
++		if ( empty( $json['status'] ) ) {
++			self::debug( '❌ No status in response' );
++			return false;
++		}
++
++		// Handle sync response with file data
++		if ( empty( $json['data_optimax'] ) ) {
++			self::debug( '❌ Unknown status: ' . $json['status'] );
++			return false;
++		}
++
++		self::debug( '✅ Received Optimax data, processing...' );
++
++		$ox = $json['data_optimax'];
++
++		// 1. Save HTML
++		if ( empty( $ox['html'] ) ) {
++			self::debug( '❌ No HTML in data_optimax [k] ' . $queue_k );
++			return false;
++		}
++		$this->_save_con( $ox['html'], $queue_k, $is_mobile, $is_nextgen );
++
++		// 2. Save UCSS
++		if ( ! empty( $ox['ucss'] ) ) {
++			$this->_save_ucss( $ox['ucss'], $queue_k, $is_mobile, $is_nextgen );
++		}
++
++		// 3. Save CCSS
++		if ( ! empty( $ox['ccss'] ) ) {
++			$this->_save_ccss( $ox['ccss'], $queue_k, $is_mobile, $is_nextgen );
++		}
++
++		// 4. Save optimized images
++		if ( ! empty( $ox['imgs'] ) ) {
++			$this->_save_imgs( $ox['imgs'] );
++		}
++
++		// Remove from queue
++		unset( $this->_queue[ $queue_k ] );
++		$this->save_queue( 'optimax', $this->_queue );
++		self::debug( 'Removed from queue [q_k] ' . $queue_k );
++
++		// Save summary data
++		$this->_summary['last_request'] = $this->_summary['curr_request'];
++		$this->_summary['curr_request'] = 0;
++		self::save_summary();
++
++		return 'completed';
++	}
++
++	/**
++	 * Serve optimized page from cache if available.
++	 *
++	 * Called during buffer finalization as the first priority check.
++	 * If ox HTML is found, returns it to skip all other optimization hooks.
++	 *
++	 * @since 8.0
++	 *
++	 * @return string|false The optimized HTML content, or false if not available.
++	 */
++	public function serve() {
++		// Check if ox is enabled
++		if ( ! $this->conf( self::O_OPTIMAX ) ) {
++			return false;
++		}
++
++		$request_url = $this->_build_request_url();
++
++		// Check URI exclusions
++		$exc = apply_filters( 'litespeed_optimax_exc', $this->conf( self::O_OPTIMAX_EXC ) );
++		$hit = $exc ? Utility::str_hit_array( $request_url, $exc ) : false;
++		if ( $hit ) {
++			self::debug( 'serve() bypassed due to URI Exclude: ' . $hit );
++			return false;
++		}
++
++		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
++		$url_tag         = self::get_url_tag( $request_url );
++		$vary            = $this->cls( 'Vary' )->finalize_full_varies();
++		$filename        = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
++
++		if ( $filename ) {
++			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.html';
++
++			if ( file_exists( $static_file ) ) {
++				$html = File::read( $static_file );
++				if ( $html ) {
++					self::debug( 'serve() hit: ' . $filepath_prefix . $filename . '.html' );
++					Core::comment( 'Optimax served' );
++					return $html;
++				}
++				self::debug( 'serve() empty file: ' . $static_file );
++			} else {
++				self::debug( 'serve() file missing: ' . $static_file );
++			}
++		}
++
++		// No cached optimax, add to queue
++		$uid = get_current_user_id();
++		$ua  = $this->_get_ua();
++
++		$this->_queue = $this->load_queue( 'optimax' );
++
++		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
++			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
++			return false;
++		}
++
++		$queue_k                  = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
++		$this->_queue[ $queue_k ] = [
++			'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
++			'user_agent' => substr( $ua, 0, 200 ),
++			'is_mobile'  => $this->_separate_mobile(),
++			'is_nextgen' => $this->cls( 'Media' )->webp_support(),
++			'uid'        => $uid,
++			'vary'       => $vary,
++			'url_tag'    => $url_tag,
++		];
++		$this->save_queue( 'optimax', $this->_queue );
++		self::debug( 'Added to queue [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] ' . $uid );
++
++		// Prepare cache tag for later purge
++		Tag::add( 'OPTIMAX.' . md5( $queue_k ) );
++		Core::comment( 'QUIC.cloud Optimax in queue' );
++
++		return false;
++	}
++
++	/**
++	 * Build the current request URL from WP globals.
++	 *
++	 * @since 8.0
++	 *
++	 * @return string The current request URL.
++	 */
++	private function _build_request_url() {
++		global $wp;
++
++		$permalink_structure = get_option( 'permalink_structure' );
++		if ( ! empty( $permalink_structure ) ) {
++			return trailingslashit( home_url( $wp->request ) );
++		}
++
++		$qs_add = $wp->query_string ? '?' . (string) $wp->query_string : '';
++		return home_url( $wp->request ) . $qs_add;
++	}
++
++	/**
++	 * Save UCSS content to ucss/ directory.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $ucss      The UCSS content.
++	 * @param string $queue_k   The queue key.
++	 * @param bool   $is_mobile Whether is mobile.
++	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
++	 * @return void
++	 */
++	private function _save_ucss( $ucss, $queue_k, $is_mobile, $is_nextgen ) {
++		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
++		$vary    = $this->_queue[ $queue_k ]['vary'];
++		$this->_save_css_con( 'ucss', $ucss, $url_tag, $vary, $queue_k, $is_mobile, $is_nextgen );
++	}
++
++	/**
++	 * Save CCSS content to ccss/ directory.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $ccss      The CCSS content.
++	 * @param string $queue_k   The queue key.
++	 * @param bool   $is_mobile Whether is mobile.
++	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
++	 * @return void
++	 */
++	private function _save_ccss( $ccss, $queue_k, $is_mobile, $is_nextgen ) {
++		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
++		$vary    = $this->_queue[ $queue_k ]['vary'];
++		$this->_save_css_con( 'ccss', $ccss, $url_tag, $vary, $queue_k, $is_mobile, $is_nextgen );
++	}
++
++	/**
++	 * Download and save optimized images locally.
++	 *
++	 * Each image entry has src (original path), webp_url, and avif_url.
++	 * Optimized images are saved next to original files.
++	 *
++	 * @since 8.0
++	 *
++	 * @param array $imgs Array of image optimization data.
++	 * @return void
++	 */
++	private function _save_imgs( $imgs ) {
++		foreach ( $imgs as $img ) {
++			if ( empty( $img['src'] ) ) {
++				continue;
++			}
++
++			// Convert src to local file path
++			$local = Utility::is_internal_file( $img['src'] );
++			if ( ! $local ) {
++				self::debug( 'Skip external img: ' . $img['src'] );
++				continue;
++			}
++
++			$local_path = $local[0];
++
++			// Fetch and save WebP
++			if ( ! empty( $img['webp_url'] ) ) {
++				$this->_fetch_img( $img['webp_url'], $local_path . '.webp' );
++			}
++
++			// Fetch and save AVIF
++			if ( ! empty( $img['avif_url'] ) ) {
++				$this->_fetch_img( $img['avif_url'], $local_path . '.avif' );
++			}
++		}
++	}
++
++	/**
++	 * Fetch a remote image and save it locally.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $url       The remote image URL.
++	 * @param string $save_path The local path to save the image.
++	 * @return bool Whether fetch and save succeeded.
++	 */
++	private function _fetch_img( $url, $save_path ) {
++		$response = wp_remote_get(
++			$url,
++			[
++				'timeout'   => 60,
++				'sslverify' => false,
++			]
++		);
++
++		if ( is_wp_error( $response ) ) {
++			self::debug( 'Failed to fetch img ' . $url . ': ' . $response->get_error_message() );
++			return false;
++		}
++
++		$body = wp_remote_retrieve_body( $response );
++		if ( ! $body ) {
++			self::debug( 'Empty img response: ' . $url );
++			return false;
++		}
++
++		File::save( $save_path, $body, true );
++		self::debug( 'Saved img: ' . $save_path );
++
++		return true;
++	}
++
++	/**
++	 * Save optimized content.
++	 *
++	 * @since 8.0
++	 *
++	 * @param string $content   The optimized content.
++	 * @param string $queue_k   The queue key.
++	 * @param bool   $is_mobile Whether is mobile.
++	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
++	 */
++	private function _save_con( $content, $queue_k, $is_mobile, $is_nextgen ) {
++		$content = apply_filters( 'litespeed_optimax', $content, $queue_k );
++		self::debug2( 'con: ', $content );
++
++		// Write to file
++		$filecon_md5 = md5( $content );
++
++		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
++		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.html';
++
++		File::save( $static_file, $content, true );
++
++		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
++		$vary    = $this->_queue[ $queue_k ]['vary'];
++		self::debug2( "Save URL to file [file] $static_file [vary] $vary" );
++
++		$this->cls( 'Data' )->save_url( $url_tag, $vary, 'optimax', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
++
++		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
++	}
++
++	/**
++	 * Handle all request actions from main cls.
++	 *
++	 * @since 8.0
++	 *
++	 * @return void
++	 */
++	public function handler() {
++		$type = Router::verify_type();
++
++		switch ( $type ) {
++			case self::TYPE_GEN:
++				self::cron( true );
++				break;
++
++			case self::TYPE_CLEAR_Q:
++				$this->clear_q( 'optimax' );
++				break;
++
++			default:
++				break;
++		}
++
++		Admin::redirect();
++	}
++}
+diff --git a/src/optimizer.cls.php b/src/optimizer.cls.php
+index 16164bd0..af664e5e 100644
+--- a/src/optimizer.cls.php
++++ b/src/optimizer.cls.php
+@@ -104,14 +104,33 @@ class Optimizer extends Root {
+ 
+ 		$static_file = LITESPEED_STATIC_DIR . $file_path_prefix . $url_tag_for_file . '.' . $file_type;
+ 
+-		// Create tmp file to avoid conflict
++		// Create tmp file to avoid conflict. Use atomic O_CREAT|O_EXCL via fopen('x') so two concurrent workers cannot both pass the guard (TOCTOU race fix).
+ 		$tmp_static_file = $static_file . '.tmp';
+-		if (file_exists($tmp_static_file) && time() - filemtime($tmp_static_file) <= 600) {
+-			// some other request is generating
+-			return false;
++		// Ensure parent directory exists (File::save would normally do this; fopen('x') would fail otherwise on a fresh install).
++		$tmp_dir = dirname($tmp_static_file);
++		if (!is_dir($tmp_dir)) {
++			wp_mkdir_p($tmp_dir);
++		}
++		$tmp_fh = @fopen($tmp_static_file, 'x');
++		if ($tmp_fh === false) {
++			// Another worker holds the slot. Only treat the existing tmp as orphaned if filemtime() actually returns a usable timestamp older than 600s. A failed stat must NOT be interpreted as "stale" or we could evict a live worker and reopen the very race we are trying to prevent.
++			$mtime = @filemtime($tmp_static_file);
++			if ($mtime !== false && time() - $mtime > 600) {
++				@unlink($tmp_static_file);
++				$tmp_fh = @fopen($tmp_static_file, 'x');
++			}
++			if ($tmp_fh === false) {
++				// Another live worker is generating; bail out and let the caller fall back to non-combined assets.
++				return false;
++			}
+ 		}
++		fclose($tmp_fh);
+ 		// File::save( $tmp_static_file, '/* ' . ( is_404() ? '404' : $request_url ) . ' */', true ); // Can't use this bcos this will get filecon md5 changed
+-		File::save($tmp_static_file, '', true);
++		if (File::save($tmp_static_file, '', true) === false) {
++			Debug2::debug('[Optmer] File::save init failed, aborting: ' . $tmp_static_file);
++			@unlink($tmp_static_file);
++			return false;
++		}
+ 
+ 		// Load content
+ 		$real_files = array();
+@@ -131,8 +150,12 @@ class Optimizer extends Root {
+ 				$is_min = $this->is_min($src_info['src']);
+ 			}
+ 			$content = $this->optm_snippet($content, $file_type, $minify && !$is_min, $src_info['src'], !empty($src_info['media']) ? $src_info['media'] : false);
+-			// Write to file
+-			File::save($tmp_static_file, $content, true, true);
++			// Write to file. Bail out on write failure (disk full / permission / etc.) so a partial tmp does not get hashed and persisted.
++			if (File::save($tmp_static_file, $content, true, true) === false) {
++				Debug2::debug('[Optmer] File::save append failed, aborting: ' . $tmp_static_file);
++				@unlink($tmp_static_file);
++				return false;
++			}
+ 		}
+ 
+ 		// if CSS - run the minification on the saved file.
+@@ -141,16 +164,34 @@ class Optimizer extends Root {
+ 			$obj                   = new Lib\CSS_JS_MIN\Minify\CSS();
+ 			$file_content_combined = $obj->moveImportsToTop(File::read($tmp_static_file));
+ 
+-			File::save($tmp_static_file, $file_content_combined);
++			if (File::save($tmp_static_file, $file_content_combined) === false) {
++				Debug2::debug('[Optmer] File::save minified CSS failed, aborting: ' . $tmp_static_file);
++				@unlink($tmp_static_file);
++				return false;
++			}
+ 		}
+ 
+-		// validate md5
++		// validate md5. Defensive: if our tmp file vanished (e.g. swept by parallel cleanup, NFS metadata blip, or an unforeseen race), abort instead of writing a broken hash to the DB and serving 404 stylesheets.
++		if (!is_file($tmp_static_file)) {
++			Debug2::debug('[Optmer] tmp file vanished before md5_file: ' . $tmp_static_file);
++			return false;
++		}
+ 		$filecon_md5 = md5_file($tmp_static_file);
++		if ($filecon_md5 === false) {
++			Debug2::debug('[Optmer] md5_file failed: ' . $tmp_static_file);
++			@unlink($tmp_static_file);
++			return false;
++		}
+ 
+ 		$final_file_path = $file_path_prefix . $filecon_md5 . '.' . $file_type;
+ 		$realfile        = LITESPEED_STATIC_DIR . $final_file_path;
+ 		if (!file_exists($realfile)) {
+-			rename($tmp_static_file, $realfile);
++			// Check rename() result so a failed move (disk full, permission, etc.) does NOT poison Data::save_url() with a hash whose final file was never created.
++			if (!rename($tmp_static_file, $realfile)) {
++				Debug2::debug('[Optmer] rename failed: ' . $tmp_static_file . ' -> ' . $realfile);
++				@unlink($tmp_static_file);
++				return false;
++			}
+ 			Debug2::debug2('[Optmer] Saved static file [path] ' . $realfile);
+ 		} else {
+ 			unlink($tmp_static_file);
+diff --git a/src/placeholder.cls.php b/src/placeholder.cls.php
+index ba5d428e..ad283937 100644
+--- a/src/placeholder.cls.php
++++ b/src/placeholder.cls.php
+@@ -288,8 +288,6 @@ class Placeholder extends Base {
+ 			$html
+ 		);
+ 
+-		// $html    = str_replace( array( ' src=', ' srcset=', ' sizes=' ), array( ' data-src=', ' data-srcset=', ' data-sizes=' ), $html );
+-		// $html    = str_replace( '<img ', '<img data-lazyloaded="1"' . $additional_attr . ' src="' . esc_url( Str::trim_quotes( $this_placeholder ) ) . '" ', $html );
+ 		$snippet = $html . $snippet;
+ 
+ 		return $snippet;
+diff --git a/src/purge.cls.php b/src/purge.cls.php
+index e3ae442b..fe95e431 100644
+--- a/src/purge.cls.php
++++ b/src/purge.cls.php
+@@ -60,6 +60,7 @@ class Purge extends Base {
+ 	const TYPE_PURGE_ALL_LQIP     = 'purge_all_lqip';
+ 	const TYPE_PURGE_ALL_VPI      = 'purge_all_vpi';
+ 	const TYPE_PURGE_ALL_AVATAR   = 'purge_all_avatar';
++	const TYPE_PURGE_ALL_OPTIMAX  = 'purge_all_optimax';
+ 	const TYPE_PURGE_ALL_OBJECT   = 'purge_all_object';
+ 	const TYPE_PURGE_ALL_OPCACHE  = 'purge_all_opcache';
+ 
+@@ -163,6 +164,10 @@ class Purge extends Base {
+ 				$this->_purge_all_avatar();
+ 				break;
+ 
++			case self::TYPE_PURGE_ALL_OPTIMAX:
++				$this->_purge_all_optimax();
++				break;
++
+ 			case self::TYPE_PURGE_ALL_OBJECT:
+ 				$this->_purge_all_object();
+ 				break;
+@@ -316,6 +321,28 @@ class Purge extends Base {
+ 		}
+ 	}
+ 
++	/**
++	 * Purge all Optimax cached files and DB mappings.
++	 *
++	 * @since 8.0
++	 * @param bool $silence If true, don't show admin notice.
++	 * @return void
++	 */
++	private function _purge_all_optimax( $silence = false ) {
++		do_action( 'litespeed_purged_all_optimax' );
++
++		$this->cls( 'Optimax' )->rm_cache_folder( 'optimax' );
++		$this->cls( 'Data' )->url_file_clean( 'optimax' );
++		$this->clear_q( 'optimax', true );
++
++		if ( ! $silence ) {
++			$msg = __( 'Cleaned all Optimax files.', 'litespeed-cache' );
++			if ( ! defined( 'LITESPEED_PURGE_SILENT' ) ) {
++				Admin_Display::success( $msg );
++			}
++		}
++	}
++
+ 	/**
+ 	 * Purge one UCSS by URL or post ID.
+ 	 *
+diff --git a/src/rest.cls.php b/src/rest.cls.php
+index d03c6fad..b0c39fe5 100644
+--- a/src/rest.cls.php
++++ b/src/rest.cls.php
+@@ -105,24 +105,6 @@ class REST extends Root {
+ 			'permission_callback' => [ $this, 'is_from_cloud' ],
+ 		] );
+ 
+-		register_rest_route( 'litespeed/v1', '/notify_ccss', [
+-			'methods'             => 'POST',
+-			'callback'            => [ $this, 'notify_ccss' ],
+-			'permission_callback' => [ $this, 'is_from_cloud' ],
+-		] );
+-
+-		register_rest_route( 'litespeed/v1', '/notify_ucss', [
+-			'methods'             => 'POST',
+-			'callback'            => [ $this, 'notify_ucss' ],
+-			'permission_callback' => [ $this, 'is_from_cloud' ],
+-		] );
+-
+-		register_rest_route( 'litespeed/v1', '/notify_vpi', [
+-			'methods'             => 'POST',
+-			'callback'            => [ $this, 'notify_vpi' ],
+-			'permission_callback' => [ $this, 'is_from_cloud' ],
+-		] );
+-
+ 		register_rest_route( 'litespeed/v3', '/err_domains', [
+ 			'methods'             => 'POST',
+ 			'callback'            => [ $this, 'err_domains' ],
+@@ -233,39 +215,6 @@ class REST extends Root {
+ 		return Img_Optm::cls()->notify_img();
+ 	}
+ 
+-	/**
+-	 * Critical CSS notification.
+-	 *
+-	 * @since 7.1
+-	 * @return mixed
+-	 */
+-	public function notify_ccss() {
+-		self::debug( 'notify_ccss' );
+-		return CSS::cls()->notify();
+-	}
+-
+-	/**
+-	 * Unique CSS notification.
+-	 *
+-	 * @since 5.2
+-	 * @return mixed
+-	 */
+-	public function notify_ucss() {
+-		self::debug( 'notify_ucss' );
+-		return UCSS::cls()->notify();
+-	}
+-
+-	/**
+-	 * Viewport Images notification.
+-	 *
+-	 * @since 4.7
+-	 * @return mixed
+-	 */
+-	public function notify_vpi() {
+-		self::debug( 'notify_vpi' );
+-		return VPI::cls()->notify();
+-	}
+-
+ 	/**
+ 	 * Error domain report from cloud.
+ 	 *
+diff --git a/src/router.cls.php b/src/router.cls.php
+index e131c931..859cf569 100644
+--- a/src/router.cls.php
++++ b/src/router.cls.php
+@@ -35,6 +35,7 @@ class Router extends Base {
+ 	const ACTION_CSS                   = 'css';
+ 	const ACTION_UCSS                  = 'ucss';
+ 	const ACTION_VPI                   = 'vpi';
++	const ACTION_OPTIMAX               = 'optimax';
+ 	const ACTION_PRESET                = 'preset';
+ 	const ACTION_IMPORT                = 'import';
+ 	const ACTION_REPORT                = 'report';
+@@ -57,6 +58,7 @@ class Router extends Base {
+ 		self::ACTION_CSS,
+ 		self::ACTION_UCSS,
+ 		self::ACTION_VPI,
++		self::ACTION_OPTIMAX,
+ 		self::ACTION_DB_OPTM,
+ 		self::ACTION_DEBUG2,
+ 		self::ACTION_GUEST,
+@@ -648,6 +650,7 @@ class Router extends Base {
+ 			case self::ACTION_CSS:
+ 			case self::ACTION_UCSS:
+ 			case self::ACTION_VPI:
++			case self::ACTION_OPTIMAX:
+ 			case self::ACTION_CONF:
+ 			case self::ACTION_ACTIVATION:
+ 			case self::ACTION_HEALTH:
+diff --git a/src/task.cls.php b/src/task.cls.php
+index b4509a39..fb780df5 100644
+--- a/src/task.cls.php
++++ b/src/task.cls.php
+@@ -44,6 +44,10 @@ class Task extends Root {
+ 			'name' => 'litespeed_task_vpi',
+ 			'hook' => 'LiteSpeed\VPI::cron',
+ 		],
++		Base::O_OPTIMAX => [
++			'name' => 'litespeed_task_optimax',
++			'hook' => 'LiteSpeed\Optimax::cron',
++		],
+ 		Base::O_MEDIA_PLACEHOLDER_RESP_ASYNC => [
+ 			'name' => 'litespeed_task_lqip',
+ 			'hook' => 'LiteSpeed\Placeholder::cron',
+@@ -111,6 +115,26 @@ class Task extends Root {
+ 				}
+ 			}
+ 
++			// Skip cron registration if waiting for try_later timeout
++			$try_later_map = [
++				Base::O_OPTM_UCSS     => [ 'UCSS', 'ucss_next_run_after' ],
++				Base::O_OPTM_CSS_ASYNC => [ 'CSS', 'ccss_next_run_after' ],
++				Base::O_OPTIMAX       => [ 'Optimax', 'ox_next_run_after' ],
++			];
++			if ( isset( $try_later_map[ $id ] ) ) {
++				list( $cls_name, $summary_key ) = $try_later_map[ $id ];
++				$next_run_after                 = $this->cls( $cls_name )::get_summary( $summary_key );
++				if ( $next_run_after && time() < $next_run_after ) {
++					$wait_seconds = $next_run_after - time();
++					self::debug( "Skip $cls_name cron: try_later $wait_seconds s remaining" );
++					if ( wp_next_scheduled( $trigger['name'] ) ) {
++						wp_clear_scheduled_hook( $trigger['name'] );
++						self::debug( "Cleared existing $cls_name cron schedule" );
++					}
++					continue;
++				}
++			}
++
+ 			// Special check for crawler.
+ 			if ( Base::O_CRAWLER === $id ) {
+ 				if ( ! Router::can_crawl() ) {
+@@ -137,6 +161,19 @@ class Task extends Root {
+ 
+ 			add_action( $trigger['name'], $trigger['hook'] );
+ 		}
++
++		// Health: schedule single-event cron when pending request exists
++		$health_pending = Health::get_summary( 'pending' );
++		if ( $health_pending ) {
++			$hook = 'litespeed_task_health';
++			if ( ! wp_next_scheduled( $hook ) ) {
++				$next_run = Health::get_summary( 'health_next_run_after' );
++				$run_at   = $next_run && time() < $next_run ? $next_run : time() + 5;
++				wp_schedule_single_event( $run_at, $hook );
++				self::debug( 'Cron hook register [name] ' . $hook );
++			}
++			add_action( $hook, 'LiteSpeed\Health::cron' );
++		}
+ 	}
+ 
+ 	/**
+diff --git a/src/ucss.cls.php b/src/ucss.cls.php
+index fad1f8ee..90e6d368 100644
+--- a/src/ucss.cls.php
++++ b/src/ucss.cls.php
+@@ -15,13 +15,10 @@ defined( 'WPINC' ) || exit();
+  *
+  * @since 5.1
+  */
+-class UCSS extends Base {
++class UCSS extends Cloud_Queue_Svc {
+ 
+ 	const LOG_TAG = '[UCSS]';
+ 
+-	const TYPE_GEN     = 'gen';
+-	const TYPE_CLEAR_Q = 'clear_q';
+-
+ 	/**
+ 	 * Summary data.
+ 	 *
+@@ -36,13 +33,6 @@ class UCSS extends Base {
+ 	 */
+ 	private $_ucss_whitelist;
+ 
+-	/**
+-	 * Queue for UCSS generation.
+-	 *
+-	 * @var array
+-	 */
+-	private $_queue;
+-
+ 	/**
+ 	 * Init
+ 	 *
+@@ -64,11 +54,11 @@ class UCSS extends Base {
+ 	 */
+ 	public static function get_url_tag( $request_url = false ) {
+ 		$url_tag = $request_url;
+-		if (is_404()) {
++		if ( is_404() ) {
+ 			$url_tag = '404';
+-		} elseif (apply_filters('litespeed_ucss_per_pagetype', false)) {
++		} elseif ( apply_filters( 'litespeed_ucss_per_pagetype', false ) ) {
+ 			$url_tag = Utility::page_type();
+-			self::debug('litespeed_ucss_per_pagetype filter altered url to ' . $url_tag);
++			self::debug( 'litespeed_ucss_per_pagetype filter altered url to ' . $url_tag );
+ 		}
+ 
+ 		return $url_tag;
+@@ -93,50 +83,50 @@ class UCSS extends Base {
+ 			return false;
+ 		}
+ 
+-		$filepath_prefix = $this->_build_filepath_prefix('ucss');
++		$filepath_prefix = $this->_build_filepath_prefix( 'ucss' );
+ 
+-		$url_tag = self::get_url_tag($request_url);
++		$url_tag = self::get_url_tag( $request_url );
+ 
+-		$vary     = $this->cls('Vary')->finalize_full_varies();
+-		$filename = $this->cls('Data')->load_url_file($url_tag, $vary, 'ucss');
+-		if ($filename) {
++		$vary     = $this->cls( 'Vary' )->finalize_full_varies();
++		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'ucss' );
++		if ( $filename ) {
+ 			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.css';
+ 
+-			if (file_exists($static_file)) {
+-				self::debug2('existing ucss ' . $static_file);
++			if ( file_exists( $static_file ) ) {
++				self::debug2( 'existing ucss ' . $static_file );
+ 				// Check if is error comment inside only
+-				$tmp = File::read($static_file);
++				$tmp = File::read( $static_file );
+ 				if ( '/*' === substr( $tmp, 0, 2 ) && '*/' === substr( trim( $tmp ), -2 ) ) {
+-					self::debug2('existing ucss is error only: ' . $tmp);
+-					Core::comment('QUIC.cloud UCSS bypassed due to generation error ❌ ' . $filepath_prefix . $filename . '.css');
++					self::debug2( 'existing ucss is error only: ' . $tmp );
++					Core::comment( 'QUIC.cloud UCSS bypassed due to generation error ❌ ' . $filepath_prefix . $filename . '.css' );
+ 					return false;
+ 				}
+ 
+-				Core::comment('QUIC.cloud UCSS loaded ✅ ' . $filepath_prefix . $filename . '.css' );
++				Core::comment( 'QUIC.cloud UCSS loaded ✅ ' . $filepath_prefix . $filename . '.css' );
+ 
+ 				return $filename . '.css';
+ 			}
+ 		}
+ 
+-		if ($dry_run) {
++		if ( $dry_run ) {
+ 			return false;
+ 		}
+ 
+-		Core::comment('QUIC.cloud UCSS in queue');
++		Core::comment( 'QUIC.cloud UCSS in queue' );
+ 
+ 		$uid = get_current_user_id();
+ 
+ 		$ua = $this->_get_ua();
+ 
+ 		// Store it for cron
+-		$this->_queue = $this->load_queue('ucss');
++		$this->_queue = $this->load_queue( 'ucss' );
+ 
+-		if (count($this->_queue) > 500) {
+-			self::debug('UCSS Queue is full - 500');
++		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
++			self::debug( 'UCSS Queue is full - ' . $this->_max_queue_size() );
+ 			return false;
+ 		}
+ 
+-		$queue_k                  = (strlen($vary) > 32 ? md5($vary) : $vary) . ' ' . $url_tag;
++		$queue_k                  = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
+ 		$this->_queue[ $queue_k ] = [
+ 			'url'        => apply_filters( 'litespeed_ucss_url', $request_url ),
+ 			'user_agent' => substr( $ua, 0, 200 ),
+@@ -146,11 +136,11 @@ class UCSS extends Base {
+ 			'vary'       => $vary,
+ 			'url_tag'    => $url_tag,
+ 		]; // Current UA will be used to request
+-		$this->save_queue('ucss', $this->_queue);
+-		self::debug('Added queue_ucss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] ' . $uid);
++		$this->save_queue( 'ucss', $this->_queue );
++		self::debug( 'Added queue_ucss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] ' . $uid );
+ 
+ 		// Prepare cache tag for later purge
+-		Tag::add('UCSS.' . md5($queue_k));
++		Tag::add( 'UCSS.' . md5( $queue_k ) );
+ 
+ 		return false;
+ 	}
+@@ -176,20 +166,20 @@ class UCSS extends Base {
+ 	 */
+ 	public function add_to_q( $url_files ) {
+ 		// Store it for cron
+-		$this->_queue = $this->load_queue('ucss');
++		$this->_queue = $this->load_queue( 'ucss' );
+ 
+-		if (count($this->_queue) > 500) {
+-			self::debug('UCSS Queue is full - 500');
++		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
++			self::debug( 'UCSS Queue is full - ' . $this->_max_queue_size() );
+ 			return false;
+ 		}
+ 
+ 		$ua = $this->_get_ua();
+-		foreach ($url_files as $url_file) {
++		foreach ( $url_files as $url_file ) {
+ 			$vary        = $url_file['vary'];
+ 			$request_url = $url_file['url'];
+ 			$is_mobile   = $url_file['mobile'];
+ 			$is_webp     = $url_file['webp'];
+-			$url_tag     = self::get_url_tag($request_url);
++			$url_tag     = self::get_url_tag( $request_url );
+ 
+ 			$queue_k = (strlen($vary) > 32 ? md5($vary) : $vary) . ' ' . $url_tag;
+ 			$q       = [
+@@ -236,6 +226,20 @@ class UCSS extends Base {
+ 			return;
+ 		}
+ 
++		// Check if we need to wait due to server's try_later request
++		if ( ! empty( $this->_summary['ucss_next_run_after'] ) && time() < $this->_summary['ucss_next_run_after'] ) {
++			$wait_seconds = $this->_summary['ucss_next_run_after'] - time();
++			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
++			return;
++		}
++
++		// Clear try_later flag if wait time has passed
++		if ( ! empty( $this->_summary['ucss_next_run_after'] ) ) {
++			unset( $this->_summary['ucss_next_run_after'] );
++			self::save_summary();
++			self::debug( 'Cleared try_later flag, resuming UCSS processing' );
++		}
++
+ 		// For cron, need to check request interval too
+ 		if ( ! $keep_going ) {
+ 			if (!empty($this->_summary['curr_request']) && time() - $this->_summary['curr_request'] < 300 && !$this->conf(self::O_DEBUG)) {
+@@ -244,19 +248,13 @@ class UCSS extends Base {
+ 			}
+ 		}
+ 
+-		$i = 0;
+ 		foreach ($this->_queue as $k => $v) {
+-			if (!empty($v['_status'])) {
+-				continue;
+-			}
+-
+ 			self::debug('cron job [tag] ' . $k . ' [url] ' . $v['url'] . ($v['is_mobile'] ? ' 📱 ' : '') . ' [UA] ' . $v['user_agent']);
+ 
+ 			if (!isset($v['is_webp'])) {
+ 				$v['is_webp'] = false;
+ 			}
+ 
+-			++$i;
+ 			$res = $this->_send_req($v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $v['is_mobile'], $v['is_webp']);
+ 			if (!$res) {
+ 				// Status is wrong, drop this this->_queue
+@@ -268,11 +266,6 @@ class UCSS extends Base {
+ 					return;
+ 				}
+ 
+-				if ( $i > 3 ) {
+-					GUI::print_loading( count( $this->_queue ), 'UCSS' );
+-					return Router::self_redirect( Router::ACTION_UCSS, self::TYPE_GEN );
+-				}
+-
+ 				continue;
+ 			}
+ 
+@@ -281,20 +274,24 @@ class UCSS extends Base {
+ 				return;
+ 			}
+ 
+-			$this->_queue                  = $this->load_queue( 'ucss' );
+-			$this->_queue[ $k ]['_status'] = 'requested';
+-			$this->save_queue( 'ucss', $this->_queue );
+-			self::debug( 'Saved to queue [k] ' . $k );
++			// Handle try_later response from server
++			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
++				$ttl                                   = (int) $res['try_later'];
++				$next_run_time                         = time() + $ttl;
++				$this->_summary['ucss_next_run_after'] = $next_run_time;
++				self::save_summary();
++				self::debug( 'Set next UCSS cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
++			}
++
++			// Handle completed response (sync mode)
++			if ( 'completed' === $res ) {
++				self::debug( 'UCSS completed for [k] ' . $k );
++			}
+ 
+ 			// only request first one
+ 			if ( ! $keep_going ) {
+ 				return;
+ 			}
+-
+-			if ($i > 3) {
+-				GUI::print_loading(count($this->_queue), 'UCSS');
+-				return Router::self_redirect(Router::ACTION_UCSS, self::TYPE_GEN);
+-			}
+ 		}
+ 	}
+ 
+@@ -330,37 +327,12 @@ class UCSS extends Base {
+ 		$this->_summary['curr_request'] = time();
+ 		self::save_summary();
+ 
+-		// Gather guest HTML to send
+-		$html = $this->cls('CSS')->prepare_html($request_url, $user_agent, $uid);
+-
+-		if (!$html) {
+-			return false;
+-		}
+-
+-		// Parse HTML to gather all CSS content before requesting
+-		$css             = false;
+-		list(, $html)    = $this->prepare_css($html, $is_webp, true); // Use this to drop CSS from HTML as we don't need those CSS to generate UCSS
+-		$filename        = $this->cls('Data')->load_url_file($url_tag, $vary, 'css');
+-		$filepath_prefix = $this->_build_filepath_prefix('css');
+-		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.css';
+-		self::debug('Checking combined file ' . $static_file);
+-		if (file_exists($static_file)) {
+-			$css = File::read($static_file);
+-		}
+-
+-		if (!$css) {
+-			self::debug('❌ No combined css');
+-			return false;
+-		}
+-
+ 		$data = [
+ 			'url'        => $request_url,
+ 			'queue_k'    => $queue_k,
+ 			'user_agent' => $user_agent,
+ 			'is_mobile'  => $is_mobile ? 1 : 0, // todo:compatible w/ tablet
+ 			'is_webp'    => $is_webp ? 1 : 0,
+-			'html'       => $html,
+-			'css'        => $css,
+ 		];
+ 		if (!isset($this->_ucss_whitelist)) {
+ 			$this->_ucss_whitelist = $this->_filter_whitelist();
+@@ -374,28 +346,40 @@ class UCSS extends Base {
+ 			return $json;
+ 		}
+ 
+-		// Old version compatibility
+-		if (empty($json['status'])) {
+-			if (!empty($json['ucss'])) {
+-				$this->_save_con('ucss', $json['ucss'], $queue_k, $is_mobile, $is_webp);
+-			}
+-
+-			// Delete the row
+-			return false;
++		// Check if server asks to try later
++		if ( ! empty( $json['try_later'] ) ) {
++			$ttl = (int) $json['try_later'];
++			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
++			return [ 'try_later' => $ttl ];
+ 		}
+ 
+-		// Unknown status, remove this line
+-		if ( 'queued' !== $json['status'] ) {
++		// Check response status
++		if ( empty( $json['status'] ) ) {
++			self::debug( '❌ No status in response' );
+ 			return false;
+ 		}
+ 
+-		// Save summary data
+-		$this->_summary['last_spent']   = time() - $this->_summary['curr_request'];
+-		$this->_summary['last_request'] = $this->_summary['curr_request'];
+-		$this->_summary['curr_request'] = 0;
+-		self::save_summary();
++		// Handle sync response with data
++		if ( ! empty( $json['data_ucss'] ) ) {
++			self::debug( '✅ Received UCSS data, saving...' );
++			$this->_save_con( 'ucss', $json['data_ucss'], $queue_k, $is_mobile, $is_webp );
+ 
+-		return true;
++			// Remove from queue
++			unset( $this->_queue[ $queue_k ] );
++			$this->save_queue( 'ucss', $this->_queue );
++			self::debug( 'Removed from queue [q_k] ' . $queue_k );
++
++			// Save summary data
++			$this->_summary['last_request'] = $this->_summary['curr_request'];
++			$this->_summary['curr_request'] = 0;
++			self::save_summary();
++
++			return 'completed';
++		}
++
++		// Unknown status
++		self::debug( '❌ Unknown status: ' . $json['status'] );
++		return false;
+ 	}
+ 
+ 	/**
+@@ -410,121 +394,9 @@ class UCSS extends Base {
+ 	 * @param bool   $is_webp   Whether supports webp.
+ 	 */
+ 	private function _save_con( $type, $css, $queue_k, $is_mobile, $is_webp ) {
+-		// Add filters
+-		$css = apply_filters('litespeed_' . $type, $css, $queue_k);
+-		// Sanitize: CSS must not contain HTML tags
+-		$css = wp_strip_all_tags( $css );
+-		self::debug2('con: ', $css);
+-
+-		if ( '/*' === substr( $css, 0, 2 ) && '*/' === substr( $css, -2 ) ) {
+-			self::debug('❌ empty ' . $type . ' [content] ' . $css);
+-			// continue; // Save the error info too
+-		}
+-
+-		// Write to file
+-		$filecon_md5 = md5($css);
+-
+-		$filepath_prefix = $this->_build_filepath_prefix($type);
+-		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.css';
+-
+-		File::save($static_file, $css, true);
+-
+ 		$url_tag = $this->_queue[$queue_k]['url_tag'];
+ 		$vary    = $this->_queue[$queue_k]['vary'];
+-		self::debug2("Save URL to file [file] $static_file [vary] $vary");
+-
+-		$this->cls('Data')->save_url($url_tag, $vary, $type, $filecon_md5, dirname($static_file), $is_mobile, $is_webp);
+-
+-		Purge::add(strtoupper($type) . '.' . md5($queue_k));
+-	}
+-
+-	/**
+-	 * Prepare CSS from HTML for CCSS generation only. UCSS will used combined CSS directly.
+-	 * Prepare refined HTML for both CCSS and UCSS.
+-	 *
+-	 * @since  3.4.3
+-	 *
+-	 * @param string $html    The HTML content.
+-	 * @param bool   $is_webp Whether supports webp.
+-	 * @param bool   $dryrun  Whether to run in dry mode.
+-	 * @return array Array of CSS and HTML.
+-	 */
+-	public function prepare_css( $html, $is_webp = false, $dryrun = false ) {
+-		$css = '';
+-		preg_match_all('#<link ([^>]+)/?>|<style([^>]*)>([^<]+)</style>#isU', $html, $matches, PREG_SET_ORDER);
+-		foreach ($matches as $match) {
+-			$debug_info = '';
+-			if (strpos($match[0], '<link') === 0) {
+-				$attrs = Utility::parse_attr($match[1]);
+-
+-				if (empty($attrs['rel'])) {
+-					continue;
+-				}
+-
+-				if ( 'stylesheet' !== $attrs['rel'] ) {
+-					if ( 'preload' !== $attrs['rel'] || empty( $attrs['as'] ) || 'style' !== $attrs['as'] ) {
+-						continue;
+-					}
+-				}
+-
+-				if (!empty($attrs['media']) && strpos($attrs['media'], 'print') !== false) {
+-					continue;
+-				}
+-
+-				if (empty($attrs['href'])) {
+-					continue;
+-				}
+-
+-				// Check Google fonts hit
+-				if (strpos($attrs['href'], 'fonts.googleapis.com') !== false) {
+-					$html = str_replace($match[0], '', $html);
+-					continue;
+-				}
+-
+-				$debug_info = $attrs['href'];
+-
+-				// Load CSS content
+-				if (!$dryrun) {
+-					// Dryrun will not load CSS but just drop them
+-					$con = $this->cls('Optimizer')->load_file($attrs['href']);
+-					if (!$con) {
+-						continue;
+-					}
+-				} else {
+-					$con = '';
+-				}
+-			} else {
+-				// Inline style
+-				$attrs = Utility::parse_attr($match[2]);
+-
+-				if (!empty($attrs['media']) && strpos($attrs['media'], 'print') !== false) {
+-					continue;
+-				}
+-
+-				Debug2::debug2('[CSS] Load inline CSS ' . substr($match[3], 0, 100) . '...', $attrs);
+-				$con = $match[3];
+-
+-				$debug_info = '__INLINE__';
+-			}
+-
+-			$con = Optimizer::minify_css($con);
+-			if ($is_webp && $this->cls('Media')->webp_support()) {
+-				$con = $this->cls('Media')->replace_background_webp($con);
+-			}
+-
+-			if ( ! empty( $attrs['media'] ) && 'all' !== $attrs['media'] ) {
+-				$con = '@media ' . $attrs['media'] . '{' . $con . "}\n";
+-			} else {
+-				$con = $con . "\n";
+-			}
+-
+-			$con  = '/* ' . $debug_info . ' */' . $con;
+-			$css .= $con;
+-
+-			$html = str_replace($match[0], '', $html);
+-		}
+-
+-		return [ $css, $html ];
++		$this->_save_css_con( $type, $css, $url_tag, $vary, $queue_k, $is_mobile, $is_webp );
+ 	}
+ 
+ 	/**
+@@ -534,9 +406,9 @@ class UCSS extends Base {
+ 	 */
+ 	private function _filter_whitelist() {
+ 		$whitelist = [];
+-		$list      = apply_filters('litespeed_ucss_whitelist', $this->conf(self::O_OPTM_UCSS_SELECTOR_WHITELIST));
+-		foreach ($list as $k => $v) {
+-			if (substr($v, 0, 2) === '//') {
++		$list      = apply_filters( 'litespeed_ucss_whitelist', $this->conf( self::O_OPTM_UCSS_SELECTOR_WHITELIST ) );
++		foreach ( $list as $v ) {
++			if ( substr( $v, 0, 2 ) === '//' ) {
+ 				continue;
+ 			}
+ 			$whitelist[] = $v;
+@@ -544,88 +416,4 @@ class UCSS extends Base {
+ 
+ 		return $whitelist;
+ 	}
+-
+-	/**
+-	 * Notify finished from server
+-	 *
+-	 * @since 5.1
+-	 */
+-	public function notify() {
+-		$post_data = \json_decode( file_get_contents( 'php://input' ), true );
+-		if ( is_null( $post_data ) ) {
+-			// phpcs:ignore WordPress.Security.NonceVerification.Missing -- This is a callback from QUIC.cloud, verified by extract_msg()
+-			$post_data = $_POST;
+-		}
+-		self::debug('notify() data', $post_data);
+-
+-		$this->_queue = $this->load_queue('ucss');
+-
+-		list($post_data) = $this->cls('Cloud')->extract_msg($post_data, 'ucss');
+-
+-		$notified_data = $post_data['data'];
+-		if (empty($notified_data) || !is_array($notified_data)) {
+-			self::debug('❌ notify exit: no notified data');
+-			return Cloud::err('no notified data');
+-		}
+-
+-		// Check if its in queue or not
+-		$valid_i = 0;
+-		foreach ($notified_data as $v) {
+-			if (empty($v['request_url'])) {
+-				self::debug('❌ notify bypass: no request_url', $v);
+-				continue;
+-			}
+-			if (empty($v['queue_k'])) {
+-				self::debug('❌ notify bypass: no queue_k', $v);
+-				continue;
+-			}
+-
+-			if (empty($this->_queue[$v['queue_k']])) {
+-				self::debug('❌ notify bypass: no this queue [q_k]' . $v['queue_k']);
+-				continue;
+-			}
+-
+-			// Save data
+-			if (!empty($v['data_ucss'])) {
+-				$is_mobile = $this->_queue[$v['queue_k']]['is_mobile'];
+-				$is_webp   = $this->_queue[$v['queue_k']]['is_webp'];
+-				$this->_save_con('ucss', $v['data_ucss'], $v['queue_k'], $is_mobile, $is_webp);
+-
+-				++$valid_i;
+-			}
+-
+-			unset($this->_queue[$v['queue_k']]);
+-			self::debug('notify data handled, unset queue [q_k] ' . $v['queue_k']);
+-		}
+-		$this->save_queue('ucss', $this->_queue);
+-
+-		self::debug('notified');
+-
+-		return Cloud::ok( [ 'count' => $valid_i ] );
+-	}
+-
+-	/**
+-	 * Handle all request actions from main cls
+-	 *
+-	 * @since  2.3
+-	 * @access public
+-	 */
+-	public function handler() {
+-		$type = Router::verify_type();
+-
+-		switch ($type) {
+-			case self::TYPE_GEN:
+-            self::cron(true);
+-				break;
+-
+-			case self::TYPE_CLEAR_Q:
+-            $this->clear_q('ucss');
+-				break;
+-
+-			default:
+-				break;
+-		}
+-
+-		Admin::redirect();
+-	}
+ }
+diff --git a/src/vpi.cls.php b/src/vpi.cls.php
+index cdefa096..eee33837 100644
+--- a/src/vpi.cls.php
++++ b/src/vpi.cls.php
+@@ -4,7 +4,7 @@
+  *
+  * Handles discovering above-the-fold images for posts/pages and stores the
+  * viewport image list per post (desktop & mobile). Coordinates with the
+- * remote service via queue + cron + webhook notify.
++ * remote svc via queue + cron.
+  *
+  * @since   4.7
+  * @package LiteSpeed
+@@ -17,7 +17,7 @@ defined( 'WPINC' ) || exit();
+ /**
+  * Generate and manage ViewPort Images (VPI) for pages.
+  */
+-class VPI extends Base {
++class VPI extends Cloud_Queue_Svc {
+ 
+ 	/**
+ 	 * Log tag for debug output.
+@@ -26,24 +26,17 @@ class VPI extends Base {
+ 	 */
+ 	const LOG_TAG = '[VPI]';
+ 
+-	/**
+-	 * Action types.
+-	 *
+-	 * @var string
+-	 */
+-	const TYPE_GEN     = 'gen';
+-	const TYPE_CLEAR_Q = 'clear_q';
+-	
+ 	/**
+ 	 * VPI Desktop Meta name.
+-	 * 
++	 *
+ 	 * @since  7.6
+ 	 * @var string
+ 	 */
+ 	const POST_META = 'litespeed_vpi_list';
++
+ 	/**
+ 	 * VPI Mobile Meta name.
+-	 * 
++	 *
+ 	 * @since  7.6
+ 	 * @var string
+ 	 */
+@@ -56,13 +49,6 @@ class VPI extends Base {
+ 	 */
+ 	protected $_summary;
+ 
+-	/**
+-	 * In-memory working queue for VPI jobs.
+-	 *
+-	 * @var array
+-	 */
+-	private $_queue;
+-
+ 	/**
+ 	 * Init.
+ 	 *
+@@ -96,8 +82,8 @@ class VPI extends Base {
+ 		// Store it to prepare for cron.
+ 		$this->_queue = $this->load_queue( 'vpi' );
+ 
+-		if ( count( $this->_queue ) > 500 ) {
+-			self::debug( 'Queue is full - 500' );
++		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
++			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
+ 			return;
+ 		}
+ 
+@@ -129,73 +115,6 @@ class VPI extends Base {
+ 		Tag::add( 'VPI.' . md5( $queue_k ) );
+ 	}
+ 
+-	/**
+-	 * Handle finish notifications from remote service.
+-	 *
+-	 * Expects JSON body; falls back to $_POST for legacy callers.
+-	 *
+-	 * @since 4.7
+-	 * @return array Response object for the cloud layer.
+-	 */
+-	public function notify() {
+-		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+-		$post_data = \json_decode( file_get_contents( 'php://input' ), true );
+-		if ( is_null( $post_data ) ) {
+-			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+-			$post_data = $_POST;
+-		}
+-		self::debug( 'notify() data', $post_data );
+-
+-		$this->_queue = $this->load_queue( 'vpi' );
+-
+-		list( $post_data ) = $this->cls( 'Cloud' )->extract_msg( $post_data, 'vpi' );
+-
+-		$notified_data = $post_data['data'];
+-		if ( empty( $notified_data ) || ! is_array( $notified_data ) ) {
+-			self::debug( '❌ notify exit: no notified data' );
+-			return Cloud::err( 'no notified data' );
+-		}
+-
+-		// Check if it's in queue or not.
+-		$valid_i = 0;
+-		foreach ( $notified_data as $v ) {
+-			if ( empty( $v['request_url'] ) ) {
+-				self::debug( '❌ notify bypass: no request_url', $v );
+-				continue;
+-			}
+-			if ( empty( $v['queue_k'] ) ) {
+-				self::debug( '❌ notify bypass: no queue_k', $v );
+-				continue;
+-			}
+-
+-			$queue_k = $v['queue_k'];
+-
+-			if ( empty( $this->_queue[ $queue_k ] ) ) {
+-				self::debug( '❌ notify bypass: no this queue [q_k]' . $queue_k );
+-				continue;
+-			}
+-
+-			// Save data.
+-			if ( ! empty( $v['data_vpi'] ) ) {
+-				$post_id   = (int) $this->_queue[ $queue_k ]['post_id'];
+-				$name      = ! empty( $v['is_mobile'] ) ? self::POST_META_MOBILE : self::POST_META;
+-				$urldecode = is_array( $v['data_vpi'] ) ? array_map( 'urldecode', $v['data_vpi'] ) : urldecode( $v['data_vpi'] );
+-				self::debug( 'save data_vpi', $urldecode );
+-				$this->cls( 'Metabox' )->save( $post_id, $name, $urldecode );
+-
+-				++$valid_i;
+-			}
+-
+-			unset( $this->_queue[ $queue_k ] );
+-			self::debug( 'notify data handled, unset queue [q_k] ' . $queue_k );
+-		}
+-		$this->save_queue( 'vpi', $this->_queue );
+-
+-		self::debug( 'notified' );
+-
+-		return Cloud::ok( [ 'count' => $valid_i ] );
+-	}
+-
+ 	/**
+ 	 * Cron entry point.
+ 	 *
+@@ -225,6 +144,21 @@ class VPI extends Base {
+ 			return;
+ 		}
+ 
++		// TODO: uniformize with CCSS/UCSS cron
++		// Check if we need to wait due to server's try_later request
++		if ( ! empty( $this->_summary[ 'vpi_next_run_after' ] ) && time() < $this->_summary['vpi_next_run_after'] ) {
++			$wait_seconds = $this->_summary['vpi_next_run_after'] - time();
++			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
++			return;
++		}
++
++		// Clear try_later flag if wait time has passed
++		if ( ! empty( $this->_summary['vpi_next_run_after'] ) ) {
++			unset( $this->_summary['vpi_next_run_after'] );
++			self::save_summary();
++			self::debug( 'Cleared try_later flag, resuming vpi processing' );
++		}
++
+ 		// For cron, need to check request interval too.
+ 		if ( ! $do_continue ) {
+ 			if ( ! empty( $this->_summary['curr_request_vpi'] ) && time() - (int) $this->_summary['curr_request_vpi'] < 300 && ! $this->conf( self::O_DEBUG ) ) {
+@@ -233,16 +167,10 @@ class VPI extends Base {
+ 			}
+ 		}
+ 
+-		$i = 0;
+ 		foreach ( $this->_queue as $k => $v ) {
+-			if ( ! empty( $v['_status'] ) ) {
+-				continue;
+-			}
+-
+ 			self::debug( 'cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
+ 
+-			++$i;
+-			$res = $this->_send_req( $v['url'], $k, $v['user_agent'], $v['is_mobile'] );
++			$res = $this->_send_req( $v['url'], $k, $v['user_agent'], $v['is_mobile'], (int) $v['post_id'] );
+ 			if ( ! $res ) {
+ 				// Status is wrong, drop this item from queue.
+ 				$this->_queue = $this->load_queue( 'vpi' );
+@@ -252,10 +180,6 @@ class VPI extends Base {
+ 				if ( ! $do_continue ) {
+ 					return;
+ 				}
+-
+-				GUI::print_loading( count( $this->_queue ), 'VPI' );
+-				Router::self_redirect( Router::ACTION_VPI, self::TYPE_GEN );
+-				return;
+ 			}
+ 
+ 			// Exit queue if out of quota or service is hot.
+@@ -263,19 +187,19 @@ class VPI extends Base {
+ 				return;
+ 			}
+ 
+-			$this->_queue                  = $this->load_queue( 'vpi' );
+-			$this->_queue[ $k ]['_status'] = 'requested';
+-			$this->save_queue( 'vpi', $this->_queue );
+-			self::debug( 'Saved to queue [k] ' . $k );
++			// Handle try_later response from server
++			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
++				$ttl                                  = (int) $res['try_later'];
++				$next_run_time                        = time() + $ttl;
++				$this->_summary['vpi_next_run_after'] = $next_run_time;
++				self::save_summary();
++				self::debug( 'Set next VPI cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
++			}
+ 
+ 			// only request first one if not continuing.
+ 			if ( ! $do_continue ) {
+ 				return;
+ 			}
+-
+-			GUI::print_loading( count( $this->_queue ), 'VPI' );
+-			Router::self_redirect( Router::ACTION_VPI, self::TYPE_GEN );
+-			return;
+ 		}
+ 	}
+ 
+@@ -289,9 +213,10 @@ class VPI extends Base {
+ 	 * @param string $queue_k     Queue key for this job.
+ 	 * @param string $user_agent  Sanitized User-Agent string (<=200 chars).
+ 	 * @param bool   $is_mobile   Whether the job is for mobile viewport.
++	 * @param int    $post_id     The post ID associated with this VPI request.
+ 	 * @return bool|string True on queued successfully, 'out_of_quota'/'svc_hot' on throttling, or false on error.
+ 	 */
+-	private function _send_req( $request_url, $queue_k, $user_agent, $is_mobile ) {
++	private function _send_req( $request_url, $queue_k, $user_agent, $is_mobile, $post_id ) {
+ 		$svc = Cloud::SVC_VPI;
+ 
+ 		// Check if has credit to push or not.
+@@ -308,29 +233,12 @@ class VPI extends Base {
+ 		// Update request status.
+ 		self::save_summary( [ 'curr_request_vpi' => time() ], true );
+ 
+-		// Gather guest HTML to send.
+-		$html = $this->cls( 'CSS' )->prepare_html( $request_url, $user_agent );
+-
+-		if ( ! $html ) {
+-			return false;
+-		}
+-
+ 		// Parse HTML to gather CSS content before requesting.
+-		$css                = false;
+-		list( $css, $html ) = $this->cls( 'CSS' )->prepare_css( $html );
+-
+-		if ( ! $css ) {
+-			self::debug( '❌ No css' );
+-			return false;
+-		}
+-
+ 		$data = [
+ 			'url'        => $request_url,
+ 			'queue_k'    => $queue_k,
+ 			'user_agent' => $user_agent,
+ 			'is_mobile'  => $is_mobile ? 1 : 0, // todo: compatible w/ tablet.
+-			'html'       => $html,
+-			'css'        => $css,
+ 		];
+ 		self::debug( 'Generating: ', $data );
+ 
+@@ -339,15 +247,39 @@ class VPI extends Base {
+ 			return $json;
+ 		}
+ 
+-		// Unknown status, remove this line.
+-		if ( 'queued' !== $json['status'] ) {
++		// Check if server asks to try later
++		if ( ! empty( $json['try_later'] ) ) {
++			$ttl = (int) $json['try_later'];
++			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
++			return [ 'try_later' => $ttl ];
++		}
++
++		// Check response status
++		if ( empty( $json['status'] ) ) {
++			self::debug( '❌ No status in response' );
+ 			return false;
+ 		}
+ 
+-		// Save summary data.
+-		self::reload_summary();
+-		$this->_summary['last_spent_vpi']   = time() - (int) $this->_summary['curr_request_vpi'];
+-		$this->_summary['last_request_vpi'] = $this->_summary['curr_request_vpi'];
++		if ( empty( $json['data_vpi'] ) ) {
++			self::debug( '❌ No VPI data [status] ' . $json['status'] );
++		}
++
++		// Save data.
++		self::debug( '✅ Received VPI data, saving...' );
++		$name      = $is_mobile ? self::POST_META_MOBILE : self::POST_META;
++		$urldecode = is_array( $json['data_vpi'] ) ? array_map( 'urldecode', $json['data_vpi'] ) : urldecode( $json['data_vpi'] );
++		self::debug( 'save data_vpi', $urldecode );
++		$this->cls( 'Metabox' )->save( $post_id, $name, $urldecode );
++
++		// Remove from queue
++		unset( $this->_queue[ $queue_k ] );
++		$this->save_queue( 'vpi', $this->_queue );
++		self::debug( 'Removed from queue [q_k] ' . $queue_k );
++
++		// Save summary data
++		$this->_summary['last_request'] = $this->_summary['curr_request'];
++		$this->_summary['curr_request'] = 0;
++
+ 		$this->_summary['curr_request_vpi'] = 0;
+ 		self::save_summary();
+ 
+diff --git a/thirdparty/entry.inc.php b/thirdparty/entry.inc.php
+index a148e6c9..23e66737 100644
+--- a/thirdparty/entry.inc.php
++++ b/thirdparty/entry.inc.php
+@@ -52,3 +52,4 @@ add_action('litespeed_init', 'LiteSpeed\Thirdparty\AMP::preload');
+ add_action('litespeed_init', 'LiteSpeed\Thirdparty\Elementor::preload');
+ add_action('litespeed_init', 'LiteSpeed\Thirdparty\Gravity_Forms::preload');
+ add_action('litespeed_init', 'LiteSpeed\Thirdparty\Perfmatters::preload');
++add_action('litespeed_init', 'LiteSpeed\Thirdparty\Rank_Math::preload');
+diff --git a/thirdparty/rank-math.cls.php b/thirdparty/rank-math.cls.php
+new file mode 100644
+index 00000000..f6a494d9
+--- /dev/null
++++ b/thirdparty/rank-math.cls.php
+@@ -0,0 +1,53 @@
++<?php
++/**
++ * The Third Party integration with the Rank Math SEO plugin.
++ *
++ * @since 7.9
++ * @package LiteSpeed
++ * @subpackage LiteSpeed_Cache\Thirdparty
++ */
++
++namespace LiteSpeed\Thirdparty;
++
++defined('WPINC') || exit();
++
++/**
++ * Provides compatibility for the Rank Math SEO plugin.
++ *
++ * Rank Math maintains its own internal sitemap cache that can
++ * occasionally fail to update when posts/pages are modified via
++ * programmatic flows (page builders, duplicator plugins, etc.).
++ * Tying its sitemap cache invalidation to LiteSpeed's "Purge All"
++ * gives users a reliable way to force a refresh.
++ */
++class Rank_Math {
++
++	/**
++	 * Preload hooks for Rank Math integration.
++	 *
++	 * @since 7.9
++	 * @access public
++	 * @return void
++	 */
++	public static function preload() {
++		if ( ! defined( 'RANK_MATH_VERSION' ) ) {
++			return;
++		}
++		add_action('litespeed_purged_post', __CLASS__ . '::invalidate_sitemap_cache');
++		// add_action('litespeed_purged_all', __CLASS__ . '::invalidate_sitemap_cache');
++	}
++
++	/**
++	 * Invalidates Rank Math's sitemap cache.
++	 *
++	 * @since 7.9
++	 * @return void
++	 */
++	public static function invalidate_sitemap_cache() {
++		if (class_exists('\\RankMath\\Sitemap\\Cache')) {
++			\RankMath\Sitemap\Cache::invalidate_storage();
++
++			do_action( 'litespeed_debug', '[3rd] Rank Math sitemap cache invalidated' );
++		}
++	}
++}
+diff --git a/thirdparty/wcml.cls.php b/thirdparty/wcml.cls.php
+index 4f0023d6..97aea5b0 100644
+--- a/thirdparty/wcml.cls.php
++++ b/thirdparty/wcml.cls.php
+@@ -12,12 +12,14 @@ namespace LiteSpeed\Thirdparty;
+ defined('WPINC') || exit();
+ 
+ /**
+- * Provides compatibility with WCML for currency handling.
++ * Provides compatibility with WCML for currency handling and crawler currency simulation.
+  */
+ class WCML {
+ 
++	const OPT_PICK = 'litespeed_wcml_crawler_currencies';
++
+ 	/**
+-	 * Holds the current WCML currency.
++	 * Currently resolved client currency.
+ 	 *
+ 	 * @var string
+ 	 */
+@@ -37,6 +39,16 @@ class WCML {
+ 
+ 		add_filter('wcml_client_currency', __CLASS__ . '::apply_client_currency');
+ 		add_action('wcml_set_client_currency', __CLASS__ . '::set_client_currency');
++		add_filter('litespeed_vary', __CLASS__ . '::apply_vary');
++		add_filter('litespeed_crawler_cookies', __CLASS__ . '::inject_vary_row');
++
++		self::_detect_crawler_currency();
++
++		// `litespeed_update_confs` piggybacks on LSCWP's nonce + cap verification.
++		if (is_admin()) {
++			add_action('litespeed_crawler_cookies_after', __CLASS__ . '::render_picker');
++			add_action('litespeed_update_confs', __CLASS__ . '::_handle_save');
++		}
+ 	}
+ 
+ 	/**
+@@ -53,7 +65,7 @@ class WCML {
+ 	}
+ 
+ 	/**
+-	 * Applies the client currency and adjusts vary accordingly.
++	 * Applies the client currency.
+ 	 *
+ 	 * @since 3.0
+ 	 * @access public
+@@ -62,13 +74,11 @@ class WCML {
+ 	 */
+ 	public static function apply_client_currency( $currency ) {
+ 		self::$_currency = $currency;
+-		add_filter('litespeed_vary', __CLASS__ . '::apply_vary');
+-
+ 		return $currency;
+ 	}
+ 
+ 	/**
+-	 * Appends WCML currency to vary list.
++	 * Appends WCML currency to the vary list.
+ 	 *
+ 	 * @since 3.0
+ 	 * @access public
+@@ -76,8 +86,224 @@ class WCML {
+ 	 * @return array The updated vary list including WCML currency.
+ 	 */
+ 	public static function apply_vary( $vary_list ) {
++		if (empty(self::$_currency)) {
++			global $woocommerce_wpml;
++			if (is_object($woocommerce_wpml)
++				&& isset($woocommerce_wpml->multi_currency)
++				&& method_exists($woocommerce_wpml->multi_currency, 'get_client_currency')
++			) {
++				self::$_currency = $woocommerce_wpml->multi_currency->get_client_currency();
++			}
++			if (empty(self::$_currency)) {
++				self::$_currency = get_option('woocommerce_currency', 'USD');
++			}
++		}
++
+ 		$vary_list['wcml_currency'] = self::$_currency;
+-		
+ 		return $vary_list;
+ 	}
++
++	/**
++	 * Inject the WCML vary row into the crawler cookie list.
++	 *
++	 * @since 7.9
++	 * @access public
++	 * @param mixed $cookies Crawler cookie list.
++	 * @return array
++	 */
++	public static function inject_vary_row( $cookies ) {
++		if (!is_array($cookies)) {
++			$cookies = [];
++		}
++
++		$currencies = self::_currencies();
++		$selected   = count($currencies) >= 2 ? self::_selected($currencies) : [];
++		if (empty($selected)) {
++			return $cookies;
++		}
++
++		$vals = [];
++		foreach ($selected as $code) {
++			$h = self::_vary_hash($code);
++			if (!empty($h)) {
++				$vals[] = $h;
++			}
++		}
++		if (empty($vals)) {
++			return $cookies;
++		}
++
++		$vary_name = \LiteSpeed\Vary::cls()->get_vary_name();
++
++		// Merge with admin's same-name rows
++		$existing_vals = [];
++		$other_rows    = [];
++		foreach ($cookies as $c) {
++			if (is_array($c) && isset($c['name']) && $vary_name === $c['name']) {
++				if (!empty($c['vals']) && is_array($c['vals'])) {
++					$existing_vals = array_merge($existing_vals, $c['vals']);
++				}
++			} else {
++				$other_rows[] = $c;
++			}
++		}
++		$other_rows[] = [
++			'name' => $vary_name,
++			'vals' => array_values(array_unique(array_merge($existing_vals, $vals))),
++		];
++		return $other_rows;
++	}
++
++	/**
++	 * Render the WCML multi-currency crawler picker.
++	 *
++	 * @since 7.9
++	 * @access public
++	 * @return void
++	 */
++	public static function render_picker() {
++		$currencies = self::_currencies();
++		if (count($currencies) < 2) {
++			return;
++		}
++
++		$selected = self::_selected($currencies);
++		?>
++		<div style="margin-top:10px;">
++			<input type="hidden" name="litespeed_wcml_crawler_present" value="1" />
++			<h4><?php echo esc_html__('WCML Multi-currency Crawl', 'litespeed-cache'); ?></h4>
++			<p class="litespeed-desc">
++				<?php echo esc_html__('Pick currencies to crawl. The matching _lscache_vary cookie is appended to the crawler cookie list automatically; crawler hits are reverse-mapped back to the selected currency at request time.', 'litespeed-cache'); ?>
++				<br />
++				<?php echo esc_html__('Note: applies to guest crawls only. Role-simulated crawls use the role vary cookie, which overrides the per-currency value.', 'litespeed-cache'); ?>
++			</p>
++			<?php foreach ($currencies as $code) : ?>
++				<label style="display:inline-block; margin: 0 14px 6px 0;">
++					<input type="checkbox" name="litespeed_wcml_crawler_currencies[]"
++						value="<?php echo esc_attr($code); ?>"
++						<?php checked(in_array($code, $selected, true)); ?> />
++					<code><?php echo esc_html($code); ?></code>
++				</label>
++			<?php endforeach; ?>
++		</div>
++		<?php
++	}
++
++	/**
++	 * Persist user pick. Vary row itself is computed on the fly (see inject_vary_row()).
++	 *
++	 * @since 7.9
++	 * @access public
++	 * @return void
++	 */
++	public static function _handle_save() {
++		// phpcs:disable WordPress.Security.NonceVerification.Missing -- LSCWP verified nonce before firing this action.
++		if (!isset($_POST['litespeed_wcml_crawler_present'])) {
++			return;
++		}
++
++		$posted = [];
++		if (isset($_POST['litespeed_wcml_crawler_currencies']) && is_array($_POST['litespeed_wcml_crawler_currencies'])) {
++			$posted = array_map('sanitize_text_field', wp_unslash($_POST['litespeed_wcml_crawler_currencies']));
++		}
++		// phpcs:enable
++
++		$selected = array_values(array_intersect(self::_currencies(), $posted));
++		update_option(self::OPT_PICK, $selected, false);
++	}
++
++	/**
++	 * Reverse-lookup currency from the vary cookie. Hash map computed on the fly.
++	 *
++	 * @since 7.9
++	 * @access private
++	 * @return void
++	 */
++	private static function _detect_crawler_currency() {
++		// Crawler-only: real visitors resolve currency via WCML state, not via cookie reverse-lookup.
++		if (
++			empty($_SERVER['HTTP_USER_AGENT'])
++			|| 0 !== strpos(wp_unslash((string) $_SERVER['HTTP_USER_AGENT']), \LiteSpeed\Crawler::FAST_USER_AGENT) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
++		) {
++			return;
++		}
++
++		$vary_name = \LiteSpeed\Vary::cls()->get_vary_name();
++		if (empty($_COOKIE[ $vary_name ])) {
++			return;
++		}
++
++		$currencies = self::_currencies();
++		$selected   = count($currencies) >= 2 ? self::_selected($currencies) : [];
++		if (empty($selected)) {
++			return;
++		}
++
++		$val = sanitize_text_field(wp_unslash($_COOKIE[ $vary_name ]));
++		foreach ($selected as $code) {
++			if (self::_vary_hash($code) === $val) {
++				add_filter('wcml_client_currency', function () use ( $code ) {
++					return $code;
++				}, 0);
++				self::apply_client_currency($code);
++				return;
++			}
++		}
++	}
++
++	/**
++	 * User-selected currencies, intersected with what is currently available.
++	 *
++	 * @since 7.9
++	 * @access private
++	 * @param string[] $available Available WCML currencies.
++	 * @return string[]
++	 */
++	private static function _selected( $available ) {
++		$stored = get_option(self::OPT_PICK, []);
++		if (!is_array($stored)) {
++			return [];
++		}
++		return array_values(array_intersect($available, $stored));
++	}
++
++	/**
++	 * All active WCML currency codes.
++	 *
++	 * @since 7.9
++	 * @access private
++	 * @return string[]
++	 */
++	private static function _currencies() {
++		global $woocommerce_wpml;
++		if (is_object($woocommerce_wpml)
++			&& isset($woocommerce_wpml->multi_currency)
++			&& method_exists($woocommerce_wpml->multi_currency, 'get_currency_codes')
++		) {
++			return $woocommerce_wpml->multi_currency->get_currency_codes();
++		}
++
++		$settings = get_option('_wcml_settings', []);
++		if (!empty($settings['currency_options']) && is_array($settings['currency_options'])) {
++			return array_keys($settings['currency_options']);
++		}
++
++		return [];
++	}
++
++	/**
++	 * Compute the vary cookie value for a guest under the given currency.
++	 *
++	 * @since 7.9
++	 * @access private
++	 * @param string $currency Currency code.
++	 * @return string|false Vary value, or false if Vary cannot finalize (LITESPEED_GUEST etc.).
++	 */
++	private static function _vary_hash( $currency ) {
++		$prev            = self::$_currency;
++		self::$_currency = $currency;
++		$hash            = \LiteSpeed\Vary::cls()->finalize_default_vary(-1);
++		self::$_currency = $prev;
++		return $hash;
++	}
+ }
+diff --git a/thirdparty/woocommerce.cls.php b/thirdparty/woocommerce.cls.php
+index 0d86b7f1..e0ee9fab 100644
+--- a/thirdparty/woocommerce.cls.php
++++ b/thirdparty/woocommerce.cls.php
+@@ -1,4 +1,4 @@
+-<?php 
++<?php
+ /**
+  * The Third Party integration with the WooCommerce plugin.
+  *
+@@ -85,6 +85,15 @@ class WooCommerce extends Base {
+ 		add_action( 'woocommerce_variation_set_stock_status', [ $this, 'purge_product_stock_status' ], 10, 3 );
+ 		add_action( 'woocommerce_order_status_cancelled', [ $this, 'purge_cancelled_order_products' ], 20 );
+ 
++		// Purge product pages when WooCommerce scheduled sales flip prices (#941).
++		// Daily cron after-hooks (WC < 10.5 path, and post-10.5 safety net for products missed by AS):
++		add_action( 'wc_after_products_starting_sales', [ $this, 'purge_products_on_sale_change' ] );
++		add_action( 'wc_after_products_ending_sales', [ $this, 'purge_products_on_sale_change' ] );
++		// Per-product Action Scheduler events (WC 10.5+, main path — fire at exact sale times).
++		// Priority 99 runs after WC's default-10 callback so the price flip is committed before we purge.
++		add_action( 'wc_product_start_scheduled_sale', [ $this, 'purge_products_on_sale_change' ], 99 );
++		add_action( 'wc_product_end_scheduled_sale', [ $this, 'purge_products_on_sale_change' ], 99 );
++
+ 		add_action('comment_post', [ $this, 'add_review' ], 10, 3);
+ 
+ 		if ( $this->esi_enabled ) {
+@@ -693,6 +702,34 @@ class WooCommerce extends Base {
+ 		}
+ 	}
+ 
++	/**
++	 * Purge products whose sale status flipped (#941).
++	 *
++	 * Handles both WC paths:
++	 * - Daily cron after-hooks (`wc_after_products_starting_sales` / `wc_after_products_ending_sales`) → array of IDs.
++	 * - Per-product Action Scheduler events (`wc_product_start_scheduled_sale` / `wc_product_end_scheduled_sale`, WC 10.5+) → single ID.
++	 *
++	 * Force purge via `$stock_status_changed = true` so a price flip is not gated by the stock-update interval config.
++	 *
++	 * @since 7.9
++	 * @param int|int[] $product_ids Single product ID (per-product AS callback) or array of IDs (daily cron after-hook).
++	 * @return void
++	 */
++	public function purge_products_on_sale_change( $product_ids ) {
++		if ( ! function_exists( 'wc_get_product' ) ) {
++			return;
++		}
++
++		foreach ( (array) $product_ids as $product_id ) {
++			$product = wc_get_product( $product_id );
++			if ( ! $product ) {
++				continue;
++			}
++			do_action( 'litespeed_debug', '[3rd] Woo Purge sale change [pid] ' . $product->get_id() );
++			$this->purge_product( $product, true );
++		}
++	}
++
+ 	/**
+ 	 * Purge a product page and related pages (based on settings) on checkout.
+ 	 *
+diff --git a/tpl/cache/settings-cache.tpl.php b/tpl/cache/settings-cache.tpl.php
+index ac03ca83..1c5b93ef 100644
+--- a/tpl/cache/settings-cache.tpl.php
++++ b/tpl/cache/settings-cache.tpl.php
+@@ -34,7 +34,7 @@ defined( 'WPINC' ) || exit;
+ 					printf(
+ 						/* translators: %s: Link tags */
+ 						esc_html__( 'Please visit the %sInformation%s page on how to test the cache.', 'litespeed-cache' ),
+-						'<a href="https://docs.litespeedtech.com/lscache/lscwp/installation/#testing" target="_blank" rel="noopener">',
++						'<a href="https://docs.litespeedtech.com/lscache/lscwp/installation/#verify-your-site-is-being-cached" target="_blank" rel="noopener">',
+ 						'</a>'
+ 					);
+ 					?>
+diff --git a/tpl/cdn/cf.tpl.php b/tpl/cdn/cf.tpl.php
+index a5f14aa5..8d8b126d 100644
+--- a/tpl/cdn/cf.tpl.php
++++ b/tpl/cdn/cf.tpl.php
+@@ -15,7 +15,7 @@ $this->form_action();
+ 
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'Cloudflare Settings', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#cloudflare-tab' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table">
+@@ -161,4 +161,4 @@ $curr_status = CDN\Cloudflare::get_option( CDN\Cloudflare::ITEM_STATUS, array()
+ 	<?php endif; ?>
+ 		<?php esc_html_e( 'Purge Everything', 'litespeed-cache' ); ?>
+ 	</a>
+-</p>
+\ No newline at end of file
++</p>
+diff --git a/tpl/cdn/other.tpl.php b/tpl/cdn/other.tpl.php
+index f2a056c5..5492a028 100644
+--- a/tpl/cdn/other.tpl.php
++++ b/tpl/cdn/other.tpl.php
+@@ -26,7 +26,7 @@ $this->form_action();
+ 
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'CDN Settings', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#other-static-cdn-tab' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table">
+@@ -106,14 +106,6 @@ $this->form_action();
+ 					);
+ 					?>
+ 					<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#include-file-types', esc_html__( 'Default value', 'litespeed-cache' ) ); ?>
+-					<br>
+-					<?php
+-					printf(
+-						esc_html__( 'If you turn any of the above settings OFF, please remove the related file types from the %s box.', 'litespeed-cache' ),
+-						'<b>' . esc_html__( 'Include File Types', 'litespeed-cache' ) . '</b>'
+-					);
+-					?>
+-					<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#include-file-types' ); ?>
+ 				</div>
+ 			</td>
+ 		</tr>
+@@ -215,4 +207,4 @@ $this->form_action();
+ 	</tbody>
+ </table>
+ 
+-<?php $this->form_end(); ?>
+\ No newline at end of file
++<?php $this->form_end(); ?>
+diff --git a/tpl/cdn/qc.tpl.php b/tpl/cdn/qc.tpl.php
+index 92f12f1b..2063181b 100644
+--- a/tpl/cdn/qc.tpl.php
++++ b/tpl/cdn/qc.tpl.php
+@@ -25,6 +25,7 @@ $cloud_summary = Cloud::get_summary();
+ 					</a>
+ 				<?php endif; ?>
+ 				<span class="litespeed-quic-icon"></span> <?php esc_html_e( 'QUIC.cloud CDN Status Overview', 'litespeed-cache' ); ?>
++				<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/' ); ?>
+ 			</h3>
+ 			<p class="litespeed-desc"><?php esc_html_e( 'Check the status of your most important settings and the health of your CDN setup here.', 'litespeed-cache' ); ?></p>
+ 
+diff --git a/tpl/crawler/settings.tpl.php b/tpl/crawler/settings.tpl.php
+index 6160dc37..6cad9c70 100644
+--- a/tpl/crawler/settings.tpl.php
++++ b/tpl/crawler/settings.tpl.php
+@@ -15,7 +15,7 @@ $this->form_action();
+ 
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'Crawler General Settings', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/crawler/#general-settings-tab' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/crawler/#settings-tab' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table">
+@@ -181,9 +181,10 @@ $this->form_action();
+ 						?>
+ 					</p>
+ 				</div>
++				<?php do_action( 'litespeed_crawler_cookies_after' ); ?>
+ 			</td>
+ 		</tr>
+ 	</tbody>
+ </table>
+ 
+-<?php $this->form_end(); ?>
+\ No newline at end of file
++<?php $this->form_end(); ?>
+diff --git a/tpl/dash/dashboard.tpl.php b/tpl/dash/dashboard.tpl.php
+index 20003cac..8c6929d6 100644
+--- a/tpl/dash/dashboard.tpl.php
++++ b/tpl/dash/dashboard.tpl.php
+@@ -644,7 +644,7 @@ $can_page_load_time      = defined( 'LITESPEED_SERVER_TYPE' ) && 'NONE' !== LITE
+ 							<?php endif; ?>
+ 							<p>
+ 								<?php esc_html_e( 'Requests in queue', 'litespeed-cache' ); ?>: <code><?php echo ! empty( $ccss_count ) ? esc_html( $ccss_count ) : '-'; ?></code>
+-								<a href="<?php echo ! empty( $ccss_count ) ? esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN_CCSS ) ) : 'javascript:;'; ?>"
++								<a href="<?php echo ! empty( $ccss_count ) ? esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN ) ) : 'javascript:;'; ?>"
+ 									class="button button-secondary button-small <?php echo empty( $ccss_count ) ? 'disabled' : ''; ?>">
+ 									<?php esc_html_e( 'Force cron', 'litespeed-cache' ); ?>
+ 								</a>
+diff --git a/tpl/inc/modal.deactivation.php b/tpl/inc/modal.deactivation.php
+index 60a79db8..1e3bd326 100644
+--- a/tpl/inc/modal.deactivation.php
++++ b/tpl/inc/modal.deactivation.php
+@@ -16,29 +16,35 @@ defined( 'WPINC' ) || exit;
+ $_title = esc_html__('Deactivate LiteSpeed Cache', 'litespeed');
+ $_id    = 'litespeed-modal-deactivate';
+ 
+-$reasons = array(
+-	array(
++$reasons = [
++	[
+ 		'value' => 'Temporary',
+-		'text' => esc_html__('The deactivation is temporary', 'litespeed-cache'),
+-		'id' => 'temp',
+-		'selected' => true,
+-	),
+-	array(
++		'text'  => esc_html__( 'The deactivation is temporary', 'litespeed-cache' ),
++		'id'    => 'temp',
++	],
++	[
+ 		'value' => 'Performance worse',
+-		'text' => esc_html__('Site performance is worse', 'litespeed-cache'),
+-		'id' => 'performance',
+-	),
+-	array(
++		'text'  => esc_html__( 'Site performance is worse', 'litespeed-cache' ),
++		'id'    => 'performance',
++	],
++	[
+ 		'value' => 'Plugin complicated',
+-		'text' => esc_html__('Plugin is too complicated', 'litespeed-cache'),
+-		'id' => 'complicated',
+-	),
+-	array(
++		'text'  => esc_html__( 'Plugin is too complicated', 'litespeed-cache' ),
++		'id'    => 'complicated',
++	],
++	[
+ 		'value' => 'Other',
+-		'text' => esc_html__('Other', 'litespeed-cache'),
+-		'id' => 'other',
+-	),
+-);
++		'text'  => esc_html__( 'Other', 'litespeed-cache' ),
++		'id'    => 'other',
++	],
++	[
++		// Empty value is treated as "do not send" by the submit handler below.
++		'value'    => '',
++		'text'     => esc_html__( 'Prefer not to answer', 'litespeed-cache' ),
++		'id'       => 'prefer_not_answer',
++		'selected' => true,
++	],
++];
+ ?>
+ <div style="display: none">
+     <div id="litespeed-deactivation" class="iziModal">
+@@ -49,7 +55,7 @@ $reasons = array(
+                     <?php foreach ($reasons as $reason) : ?>
+                     <label for="litespeed-deactivate-reason-<?php esc_attr_e( $reason['id'] ); ?>">
+                         <input type="radio" id="litespeed-deactivate-reason-<?php esc_attr_e( $reason['id'] ); ?>" value="<?php esc_attr_e( $reason['value'] ); ?>"
+-                            <?php isset($reason['selected']) && $reason['selected'] ? ' checked="checked"' : ''; ?> name="litespeed-reason" />
++                            <?php echo ! empty( $reason['selected'] ) ? ' checked="checked"' : ''; ?> name="litespeed-reason" />
+                         <?php esc_html_e( $reason['text'] ); ?>
+                     </label>
+                     <?php endforeach; ?>
+@@ -108,11 +114,21 @@ $reasons = array(
+                     $('#litespeed-deactivation-form-submit').attr('disabled', true);
+                     var container = $('#litespeed-deactivation-form');
+ 
++                    var reason = $(container).find('[name=litespeed-reason]:checked').val();
++
++                    // If no reason is selected, or the user chose "Prefer not to answer"
++                    // (which uses an empty value), skip the QC survey request entirely and
++                    // just proceed with the native deactivation.
++                    if (!reason) {
++                        $('#litespeed-deactivation-form')[0].submit();
++                        return;
++                    }
++
+                     // Save selected data
+                     var data = {
+                         id: lscId,
+                         siteLink: window.location.hostname,
+-                        reason: $(container).find('[name=litespeed-reason]:checked').val()
++                        reason: reason
+                     };
+ 
+                     $.ajax({
+diff --git a/tpl/page_optm/settings_css.tpl.php b/tpl/page_optm/settings_css.tpl.php
+index 5ce1ecfc..0f95f5e0 100644
+--- a/tpl/page_optm/settings_css.tpl.php
++++ b/tpl/page_optm/settings_css.tpl.php
+@@ -252,7 +252,7 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
+ 						<div class="litespeed-callout notice notice-warning inline">
+ 							<h4>
+ 								<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'CCSS' ); ?> ( <?php echo esc_html( count( $ccss_queue ) ); ?> )
+-								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_CLEAR_Q_CCSS ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
++								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
+ 							</h4>
+ 							<p>
+ 								<?php
+@@ -293,7 +293,7 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
+ 								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ccss_service_hot ) ); ?>
+ 							</button>
+ 						<?php else : ?>
+-							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN_CCSS ) ); ?>" class="button litespeed-btn-success">
++							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
+ 								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'CCSS' ); ?>
+ 							</a>
+ 						<?php endif; ?>
+diff --git a/tpl/page_optm/settings_html.tpl.php b/tpl/page_optm/settings_html.tpl.php
+index 3add4a69..9739b972 100644
+--- a/tpl/page_optm/settings_html.tpl.php
++++ b/tpl/page_optm/settings_html.tpl.php
+@@ -90,7 +90,7 @@ defined( 'WPINC' ) || exit;
+ 				<div class="litespeed-desc">
+ 					<?php esc_html_e( 'Delay rendering off-screen HTML elements by its selector.', 'litespeed-cache' ); ?>
+ 					<?php Doc::one_per_line(); ?>
+-					<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#html-lazyload-selectors' ); ?>
++					<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#html-lazy-load-selectors' ); ?>
+ 				</div>
+ 			</td>
+ 		</tr>
+@@ -192,4 +192,4 @@ defined( 'WPINC' ) || exit;
+ 		</tr>
+ 
+ 	</tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/tpl/page_optm/settings_localization.tpl.php b/tpl/page_optm/settings_localization.tpl.php
+index 3e512b6d..e9c1328d 100644
+--- a/tpl/page_optm/settings_localization.tpl.php
++++ b/tpl/page_optm/settings_localization.tpl.php
+@@ -34,7 +34,7 @@ $avatar_queue   = Avatar::cls()->queue_count();
+ 
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'Localization Settings', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#localization-settings-tab' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#localization-tab' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table"><tbody>
+@@ -111,7 +111,7 @@ $avatar_queue   = Avatar::cls()->queue_count();
+ 			<?php $this->build_switch( $option_id ); ?>
+ 			<div class="litespeed-desc">
+ 				<?php esc_html_e( 'Localize external resources.', 'litespeed-cache' ); ?>
+-				<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#localize' ); ?>
++				<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#localize-resources' ); ?>
+ 
+ 				<br /><font class="litespeed-danger">
+ 					🚨 <?php printf( esc_html__( 'Please thoroughly test all items in %s to ensure they function as expected.', 'litespeed-cache' ), '<code>' . esc_html( Lang::title( Base::O_OPTM_LOCALIZE_DOMAINS ) ) . '</code>' ); ?>
+diff --git a/tpl/page_optm/settings_media.tpl.php b/tpl/page_optm/settings_media.tpl.php
+index ee52c265..708b382b 100644
+--- a/tpl/page_optm/settings_media.tpl.php
++++ b/tpl/page_optm/settings_media.tpl.php
+@@ -308,18 +308,12 @@ $scaled_size = apply_filters( 'big_image_size_threshold', 2560, [], '', 0 ) . 'p
+ 						<?php esc_html_e( 'This is irreversible.', 'litespeed-cache' ); ?>
+ 					</font>
+ 
+-					<?php
+-				/*
+-				 * TODO: Uncomment after testing is complete
+-				 *
+-				 * <br /><br />
+-				 * <a href="<?php echo esc_url( Utility::build_url( Router::ACTION_MEDIA, Media::TYPE_BATCH_RESCALE_ORI ) ); ?>"
+-				 *     data-litespeed-cfm="<?php esc_attr_e( 'This will replace all original large images with their scaled versions. This is irreversible. Continue?', 'litespeed-cache' ); ?>"
+-				 *     class="button button-secondary">
+-				 *     <?php esc_html_e( 'Rescale Existing Images', 'litespeed-cache' ); ?>
+-				 * </a>
+-				 */
+-				?>
++					<br /><br />
++					<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_MEDIA, Media::TYPE_BATCH_RESCALE_ORI ) ); ?>"
++						data-litespeed-cfm="<?php esc_attr_e( 'This will replace all original large images with their scaled versions. This is irreversible. Continue?', 'litespeed-cache' ); ?>"
++						class="button button-secondary">
++						<?php esc_html_e( 'Rescale Existing Images', 'litespeed-cache' ); ?>
++					</a>
+ 				</div>
+ 			</td>
+ 		</tr>
+diff --git a/tpl/page_optm/settings_tuning.tpl.php b/tpl/page_optm/settings_tuning.tpl.php
+index 88c6f60d..5eda4a65 100644
+--- a/tpl/page_optm/settings_tuning.tpl.php
++++ b/tpl/page_optm/settings_tuning.tpl.php
+@@ -27,7 +27,7 @@ ksort( $roles );
+ ?>
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'Tuning Settings', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#tuning-settings-tab' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#tuning-tab' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table">
+@@ -166,4 +166,4 @@ ksort( $roles );
+ 		</tr>
+ 
+ 	</tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/tpl/page_optm/settings_tuning_css.tpl.php b/tpl/page_optm/settings_tuning_css.tpl.php
+index 4dc31b85..90f2a733 100644
+--- a/tpl/page_optm/settings_tuning_css.tpl.php
++++ b/tpl/page_optm/settings_tuning_css.tpl.php
+@@ -15,7 +15,7 @@ defined( 'WPINC' ) || exit;
+ ?>
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'Tuning CSS Settings', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#tuning-css-settings-tab' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#tuning-css-tab' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table">
+@@ -112,7 +112,7 @@ defined( 'WPINC' ) || exit;
+ 			<div class="litespeed-desc">
+ 				<?php esc_html_e( 'List post types where each item of that type should have its own CCSS generated.', 'litespeed-cache' ); ?>
+ 				<?php printf( esc_html__( 'For example, if every Page on the site has different formatting, enter %s in the box. Separate critical CSS files will be stored for every Page on the site.', 'litespeed-cache' ), '<code>page</code>' ); ?>
+-				<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#separate-ccss-cache-post-types_1' ); ?>
++				<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#separate-ccss-cache-post-types' ); ?>
+ 			</div>
+ 		</td>
+ 	</tr>
+@@ -169,4 +169,4 @@ defined( 'WPINC' ) || exit;
+ 		</td>
+ 	</tr>
+ 
+-</tbody></table>
+\ No newline at end of file
++</tbody></table>
+diff --git a/tpl/page_optm/settings_vpi.tpl.php b/tpl/page_optm/settings_vpi.tpl.php
+index f54c8c6e..3e05a0ab 100644
+--- a/tpl/page_optm/settings_vpi.tpl.php
++++ b/tpl/page_optm/settings_vpi.tpl.php
+@@ -21,7 +21,7 @@ $vpi_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_VPI );
+ 
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'Viewport Images', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#vpi-settings-tab' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/pageopt/#vpi' ); ?>
+ </h3>
+ 
+ <table class="wp-list-table striped litespeed-table">
+@@ -124,4 +124,4 @@ $vpi_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_VPI );
+ 			</td>
+ 		</tr>
+ 	</tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/tpl/presets/standard.tpl.php b/tpl/presets/standard.tpl.php
+index 9edf2d8c..c3b7c8a0 100644
+--- a/tpl/presets/standard.tpl.php
++++ b/tpl/presets/standard.tpl.php
+@@ -90,7 +90,7 @@ $presets = array(
+ 
+ <h3 class="litespeed-title-short">
+ 	<?php esc_html_e( 'LiteSpeed Cache Standard Presets', 'litespeed-cache' ); ?>
+-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/presets/#standard-tab' ); ?>
++	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/presets/#standard-presets-tab' ); ?>
+ </h3>
+ 
+ <p><?php esc_html_e( 'Use an official LiteSpeed-designed Preset to configure your site in one click. Try no-risk caching essentials, extreme optimization, or something in between.', 'litespeed-cache' ); ?></p>
+@@ -195,4 +195,4 @@ if ( ! empty( $summary['preset'] ) || ! empty( $backups ) ) :
+ 			<?php esc_html_e( 'Restore Settings', 'litespeed-cache' ); ?>
+ 		</a>
+ 	</p>
+-<?php endforeach; ?>
+\ No newline at end of file
++<?php endforeach; ?>
+diff --git a/tpl/toolbox/beta_test.tpl.php b/tpl/toolbox/beta_test.tpl.php
+index 36a952d9..e843eb2e 100644
+--- a/tpl/toolbox/beta_test.tpl.php
++++ b/tpl/toolbox/beta_test.tpl.php
+@@ -14,6 +14,8 @@ defined( 'WPINC' ) || exit;
+ 
+ // List of available public versions
+ $v_list = array(
++	'7.8.1',
++	'7.8.0.1',
+ 	'7.8',
+ 	'7.7',
+ 	'7.6.2',
