@@ -1103,9 +1103,11 @@ class Media extends Root {
 						$ori_height = $dimensions[1];
 						// Calculate height based on width.
 						if ( ! empty( $attrs['width'] ) && 'auto' !== $attrs['width'] ) {
-							$ori_height = (int) ( ( $ori_height * (int) $attrs['width'] ) / max( 1, $ori_width ) );
+							$ori_height = (int) round( $ori_height * (int) $attrs['width'] / max( 1, $ori_width ) );
+      						$ori_width  = (int) $attrs['width'];
 						} elseif ( ! empty( $attrs['height'] ) && 'auto' !== $attrs['height'] ) {
-							$ori_width = (int) ( ( $ori_width * (int) $attrs['height'] ) / max( 1, $ori_height ) );
+							$ori_width  = (int) round( $ori_width * (int) $attrs['height'] / max( 1, $ori_height ) );
+							$ori_height = (int) $attrs['height'];
 						}
 
 						// Remove existing width/height, then append new values
