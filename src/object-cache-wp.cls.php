@@ -277,6 +277,50 @@ class WP_Object_Cache {
 	}
 
 	/**
+	 * Whether a cache entry may use the persistent backend (Redis/Memcached).
+	 *
+	 * Mirrors the "Do Not Cache Groups" exclusion (which is matched by group name
+	 * only) and additionally exposes a per-key/group filter, so an individual entry
+	 * can be kept in the per-request runtime cache only. This is useful for excluding
+	 * a single language-specific transient that would otherwise be shared across
+	 * multilingual requests, without dropping the whole `transient` group.
+	 *
+	 * @since 7.9
+	 * @access private
+	 *
+	 * @param int|string $key   Cache key (the transient name for transients).
+	 * @param string     $group Cache group, e.g. 'transient', 'site-transient', 'woocommerce-attributes'.
+	 * @return bool True if the entry may be stored in / read from the persistent backend.
+	 */
+	private function _persistent( $key, $group ) {
+		if ( $this->_object_cache->is_non_persistent( $group ) ) {
+			return false;
+		}
+
+		// The object cache drop-in can run before plugin.php is loaded; bail to the default safely.
+		if ( ! function_exists( 'apply_filters' ) ) {
+			return true;
+		}
+
+		/**
+		 * Filters whether a specific entry may use the persistent object cache.
+		 *
+		 * Return false to keep the entry in the per-request runtime cache only, e.g.
+		 * to stop a language-specific transient from being shared between languages.
+		 * Register the filter early (a top-level mu-plugin) because the object cache
+		 * drop-in loads before regular plugins. Transients are stored under the
+		 * `transient`/`site-transient` group with the transient name as the key.
+		 *
+		 * @since 7.9
+		 *
+		 * @param bool       $persistent Whether the entry may use the persistent backend. Default true.
+		 * @param int|string $key        Cache key (the transient name for transients).
+		 * @param string     $group      Cache group, e.g. 'transient', 'woocommerce-attributes'.
+		 */
+		return (bool) apply_filters( 'litespeed_object_cache_persistent', true, $key, $group );
+	}
+
+	/**
 	 * Output debug info.
 	 *
 	 * Returns cache statistics for debugging purposes.
@@ -435,7 +479,7 @@ class WP_Object_Cache {
 			unset( $this->_cache_404[ $id ] );
 		}
 
-		if ( ! $this->_object_cache->is_non_persistent( $group ) ) {
+		if ( $this->_persistent( $key, $group ) ) {
 			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize
 			$this->_object_cache->set( $id, serialize( [ 'data' => $data ] ), (int) $expire );
 			++$this->count_set;
@@ -505,7 +549,7 @@ class WP_Object_Cache {
 			$found     = true;
 			$cache_val = $this->_cache[ $id ];
 			++$this->count_hit_incall;
-		} elseif ( ! array_key_exists( $id, $this->_cache_404 ) && ! $this->_object_cache->is_non_persistent( $group ) ) {
+		} elseif ( ! array_key_exists( $id, $this->_cache_404 ) && $this->_persistent( $key, $group ) ) {
 			$v = $this->_object_cache->get( $id, $group );
 
 			if ( false !== $v ) {
