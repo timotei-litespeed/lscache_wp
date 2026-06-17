@@ -206,6 +206,10 @@ class Core extends Root {
 		do_action( 'litespeed_initing' );
 
 		ob_start( [ $this, 'send_headers_force' ] );
+		// Silence the PHP 8.5+ deprecation that misattributes 3rd-party stray output to our buffer handler. @see silence_ob_handler_deprecation()
+		if ( PHP_VERSION_ID >= 80500 ) {
+			add_action( 'shutdown', [ $this, 'silence_ob_handler_deprecation' ], 0 );
+		}
 		add_action( 'shutdown', [ $this, 'send_headers' ], 0 );
 		add_action( 'wp_footer', [ $this, 'footer_hook' ] );
 
@@ -439,6 +443,38 @@ class Core extends Root {
 	}
 
 	/**
+	 * Silence the PHP 8.5+ deprecation `ob_end_flush(): Producing output from user output handler ...send_headers_force is deprecated`.
+	 *
+	 * Our output buffer handler `send_headers_force()` never echoes on its own — it only returns the modified buffer. But any
+	 * code that emits output while our buffer is being flushed (e.g. 3rd party hooks on `litespeed_buffer_*`, or other plugins
+	 * printing during shutdown) makes PHP 8.5 blame our handler and emit this deprecation. We cannot capture that stray output
+	 * (`ob_start()` is fatal inside an output handler: "Cannot use output buffering in output buffering display handlers"), and
+	 * we cannot fix arbitrary 3rd party code, so we suppress ONLY this exact, misattributed deprecation and pass every other
+	 * error through to the previously registered handler (or PHP's default) untouched.
+	 *
+	 * Registered on `shutdown` at priority 0 so it is installed right before WP's `wp_ob_end_flush_all()` (shutdown priority 1)
+	 * and PHP's own end-of-request flush invoke the handler, and after any early-installed 3rd party error handler so it sits on
+	 * top of the stack for those final flushes.
+	 *
+	 * @since 7.9
+	 */
+	public function silence_ob_handler_deprecation() {
+		$previous = set_error_handler(
+			function ( $errno, $errstr, $errfile = '', $errline = 0 ) use ( &$previous ) {
+				if (
+					E_DEPRECATED === $errno
+					&& false !== strpos( $errstr, 'Producing output from user output handler' )
+					&& false !== strpos( $errstr, 'send_headers_force' )
+				) {
+					return true; // Swallow only this misattributed deprecation.
+				}
+				// Delegate everything else to keep other error handlers (Query Monitor, etc.) working.
+				return null !== $previous ? call_user_func( $previous, $errno, $errstr, $errfile, $errline ) : false;
+			}
+		);
+	}
+
+	/**
 	 * For compatibility with plugins that have 'Bad' logic that forced all buffer output even if it is NOT their buffer.
 	 *
 	 * Usually this is called after send_headers() if following original WP process
@@ -448,10 +484,17 @@ class Core extends Root {
 	 * @return string The processed buffer.
 	 */
 	public function send_headers_force( $buffer ) {
+		// Isolate our response: the buffer must stay a string from end to end so a misbehaving
+		// filter can never surface a PHP warning (e.g. "Array to string conversion", or the PHP 8.5
+		// "Returning non-string values from a user output handler" deprecation) nor blank the page.
+		if ( ! is_string( $buffer ) ) {
+			$buffer = '';
+		}
+
 		$this->check_is_html( $buffer );
 
 		// Hook to modify buffer before
-		$buffer = apply_filters( 'litespeed_buffer_before', $buffer );
+		$buffer = $this->buffer_filter( 'litespeed_buffer_before', $buffer );
 
 		/**
 		 * ESI: clean wrappers MUST run before any optimizer hook (HTML minifier strips HTML comments and would erase the wrapper markers themselves). Runs unconditionally so NO_OPTM requests with ESI blocks still produce a clean buffer.
@@ -472,7 +515,7 @@ class Core extends Root {
 				$buffer = $ox_html;
 			} else {
 				Debug2::debug( '[Core] run hook litespeed_buffer_finalize' );
-				$buffer = apply_filters( 'litespeed_buffer_finalize', $buffer );
+				$buffer = $this->buffer_filter( 'litespeed_buffer_finalize', $buffer );
 			}
 		}
 
@@ -539,10 +582,35 @@ class Core extends Root {
 		}
 
 		// Hook to modify buffer after
-		$buffer = apply_filters( 'litespeed_buffer_after', $buffer );
+		$buffer = $this->buffer_filter( 'litespeed_buffer_after', $buffer );
 
 		Debug2::ended();
 
+		// Final guard: never hand a non-string back to the output buffering layer.
+		return is_string( $buffer ) ? $buffer : '';
+	}
+
+	/**
+	 * Apply a buffer filter hook but keep the response isolated from misbehaving 3rd party callbacks.
+	 *
+	 * Output buffer handlers must return a string. A filter on `litespeed_buffer_*` that returns a
+	 * non-string (null/array/object/bool) would otherwise poison the buffer — triggering PHP warnings
+	 * (`Array to string conversion`, the PHP 8.5 "Returning non-string values from a user output handler"
+	 * deprecation) or blanking the page. When that happens we discard the bad return and keep the last
+	 * known-good buffer, logging the offender so it can be traced.
+	 *
+	 * @since 7.9
+	 * @param string $hook   The filter hook name.
+	 * @param string $buffer The current (string) buffer.
+	 * @return string The filtered buffer, guaranteed to be a string.
+	 */
+	private function buffer_filter( $hook, $buffer ) {
+		$result = apply_filters( $hook, $buffer );
+		if ( is_string( $result ) ) {
+			return $result;
+		}
+
+		Debug2::debug( '[Core] ⚠️ `' . $hook . '` returned a non-string (' . gettype( $result ) . '); keeping prior buffer' );
 		return $buffer;
 	}
 
