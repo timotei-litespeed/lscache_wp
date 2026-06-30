@@ -246,6 +246,58 @@ trait Cloud_Request {
 	}
 
 	/**
+	 * Check if a service tag is try_later
+	 *
+	 * @since 7.9
+	 *
+	 * @param string $service_tag Service tag.
+	 * @return int|false Seconds remaining or false if not hot.
+	 */
+	public function service_try_later( $service_tag ) {
+		// Map service tags to their "try later" equivalents
+		$tag_mapping = [
+			'ucss'    => 'optm-ucss',
+			'optm-ucss'    => 'optm-ucss',
+			'ccss'    => 'optm-css_async',
+			'optm-css_async'    => 'optm-css_async',
+			'vpi'     => 'vpi', // TODO: add VPI
+			'optimax' => 'optimax', // TODO: add VPI
+		];
+
+		$service_tag_try_later = $tag_mapping[ $service_tag ] ?? $service_tag;
+
+		// Safety check for Base mapping
+		if ( ! isset( Base::$_try_later_map[ $service_tag_try_later ] ) ) {
+			// Try later mapping not found for the service tag, return 0.
+			return 0;
+		}
+
+		$map_entry             = Base::$_try_later_map[ $service_tag_try_later ];
+		$try_later_summary_key = $map_entry[ 1 ] ?? null;
+		$class_name            = $map_entry[ 0 ] ?? null;
+
+		if ( ! $class_name || ! $try_later_summary_key ) {
+			// Class is not defined or summary key is missing, return 0.
+			return 0;
+		}
+
+		// Fetch the summary data
+		$try_later_ttl = $this->cls( $class_name )::get_summary( $try_later_summary_key );
+
+		if ( 'vpi' !== $service_tag ) {
+			// Return data for service tags other than VPI.
+			$current_time = time();
+			$ttl_try_later = (int) $try_later_ttl - $current_time;
+			
+			return $ttl_try_later > 0 ? $ttl_try_later : 0;
+		}
+		else {
+			// IF VPI, return 0.
+			return 0;
+		}
+	}
+
+	/**
 	 * Post data to QUIC.cloud server
 	 *
 	 * @since  3.0

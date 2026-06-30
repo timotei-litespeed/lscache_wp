@@ -116,23 +116,14 @@ class Task extends Root {
 			}
 
 			// Skip cron registration if waiting for try_later timeout
-			$try_later_map = [
-				Base::O_OPTM_UCSS     => [ 'UCSS', 'ucss_next_run_after' ],
-				Base::O_OPTM_CSS_ASYNC => [ 'CSS', 'ccss_next_run_after' ],
-				Base::O_OPTIMAX       => [ 'Optimax', 'ox_next_run_after' ],
-			];
-			if ( isset( $try_later_map[ $id ] ) ) {
-				list( $cls_name, $summary_key ) = $try_later_map[ $id ];
-				$next_run_after                 = $this->cls( $cls_name )::get_summary( $summary_key );
-				if ( $next_run_after && time() < $next_run_after ) {
-					$wait_seconds = $next_run_after - time();
-					self::debug( "Skip $cls_name cron: try_later $wait_seconds s remaining" );
-					if ( wp_next_scheduled( $trigger['name'] ) ) {
-						wp_clear_scheduled_hook( $trigger['name'] );
-						self::debug( "Cleared existing $cls_name cron schedule" );
-					}
-					continue;
+			$try_later_wait_time = $this->cls( 'Cloud' )->service_try_later( $id );
+			if ( $try_later_wait_time > 0 ) {
+				self::debug( "Skip $id cron: try_later $try_later_wait_time s remaining" );
+				if ( wp_next_scheduled( $trigger['name'] ) ) {
+					wp_clear_scheduled_hook( $trigger['name'] );
+					self::debug( "Cleared existing $id cron schedule" );
 				}
+				continue;
 			}
 
 			// Special check for crawler.

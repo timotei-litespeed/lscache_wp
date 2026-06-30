@@ -645,6 +645,19 @@ class Base extends Root {
 	private static $_blog_options_cache = [];
 
 	/**
+	 * Map of optimization options to their corresponding next run time option names.
+	 * Structure: [ option_id => [ optimization_name, next_run_after_option_name ], ... ]
+	 *
+	 * @since 7.9
+	 * @var array<string,array{0:string,1:string}>
+	 */
+	public static $_try_later_map = [
+		self::O_OPTM_UCSS     => [ 'UCSS', 'ucss_next_run_after' ],
+		self::O_OPTM_CSS_ASYNC => [ 'CSS', 'ccss_next_run_after' ],
+		self::O_OPTIMAX       => [ 'Optimax', 'ox_next_run_after' ],
+	];
+
+	/**
 	 * Get option from another blog with batch preload optimization.
 	 *
 	 * Reduces N*2 switch_to_blog calls to just 2 by preloading all options on first call.

@@ -23,8 +23,10 @@ $ucss_queue = $this->load_queue( 'ucss' );
 
 $next_gen = '<code class="litespeed-success">' . $this->cls( 'Media' )->next_gen_image_title() . '</code>';
 
-$ucss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_UCSS );
-$ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
+$ucss_service_hot       = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_UCSS );
+$ucss_service_try_later = $this->cls( 'Cloud' )->service_try_later( Cloud::SVC_UCSS );
+$ccss_service_hot       = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
+$ccss_service_try_later = $this->cls( 'Cloud' )->service_try_later( Cloud::SVC_CCSS );
 ?>
 
 <h3 class="litespeed-title-short">
@@ -150,10 +152,10 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 								?>
 							</p>
 						</div>
-						<?php if ( $ucss_service_hot ) : ?>
+						<?php if ( $ucss_service_hot || $ucss_service_try_later ) : ?>
 							<button class="button button-secondary" disabled>
 								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'UCSS' ); ?>
-								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ucss_service_hot ) ); ?>
+								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ucss_service_hot ? $ucss_service_hot : $ucss_service_try_later ) ); ?>
 							</button>
 						<?php else : ?>
 							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_UCSS, UCSS::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
@@ -287,10 +289,10 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 								?>
 							</p>
 						</div>
-						<?php if ( $ccss_service_hot ) : ?>
+						<?php if ( $ccss_service_hot || $ccss_service_try_later ) : ?>
 							<button class="button button-secondary" disabled>
 								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'CCSS' ); ?>
-								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ccss_service_hot ) ); ?>
+								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ccss_service_hot ? $ccss_service_hot : $ccss_service_try_later ) ); ?>
 							</button>
 						<?php else : ?>
 							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
