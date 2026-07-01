@@ -155,10 +155,10 @@ class API extends Base {
 		add_action( 'litespeed_media_reset', __NAMESPACE__ . '\Media::delete_attachment' );
 
 		/**
-		 * GUI
+		 * ESI clean wrappers (moved from GUI in 7.9 — wrapper logic is ESI-specific).
 		 */
-		add_filter( 'litespeed_clean_wrapper_begin', __NAMESPACE__ . '\GUI::clean_wrapper_begin' );
-		add_filter( 'litespeed_clean_wrapper_end', __NAMESPACE__ . '\GUI::clean_wrapper_end' );
+		add_filter( 'litespeed_clean_wrapper_begin', __NAMESPACE__ . '\ESI::clean_wrapper_begin' );
+		add_filter( 'litespeed_clean_wrapper_end', __NAMESPACE__ . '\ESI::clean_wrapper_end' );
 
 		/**
 		 * Misc

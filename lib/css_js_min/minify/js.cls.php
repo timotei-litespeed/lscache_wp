@@ -184,8 +184,8 @@ class JS extends Minify {
 	protected function stripComments() {
 		$this->stripMultilineComments();
 
-		// single-line comments
-		$this->registerPattern( '/\/\/.*$/m', '' );
+		// Single-line comments; (?<!:) keeps `://` URLs intact (issue #981).
+		$this->registerPattern( '/(?<!:)\/\/.*$/m', '' );
 	}
 
 	/**

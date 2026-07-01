@@ -497,6 +497,10 @@ class Admin_Display extends Base {
 
 		// Load iziModal JS and CSS
 		$show_deactivation_modal = ( is_multisite() && ! is_network_admin() ) ? false : true;
+		// Once the survey has been answered on a prior deactivation, suppress the modal for good.
+		if ( file_exists( LITESPEED_STATIC_DIR . '/' . Activation::SURVEY_DONE_FLAG ) ) {
+			$show_deactivation_modal = false;
+		}
 		if ( $show_deactivation_modal && 'plugins.php' === $pagenow ) {
 			wp_enqueue_script( Core::PLUGIN_NAME . '-iziModal', LSWCP_PLUGIN_URL . 'assets/js/iziModal.min.js', [], Core::VER, true );
 			wp_enqueue_style( Core::PLUGIN_NAME . '-iziModal', LSWCP_PLUGIN_URL . 'assets/css/iziModal.min.css', [], Core::VER, 'all' );

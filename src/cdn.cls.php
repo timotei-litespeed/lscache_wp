@@ -264,6 +264,12 @@ class CDN extends Root {
 	 * @return string The processed content.
 	 */
 	public function finalize( $content ) {
+		// Bypass REST JSON: HTML rewrites would break its escaping. Must check here, not init() — REST_REQUEST is undefined there.
+		if ( $this->cls( 'REST' )->is_rest() ) {
+			self::debug( 'bypassed: REST response' );
+			return $content;
+		}
+
 		$this->content = $content;
 
 		$this->_finalize();
@@ -358,6 +364,11 @@ class CDN extends Root {
 	private function _replace_img() {
 		preg_match_all( '#<img([^>]+?)src=([\'"\\\]*)([^\'"\s\\\>]+)([\'"\\\]*)([^>]*)>#i', $this->content, $matches );
 		foreach ( $matches[3] as $k => $url ) {
+			// Backslash by the quote = escaped JSON/JS context; rewriting would corrupt the escaping.
+			if ( false !== strpos( $matches[2][ $k ], '\\' ) || false !== strpos( $matches[4][ $k ], '\\' ) ) {
+				continue;
+			}
+
 			// Check if is a DATA-URI
 			if ( false !== strpos( $url, 'data:image' ) ) {
 				continue;
@@ -393,6 +404,11 @@ class CDN extends Root {
 		preg_match_all( '/url\((?![\'"]?data)[\'"]?(.+?)[\'"]?\)/i', $this->content, $matches );
 		foreach ( $matches[1] as $k => $url ) {
 			$url = str_replace( [ ' ', '\t', '\n', '\r', '\0', '\x0B', '"', "'", '&quot;', '&#039;' ], '', $url );
+
+			// Skip escaped JSON/JS contexts — same family as #959152.
+			if ( false !== strpos( $url, '\\' ) ) {
+				continue;
+			}
 
 			// Parse file postfix
 			$parsed_url = wp_parse_url( $url, PHP_URL_PATH );

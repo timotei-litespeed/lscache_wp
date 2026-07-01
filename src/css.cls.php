@@ -13,12 +13,12 @@ defined( 'WPINC' ) || exit();
 /**
  * Optimize CSS handler class.
  */
-class CSS extends Base {
+class CSS extends Cloud_Queue_Svc {
 
 	const LOG_TAG = '[CCSS]';
 
-	const TYPE_GEN_CCSS     = 'gen_ccss';
-	const TYPE_CLEAR_Q_CCSS = 'clear_q_ccss';
+	const TYPE_GEN     = 'gen_ccss';
+	const TYPE_CLEAR_Q = 'clear_q_ccss';
 
 	/**
 	 * Summary cache.
@@ -35,13 +35,6 @@ class CSS extends Base {
 	private $_ccss_whitelist;
 
 	/**
-	 * Request queue.
-	 *
-	 * @var array
-	 */
-	private $_queue;
-
-	/**
 	 * Init.
 	 *
 	 * @since  3.0
@@ -50,6 +43,87 @@ class CSS extends Base {
 		$this->_summary = self::get_summary();
 
 		add_filter( 'litespeed_ccss_whitelist', [ $this->cls( 'Data' ), 'load_ccss_whitelist' ] );
+	}
+
+	/**
+	 * Svc id slug — drives queue type, Cloud::SVC_CCSS, and summary key prefix.
+	 *
+	 * @return string
+	 */
+	protected function _svc_id() {
+		return 'ccss';
+	}
+
+	/**
+	 * Response field carrying the generated CSS.
+	 *
+	 * @return string
+	 */
+	protected function _data_key() {
+		return 'data_ccss';
+	}
+
+	/**
+	 * Stale legacy queue rows with empty url_tag would consume a QC request
+	 * and persist a bogus URL mapping. Drop them silently. (Pre-refactor CSS
+	 * had this guard inline in its cron loop.)
+	 *
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool
+	 */
+	protected function _valid_queue_item( $queue_k, $v ) {
+		if ( empty( $v['url_tag'] ) ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Build the request body for Cloud::post.
+	 *
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return array
+	 */
+	protected function _build_payload( $queue_k, $v ) {
+		if ( ! isset( $this->_ccss_whitelist ) ) {
+			$this->_ccss_whitelist = $this->_filter_whitelist();
+		}
+		return [
+			'url'        => $v['url'],
+			'queue_k'    => $queue_k,
+			'user_agent' => $v['user_agent'],
+			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
+			'is_webp'    => ! empty( $v['is_webp'] ) ? 1 : 0,
+			'whitelist'  => $this->_ccss_whitelist,
+		];
+	}
+
+	/**
+	 * Persist the generated CCSS to disk. Empty payload is persisted as the
+	 * "no critical CSS for this page" sentinel (matches pre-refactor CCSS
+	 * behavior) so subsequent loads don't re-queue the same URL forever.
+	 *
+	 * @param string $data    CSS content (may be empty / null).
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool
+	 */
+	protected function _save_result( $data, $queue_k, $v ) {
+		$css = null === $data ? '' : (string) $data;
+		$this->_save_css_con( 'ccss', $css, $v['url_tag'], $v['vary'], $queue_k, ! empty( $v['is_mobile'] ), ! empty( $v['is_webp'] ) );
+		return true;
+	}
+
+	/**
+	 * Legacy alias kept for task.cls.php cron hook registration.
+	 *
+	 * @param bool $should_continue Continue processing multiple items.
+	 * @return mixed
+	 */
+	public static function cron_ccss( $should_continue = false ) {
+		return self::cron( $should_continue );
 	}
 
 	/**
@@ -141,7 +215,7 @@ class CSS extends Base {
 		if ( ! empty( $permalink_structure ) ) {
 			$request_url = trailingslashit( home_url( $wp->request ) );
 		} else {
-			$qs_add      = $wp->query_string ? '?' . (string) $wp->query_string : '' ;
+			$qs_add      = $wp->query_string ? '?' . (string) $wp->query_string : '';
 			$request_url = home_url( $wp->request ) . $qs_add;
 		}
 
@@ -169,8 +243,8 @@ class CSS extends Base {
 		Core::comment( 'QUIC.cloud CCSS in queue' );
 		$this->_queue = $this->load_queue( 'ccss' );
 
-		if ( count( $this->_queue ) > 500 ) {
-			self::debug( 'Queue is full - 500' );
+		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
+			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
 			return null;
 		}
 
@@ -194,210 +268,6 @@ class CSS extends Base {
 	}
 
 	/**
-	 * Cron ccss generation.
-	 *
-	 * @since  2.3
-	 * @access private
-	 *
-	 * @param bool $should_continue Continue processing multiple items.
-	 * @return mixed
-	 */
-	public static function cron_ccss( $should_continue = false ) {
-		$_instance = self::cls();
-		return $_instance->_cron_handler( 'ccss', $should_continue );
-	}
-
-	/**
-	 * Handle UCSS/CCSS cron.
-	 *
-	 * @since 4.2
-	 *
-	 * @param string $type            Job type: 'ccss' or 'ucss'.
-	 * @param bool   $should_continue Continue processing multiple items.
-	 * @return void
-	 */
-	private function _cron_handler( $type, $should_continue ) {
-		$this->_queue = $this->load_queue( $type );
-
-		if ( empty( $this->_queue ) ) {
-			return;
-		}
-
-		// Check if we need to wait due to server's try_later request
-		if ( ! empty( $this->_summary[ 'ccss_next_run_after' ] ) && time() < $this->_summary['ccss_next_run_after'] ) {
-			$wait_seconds = $this->_summary['ccss_next_run_after'] - time();
-			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
-			return;
-		}
-
-		// Clear try_later flag if wait time has passed
-		if ( ! empty( $this->_summary['ccss_next_run_after'] ) ) {
-			unset( $this->_summary['ccss_next_run_after'] );
-			self::save_summary();
-			self::debug( 'Cleared try_later flag, resuming CCSS processing' );
-		}
-
-		// For cron, need to check request interval too
-		if ( ! $should_continue ) {
-			if ( ! empty( $this->_summary[ 'curr_request_' . $type ] ) && time() - (int) $this->_summary[ 'curr_request_' . $type ] < 300 && ! $this->conf( self::O_DEBUG ) ) {
-				self::debug( 'Last request not done' );
-				return;
-			}
-		}
-
-		foreach ( $this->_queue as $k => $v ) {
-			self::debug( 'cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
-
-			if ( 'ccss' === $type && empty( $v['url_tag'] ) ) {
-				unset( $this->_queue[ $k ] );
-				$this->save_queue( $type, $this->_queue );
-				self::debug( 'wrong queue_ccss format' );
-				continue;
-			}
-
-			if ( ! isset( $v['is_webp'] ) ) {
-				$v['is_webp'] = false;
-			}
-
-			$res = $this->_send_req( $v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $type, $v['is_mobile'], $v['is_webp'] );
-			if ( ! $res ) {
-				// Status is wrong, drop this this->_queue
-				unset( $this->_queue[ $k ] );
-				$this->save_queue( $type, $this->_queue );
-
-				if ( ! $should_continue ) {
-					return;
-				}
-
-				continue;
-			}
-
-			// Exit queue if out of quota or service is hot
-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
-				return;
-			}
-
-			// Handle try_later response from server
-			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
-				$ttl                                   = (int) $res['try_later'];
-				$next_run_time                         = time() + $ttl;
-				$this->_summary['ccss_next_run_after'] = $next_run_time;
-				self::save_summary();
-				self::debug( 'Set next CCSS cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
-			}
-
-			// only request first one
-			if ( ! $should_continue ) {
-				return;
-			}
-		}
-	}
-
-	/**
-	 * Send to QC API to generate CCSS/UCSS.
-	 *
-	 * @since  2.3
-	 * @access private
-	 *
-	 * @param string $request_url Request URL.
-	 * @param string $queue_k     Queue key.
-	 * @param int    $uid         WP User ID.
-	 * @param string $user_agent  User agent string.
-	 * @param string $vary        Vary string.
-	 * @param string $url_tag     URL tag.
-	 * @param string $type        Type: 'ccss' or 'ucss'.
-	 * @param bool   $is_mobile   Is mobile.
-	 * @param bool   $is_webp     Has webp support.
-	 * @return bool|string True on success, 'out_of_quota' / 'svc_hot' on special cases, false on failure.
-	 */
-	private function _send_req( $request_url, $queue_k, $uid, $user_agent, $vary, $url_tag, $type, $is_mobile, $is_webp ) {
-		// Check if has credit to push or not
-		$err       = false;
-		$allowance = $this->cls( 'Cloud' )->allowance( Cloud::SVC_CCSS, $err );
-		if ( ! $allowance ) {
-			self::debug( '❌ No credit: ' . $err );
-			$err && Admin_Display::error( Error::msg( $err ) );
-			return 'out_of_quota';
-		}
-
-		set_time_limit( 120 );
-
-		// Update css request status
-		$this->_summary[ 'curr_request_' . $type ] = time();
-		self::save_summary();
-
-		// Generate critical css
-		$data = [
-			'url'        => $request_url,
-			'queue_k'    => $queue_k,
-			'user_agent' => $user_agent,
-			'is_mobile'  => $is_mobile ? 1 : 0, // todo:compatible w/ tablet
-			'is_webp'    => $is_webp ? 1 : 0,
-		];
-		if ( ! isset( $this->_ccss_whitelist ) ) {
-			$this->_ccss_whitelist = $this->_filter_whitelist();
-		}
-		$data['whitelist'] = $this->_ccss_whitelist;
-
-		self::debug( 'Generating: ', $data );
-
-		$json = Cloud::post( Cloud::SVC_CCSS, $data, 30 );
-		if ( ! is_array( $json ) ) {
-			return $json;
-		}
-
-		// Check if server asks to try later
-		if ( ! empty( $json['try_later'] ) ) {
-			$ttl = (int) $json['try_later'];
-			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
-			return [ 'try_later' => $ttl ];
-		}
-
-		// Check response status
-		if ( empty( $json['status'] ) ) {
-			self::debug( '❌ No status in response' );
-			return false;
-		}
-
-		if ( empty( $json['data_ccss'] ) ) {
-			self::debug( '❌ No CCSS data [status] ' . $json['status'] );
-		}
-
-		self::debug( '✅ Received CCSS data, saving...' );
-		$this->_save_con( $type, $json['data_ccss'], $queue_k, $is_mobile, $is_webp );
-
-		// Remove from queue
-		unset( $this->_queue[ $queue_k ] );
-		$this->save_queue( $type, $this->_queue );
-		self::debug( 'Removed from queue [q_k] ' . $queue_k );
-
-		// Save summary data
-		$this->_summary[ 'last_request_' . $type ] = $this->_summary[ 'curr_request_' . $type ];
-		$this->_summary[ 'curr_request_' . $type ] = 0;
-		self::save_summary();
-
-		return true;
-	}
-
-	/**
-	 * Save CCSS/UCSS content.
-	 *
-	 * @since 4.2
-	 *
-	 * @param string $type    Type: 'ccss' or 'ucss'.
-	 * @param string $css     CSS content.
-	 * @param string $queue_k Queue key.
-	 * @param bool   $mobile  Is mobile.
-	 * @param bool   $webp    Has webp support.
-	 * @return void
-	 */
-	private function _save_con( $type, $css, $queue_k, $mobile, $webp ) {
-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
-		$vary    = $this->_queue[ $queue_k ]['vary'];
-		$this->_save_css_con( $type, $css, $url_tag, $vary, $queue_k, $mobile, $webp );
-	}
-
-	/**
 	 * Filter the comment content, add quotes to selector from whitelist. Return the json.
 	 *
 	 * @since 7.1
@@ -414,31 +284,5 @@ class CSS extends Base {
 		}
 
 		return $whitelist;
-	}
-
-	/**
-	 * Handle all request actions from main cls.
-	 *
-	 * @since  2.3
-	 * @access public
-	 * @return void
-	 */
-	public function handler() {
-		$type = Router::verify_type();
-
-		switch ( $type ) {
-			case self::TYPE_GEN_CCSS:
-            self::cron_ccss( true );
-				break;
-
-			case self::TYPE_CLEAR_Q_CCSS:
-            $this->clear_q( 'ccss' );
-				break;
-
-			default:
-				break;
-		}
-
-		Admin::redirect();
 	}
 }

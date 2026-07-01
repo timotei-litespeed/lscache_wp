@@ -198,13 +198,6 @@ class Object_Cache extends Root {
 	private $_oc_driver = 'Memcached'; // Redis or Memcached.
 
 	/**
-	 * Whether an admin notice has already been pushed for a Redis failure this request.
-	 *
-	 * @var bool
-	 */
-	private $_redis_error_notified = false;
-
-	/**
 	 * Global groups.
 	 *
 	 * @var array
@@ -824,9 +817,10 @@ class Object_Cache extends Root {
 	private function _redis_error( $ex ) {
 		$this->debug_oc( sprintf( 'Redis op failed: %s (code: %d)', $ex->getMessage(), $ex->getCode() ) );
 
-		if ( ! $this->_redis_error_notified ) {
-			Admin_Display::error( \__( 'LiteSpeed Object Cache: Redis is unavailable. Check Redis server status (memory, connectivity) and the plugin debug log for details.', 'litespeed-cache' ) );
-			$this->_redis_error_notified = true;
+		$this->_cfg_enabled = false;
+
+		if ( did_action( 'plugins_loaded' ) ) {
+			Admin_Display::error( 'LiteSpeed Object Cache: Redis is unavailable. Check Redis server status (memory, connectivity) and the plugin debug log for details.' );
 		}
 	}
 

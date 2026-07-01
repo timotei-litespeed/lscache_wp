@@ -605,10 +605,13 @@ trait Img_Optm_Send {
 				'md5' => $_img_info['md5'],
 			];
 			// Build the needed image types for request as we now support soft reset counter
+			$target_needed = false;
 			if ( $this->_format ) {
 				$target_file_path = $v->src . '.' . $this->_format;
 				if ( $this->__media->info( $target_file_path, $v->post_id ) ) {
 					$img[ 'optm_' . $this->_format ] = 0;
+				} else {
+					$target_needed = true;
 				}
 			}
 			if ( $this->conf( self::O_IMG_OPTM_ORI ) ) {
@@ -616,7 +619,17 @@ trait Img_Optm_Send {
 				$target_file_path = substr( $v->src, 0, -strlen( $extension ) ) . 'bk.' . $extension;
 				if ( $this->__media->info( $target_file_path, $v->post_id ) ) {
 					$img['optm_ori'] = 0;
+				} else {
+					$target_needed = true;
 				}
+			}
+
+			// Drop the queued row if all optimization targets already exist, mirroring the gather-time test in _append_img_queue()
+			if ( ! $target_needed ) {
+				self::debug( 'Drop queued image as all optimized files exist: pid ' . $v->post_id . ' ' . $v->src );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$wpdb->query( $wpdb->prepare( "DELETE FROM `$this->_table_img_optming` WHERE id=%d", $v->id ) );
+				continue;
 			}
 
 			$list[] = $img;

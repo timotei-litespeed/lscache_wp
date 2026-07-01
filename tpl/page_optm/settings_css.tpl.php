@@ -252,7 +252,7 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 						<div class="litespeed-callout notice notice-warning inline">
 							<h4>
 								<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'CCSS' ); ?> ( <?php echo esc_html( count( $ccss_queue ) ); ?> )
-								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_CLEAR_Q_CCSS ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
+								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
 							</h4>
 							<p>
 								<?php
@@ -293,7 +293,7 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ccss_service_hot ) ); ?>
 							</button>
 						<?php else : ?>
-							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN_CCSS ) ); ?>" class="button litespeed-btn-success">
+							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
 								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'CCSS' ); ?>
 							</a>
 						<?php endif; ?>

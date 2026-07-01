@@ -35,6 +35,9 @@ class Crawler extends Root {
 	const STATUS_BLACKLIST = 'B';
 	const STATUS_NOCACHE   = 'N';
 
+	// Number of consecutive crawl failures before a URL is given up (dropped from the sitemap).
+	const BLACKLIST_THRESHOLD = 3;
+
 	/**
 	 * Sitemeta file slug.
 	 *
@@ -1299,17 +1302,28 @@ class Crawler extends Root {
 			$crawler_factors['uid'][ $v ] = ucfirst( $role_title );
 		}
 
-		// Cookie crawler.
-		foreach ( $this->conf( Base::O_CRAWLER_COOKIES ) as $v ) {
+		// Cookie crawler. Filter lets 3rd-party integrations inject crawler-scoped cookie rows (e.g. WCML _lscache_vary per-currency)
+		$cookie_list = apply_filters( 'litespeed_crawler_cookies', $this->conf( Base::O_CRAWLER_COOKIES ) );
+		if ( ! is_array( $cookie_list ) ) {
+			$cookie_list = [];
+		}
+		foreach ( $cookie_list as $v ) {
 			if ( empty( $v['name'] ) ) {
 				continue;
 			}
 
 			$this_cookie_key = 'cookie:' . $v['name'];
 
-			$crawler_factors[ $this_cookie_key ] = [];
+			// Preserves Guest Mode preset when same-name cookie row arrives.
+			if ( ! isset( $crawler_factors[ $this_cookie_key ] ) ) {
+				$crawler_factors[ $this_cookie_key ] = [];
+			}
 
 			foreach ( $v['vals'] as $v2 ) {
+				// Preserve existing labels (e.g. Guest Mode 👒 marker on `_null`) — skip if value already mapped.
+				if ( isset( $crawler_factors[ $this_cookie_key ][ $v2 ] ) ) {
+					continue;
+				}
 				$crawler_factors[ $this_cookie_key ][ $v2 ] =
 					( '_null' === $v2 ? '' : '<font data-balloon-pos="up" aria-label="Cookie">🍪</font>' . esc_html( $v['name'] ) . '=' . esc_html( $v2 ) );
 			}
@@ -1435,8 +1449,17 @@ class Crawler extends Root {
 			if ( 'Existed' === $reason ) {
 				$reason = __( 'Previously existed in blocklist', 'litespeed-cache' );
 			}
+			if ( ctype_digit( (string) $v ) ) {
+				// Counting marker: failed N time(s), still retrying.
+				$class  = 'warning';
+				$reason = $reason
+					? sprintf( __( 'Failed %1$s time(s) (HTTP %2$s), still retrying', 'litespeed-cache' ), $v, $reason )
+					: sprintf( __( 'Failed %s time(s), still retrying', 'litespeed-cache' ), $v );
+			} else {
+				$class = isset( $_status_list[ $v ] ) ? $_status_list[ $v ] : 'default';
+			}
 			$reason_attr = $reason ? 'data-balloon-pos="up" aria-label="' . esc_attr( $reason ) . '"' : '';
-			$status     .= '<i class="litespeed-dot litespeed-bg-' . esc_attr( $_status_list[ $v ] ) . '" ' . $reason_attr . '>' . ( $k + 1 ) . '</i>';
+			$status     .= '<i class="litespeed-dot litespeed-bg-' . esc_attr( $class ) . '" ' . $reason_attr . '>' . ( $k + 1 ) . '</i>';
 		}
 
 		return $status;

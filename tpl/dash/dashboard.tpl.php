@@ -644,7 +644,7 @@ $can_page_load_time      = defined( 'LITESPEED_SERVER_TYPE' ) && 'NONE' !== LITE
 							<?php endif; ?>
 							<p>
 								<?php esc_html_e( 'Requests in queue', 'litespeed-cache' ); ?>: <code><?php echo ! empty( $ccss_count ) ? esc_html( $ccss_count ) : '-'; ?></code>
-								<a href="<?php echo ! empty( $ccss_count ) ? esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN_CCSS ) ) : 'javascript:;'; ?>"
+								<a href="<?php echo ! empty( $ccss_count ) ? esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN ) ) : 'javascript:;'; ?>"
 									class="button button-secondary button-small <?php echo empty( $ccss_count ) ? 'disabled' : ''; ?>">
 									<?php esc_html_e( 'Force cron', 'litespeed-cache' ); ?>
 								</a>

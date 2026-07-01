@@ -19,13 +19,6 @@ class GUI extends Base {
 	const LOG_TAG = '[GUI]';
 
 	/**
-	 * Counter for temporary HTML wrappers.
-	 *
-	 * @var int Counter for temporary HTML wrappers to remove from the buffer.
-	 */
-	private static $_clean_counter = 0;
-
-	/**
 	 * Promo display flag.
 	 *
 	 * @var bool Internal flag used by promo templates to decide whether to display.
@@ -110,7 +103,6 @@ class GUI extends Base {
 			add_action( 'wp_enqueue_scripts', [ $this, 'frontend_enqueue_style_public' ] );
 		}
 
-		// NOTE: this needs to be before optimizer to avoid wrapper being removed.
 		add_filter( 'litespeed_buffer_finalize', [ $this, 'finalize' ], 8 );
 	}
 
@@ -1139,8 +1131,6 @@ class GUI extends Base {
 	 * @return string Filtered buffer.
 	 */
 	public function finalize( $buffer ) {
-		$buffer = $this->_clean_wrapper( $buffer );
-
 		// Maybe restore doc.ref.
 		if ( $this->conf( Base::O_GUEST ) && false !== strpos( $buffer, '<head>' ) && defined( 'LITESPEED_IS_HTML' ) ) {
 			$buffer = $this->_enqueue_guest_docref_js( $buffer );
@@ -1182,84 +1172,5 @@ class GUI extends Base {
 		$js_con            = str_replace( 'litespeed_url', esc_url( $guest_update_path ), $js_con );
 		$buffer            = preg_replace( '/<\/body>/', '<script data-no-optimize="1">' . $js_con . '</script></body>', $buffer, 1 );
 		return $buffer;
-	}
-
-	/**
-	 * Clean wrapper from buffer.
-	 *
-	 * @since 1.4
-	 * @since 1.6 Converted to private with adding prefix _.
-	 * @access private
-	 *
-	 * @param string $buffer HTML buffer.
-	 * @return string Cleaned buffer.
-	 */
-	private function _clean_wrapper( $buffer ) {
-		if ( self::$_clean_counter < 1 ) {
-			self::debug2( 'bypassed by no counter' );
-			return $buffer;
-		}
-
-		self::debug2( 'start cleaning counter ' . self::$_clean_counter );
-
-		for ( $i = 1; $i <= self::$_clean_counter; $i++ ) {
-			// If miss beginning.
-			$start = strpos( $buffer, self::clean_wrapper_begin( $i ) );
-			if ( false === $start ) {
-				$buffer = str_replace( self::clean_wrapper_end( $i ), '', $buffer );
-				self::debug2( "lost beginning wrapper $i" );
-				continue;
-			}
-
-			// If miss end.
-			$end_wrapper = self::clean_wrapper_end( $i );
-			$end         = strpos( $buffer, $end_wrapper );
-			if ( false === $end ) {
-				$buffer = str_replace( self::clean_wrapper_begin( $i ), '', $buffer );
-				self::debug2( "lost ending wrapper $i" );
-				continue;
-			}
-
-			// Now replace wrapped content.
-			$buffer = substr_replace( $buffer, '', $start, $end - $start + strlen( $end_wrapper ) );
-			self::debug2( "cleaned wrapper $i" );
-		}
-
-		return $buffer;
-	}
-
-	/**
-	 * Display a to-be-removed HTML wrapper (begin tag).
-	 *
-	 * @since 1.4
-	 * @access public
-	 *
-	 * @param int|false $counter Optional explicit wrapper id; auto-increment if false.
-	 * @return string Wrapper begin HTML comment.
-	 */
-	public static function clean_wrapper_begin( $counter = false ) {
-		if ( false === $counter ) {
-			++self::$_clean_counter;
-			$counter = self::$_clean_counter;
-			self::debug( 'clean wrapper ' . $counter . ' begin' );
-		}
-		return '<!-- LiteSpeed To Be Removed begin ' . $counter . ' -->';
-	}
-
-	/**
-	 * Display a to-be-removed HTML wrapper (end tag).
-	 *
-	 * @since 1.4
-	 * @access public
-	 *
-	 * @param int|false $counter Optional explicit wrapper id; use latest if false.
-	 * @return string Wrapper end HTML comment.
-	 */
-	public static function clean_wrapper_end( $counter = false ) {
-		if ( false === $counter ) {
-			$counter = self::$_clean_counter;
-			self::debug( 'clean wrapper ' . $counter . ' end' );
-		}
-		return '<!-- LiteSpeed To Be Removed end ' . $counter . ' -->';
 	}
 }

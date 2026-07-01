@@ -29,6 +29,9 @@ class Activation extends Base {
 
 	const NETWORK_TRANSIENT_COUNT = 'lscwp_network_count';
 
+	// Flag file under LITESPEED_STATIC_DIR; once present, the deactivation survey modal is suppressed on future deactivations.
+	const SURVEY_DONE_FLAG = '.survey_done';
+
 	/**
 	 * Data file path for configuration.
 	 *
@@ -247,6 +250,9 @@ class Activation extends Base {
 		Task::destroy();
 
 		! defined( 'LSCWP_LOG_TAG' ) && define( 'LSCWP_LOG_TAG', 'Deactivate_' . get_current_blog_id() );
+
+		// Suppress the survey modal on future deactivations.
+		File::save( LITESPEED_STATIC_DIR . '/' . self::SURVEY_DONE_FLAG, (string) time(), true );
 
 		Purge::purge_all();
 

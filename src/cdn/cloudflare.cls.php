@@ -244,13 +244,11 @@ class Cloudflare extends Base {
 	private function cloudflare_call( $url, $method = 'GET', $data = false, $show_msg = true ) {
 		Debug2::debug("[Cloudflare] cloudflare_call \t\t[URL] $url");
 
-		/**
-		 * Detect key type: Global API Key (37-char hex) vs API Token (Bearer)
-		 *
-		 * @since 1.9.0
-		 */
-		$cf_key = $this->conf( self::O_CDN_CLOUDFLARE_KEY );
-		if ( strlen( $cf_key ) === 37 && preg_match( '/^[0-9a-f]+$/', $cf_key ) ) {
+		// Route by Cloudflare credential format: new "cfk_" prefix or legacy 37-45 lowercase hex → Global API Key (X-Auth-*); everything else (incl. "cfat_"/"cfut_" tokens or legacy 40-char tokens) → Bearer
+		// @ref https://developers.cloudflare.com/fundamentals/api/get-started/token-formats/
+		$cf_key        = $this->conf( self::O_CDN_CLOUDFLARE_KEY );
+		$is_global_key = 0 === strncmp( $cf_key, 'cfk_', 4 ) || preg_match( '/^[0-9a-f]{37,45}$/', $cf_key );
+		if ( $is_global_key ) {
 			$headers = [
 				'Content-Type' => 'application/json',
 				'X-Auth-Email' => $this->conf( self::O_CDN_CLOUDFLARE_EMAIL ),

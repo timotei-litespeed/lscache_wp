@@ -17,12 +17,9 @@ defined( 'WPINC' ) || exit();
  *
  * @since 8.0
  */
-class Optimax extends Base {
+class Optimax extends Cloud_Queue_Svc {
 
 	const LOG_TAG = '🚀';
-
-	const TYPE_GEN     = 'gen';
-	const TYPE_CLEAR_Q = 'clear_q';
 
 	/**
 	 * Summary data cache.
@@ -32,19 +29,103 @@ class Optimax extends Base {
 	protected $_summary;
 
 	/**
-	 * Request queue.
-	 *
-	 * @var array
-	 */
-	private $_queue;
-
-	/**
 	 * Init.
 	 *
 	 * @since 8.0
 	 */
 	public function __construct() {
 		$this->_summary = self::get_summary();
+	}
+
+	/**
+	 * Svc id slug — drives queue type, Cloud::SVC_OPTIMAX, and summary key prefix.
+	 *
+	 * @return string
+	 */
+	protected function _svc_id() {
+		return 'optimax';
+	}
+
+	/**
+	 * Response field carrying the optimization payload (nested object).
+	 *
+	 * @return string
+	 */
+	protected function _data_key() {
+		return 'data_optimax';
+	}
+
+	/**
+	 * Optimax processes whole pages — needs a longer PHP execution window.
+	 *
+	 * @return int
+	 */
+	protected function _php_time_limit() {
+		return 1200;
+	}
+
+	/**
+	 * Legacy summary key for the try_later deadline; kept across upgrades.
+	 *
+	 * @return string
+	 */
+	protected function _next_run_after_key() {
+		return 'ox_next_run_after';
+	}
+
+	/**
+	 * Build the request body for Cloud::post.
+	 *
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return array
+	 */
+	protected function _build_payload( $queue_k, $v ) {
+		return [
+			'url'        => $v['url'],
+			'queue_k'    => $queue_k,
+			'user_agent' => $v['user_agent'],
+			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
+			'is_nextgen' => ! empty( $v['is_nextgen'] ) ? $v['is_nextgen'] : '',
+		];
+	}
+
+	/**
+	 * Fan out the nested optimization payload to four save targets.
+	 *
+	 * @param array  $ox      data_optimax payload.
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool False when HTML is missing (abort), true otherwise.
+	 */
+	protected function _save_result( $ox, $queue_k, $v ) {
+		if ( empty( $ox['html'] ) ) {
+			self::debug( '❌ No HTML in data_optimax [k] ' . $queue_k );
+			return false;
+		}
+
+		$is_mobile  = ! empty( $v['is_mobile'] );
+		$is_nextgen = ! empty( $v['is_nextgen'] ) ? $v['is_nextgen'] : '';
+
+		// 1. Save HTML.
+		$this->_save_con( $ox['html'], $queue_k, $is_mobile, $is_nextgen, $v );
+
+		// 2. Save UCSS.
+		if ( ! empty( $ox['ucss'] ) ) {
+			$this->_save_css_con( 'ucss', $ox['ucss'], $v['url_tag'], $v['vary'], $queue_k, $is_mobile, $is_nextgen );
+		}
+
+		// 3. Save CCSS.
+		if ( ! empty( $ox['ccss'] ) ) {
+			$this->_save_css_con( 'ccss', $ox['ccss'], $v['url_tag'], $v['vary'], $queue_k, $is_mobile, $is_nextgen );
+		}
+
+		// 4. Save optimized images.
+		if ( ! empty( $ox['imgs'] ) ) {
+			$this->_save_imgs( $ox['imgs'] );
+		}
+
+		return true;
 	}
 
 	/**
@@ -72,203 +153,6 @@ class Optimax extends Base {
 	 */
 	private function _get_ua() {
 		return ! empty( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
-	}
-
-	/**
-	 * Cron handler for generation.
-	 *
-	 * @since 8.0
-	 *
-	 * @param bool $keep_going Whether to continue processing.
-	 * @return mixed The cron handler result.
-	 */
-	public static function cron( $keep_going = false ) {
-		$_instance = self::cls();
-		return $_instance->_cron_handler( $keep_going );
-	}
-
-	/**
-	 * Handle Optimax generation cron.
-	 *
-	 * @since 8.0
-	 *
-	 * @param bool $keep_going Whether to continue processing.
-	 * @return mixed The redirect result or void.
-	 */
-	private function _cron_handler( $keep_going ) {
-		$this->_queue = $this->load_queue( 'optimax' );
-
-		if ( empty( $this->_queue ) ) {
-			return;
-		}
-
-		// Check if we need to wait due to server's try_later request
-		if ( ! empty( $this->_summary[ 'ox_next_run_after' ] ) && time() < $this->_summary['ox_next_run_after'] ) {
-			$wait_seconds = $this->_summary['ox_next_run_after'] - time();
-			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
-			return;
-		}
-
-		// Clear try_later flag if wait time has passed
-		if ( ! empty( $this->_summary['ox_next_run_after'] ) ) {
-			unset( $this->_summary['ox_next_run_after'] );
-			self::save_summary();
-			self::debug( 'Cleared try_later flag, resuming ox processing' );
-		}
-
-		// Check request interval
-		if ( ! $keep_going ) {
-			if ( ! empty( $this->_summary['curr_request'] ) && time() - $this->_summary['curr_request'] < 300 && ! $this->conf( self::O_DEBUG ) ) {
-				self::debug( 'Last request not done' );
-				return;
-			}
-		}
-
-		foreach ( $this->_queue as $k => $v ) {
-			self::debug( 'cron job [tag] ' . $k . ' [url] ' . $v['url'] . ( $v['is_mobile'] ? ' 📱 ' : '' ) . ' [UA] ' . $v['user_agent'] );
-
-			$res = $this->_send_req( $v['url'], $k, $v['uid'], $v['user_agent'], $v['vary'], $v['url_tag'], $v['is_mobile'], $v['is_nextgen'] );
-			if ( ! $res ) {
-				// Status error, remove from queue
-				$this->_queue = $this->load_queue( 'optimax' );
-				unset( $this->_queue[ $k ] );
-				$this->save_queue( 'optimax', $this->_queue );
-
-				if ( ! $keep_going ) {
-					return;
-				}
-
-				continue;
-			}
-
-			// Exit queue if out of quota or service is hot
-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
-				return;
-			}
-
-			// Handle try_later response from server
-			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
-				$ttl                                 = (int) $res['try_later'];
-				$next_run_time                       = time() + $ttl;
-				$this->_summary['ox_next_run_after'] = $next_run_time;
-				self::save_summary();
-				self::debug( 'Set next ox cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
-			}
-
-			// Handle completed response (sync mode)
-			if ( 'completed' === $res ) {
-				self::debug( 'Optimax completed for [k] ' . $k );
-			}
-
-			// Only process first one
-			if ( ! $keep_going ) {
-				return;
-			}
-		}
-	}
-
-	/**
-	 * Send request to QC API for optimization.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string    $request_url The request URL.
-	 * @param string    $queue_k     The queue key.
-	 * @param int|false $uid         The user ID.
-	 * @param string    $user_agent  The user agent.
-	 * @param string    $vary        The vary string.
-	 * @param string    $url_tag     The URL tag.
-	 * @param bool      $is_mobile   Whether is mobile.
-	 * @param string    $is_nextgen  Next-gen image format ('webp', 'avif', or '').
-	 * @return string|bool|null The result status.
-	 */
-	private function _send_req( $request_url, $queue_k, $uid, $user_agent, $vary, $url_tag, $is_mobile, $is_nextgen ) {
-		// Check if has credit
-		$err       = false;
-		$allowance = $this->cls( 'Cloud' )->allowance( Cloud::SVC_OPTIMAX, $err );
-		if ( ! $allowance ) {
-			self::debug( '❌ No credit: ' . $err );
-			$err && Admin_Display::error( Error::msg( $err ) );
-			return 'out_of_quota';
-		}
-
-		set_time_limit( 1200 );
-
-		// Update request status
-		$this->_summary['curr_request'] = time();
-		self::save_summary();
-
-		$data = [
-			'url'        => $request_url,
-			'queue_k'    => $queue_k,
-			'user_agent' => $user_agent,
-			'is_mobile'  => $is_mobile ? 1 : 0,
-			'is_nextgen' => $is_nextgen ? $is_nextgen : '',
-		];
-
-		self::debug( 'Generating: ', $data );
-
-		$json = Cloud::post( Cloud::SVC_OPTIMAX, $data, 30 );
-		if ( ! is_array( $json ) ) {
-			return $json;
-		}
-
-		// Check if server asks to try later
-		if ( ! empty( $json['try_later'] ) ) {
-			$ttl = (int) $json['try_later'];
-			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
-			return [ 'try_later' => $ttl ];
-		}
-
-		// Check response status
-		if ( empty( $json['status'] ) ) {
-			self::debug( '❌ No status in response' );
-			return false;
-		}
-
-		// Handle sync response with file data
-		if ( empty( $json['data_optimax'] ) ) {
-			self::debug( '❌ Unknown status: ' . $json['status'] );
-			return false;
-		}
-
-		self::debug( '✅ Received Optimax data, processing...' );
-
-		$ox = $json['data_optimax'];
-
-		// 1. Save HTML
-		if ( empty( $ox['html'] ) ) {
-			self::debug( '❌ No HTML in data_optimax [k] ' . $queue_k );
-			return false;
-		}
-		$this->_save_con( $ox['html'], $queue_k, $is_mobile, $is_nextgen );
-
-		// 2. Save UCSS
-		if ( ! empty( $ox['ucss'] ) ) {
-			$this->_save_ucss( $ox['ucss'], $queue_k, $is_mobile, $is_nextgen );
-		}
-
-		// 3. Save CCSS
-		if ( ! empty( $ox['ccss'] ) ) {
-			$this->_save_ccss( $ox['ccss'], $queue_k, $is_mobile, $is_nextgen );
-		}
-
-		// 4. Save optimized images
-		if ( ! empty( $ox['imgs'] ) ) {
-			$this->_save_imgs( $ox['imgs'] );
-		}
-
-		// Remove from queue
-		unset( $this->_queue[ $queue_k ] );
-		$this->save_queue( 'optimax', $this->_queue );
-		self::debug( 'Removed from queue [q_k] ' . $queue_k );
-
-		// Save summary data
-		$this->_summary['last_request'] = $this->_summary['curr_request'];
-		$this->_summary['curr_request'] = 0;
-		self::save_summary();
-
-		return 'completed';
 	}
 
 	/**
@@ -324,8 +208,8 @@ class Optimax extends Base {
 
 		$this->_queue = $this->load_queue( 'optimax' );
 
-		if ( count( $this->_queue ) > 500 ) {
-			self::debug( 'Queue is full - 500' );
+		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
+			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
 			return false;
 		}
 
@@ -366,40 +250,6 @@ class Optimax extends Base {
 
 		$qs_add = $wp->query_string ? '?' . (string) $wp->query_string : '';
 		return home_url( $wp->request ) . $qs_add;
-	}
-
-	/**
-	 * Save UCSS content to ucss/ directory.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $ucss      The UCSS content.
-	 * @param string $queue_k   The queue key.
-	 * @param bool   $is_mobile Whether is mobile.
-	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
-	 * @return void
-	 */
-	private function _save_ucss( $ucss, $queue_k, $is_mobile, $is_nextgen ) {
-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
-		$vary    = $this->_queue[ $queue_k ]['vary'];
-		$this->_save_css_con( 'ucss', $ucss, $url_tag, $vary, $queue_k, $is_mobile, $is_nextgen );
-	}
-
-	/**
-	 * Save CCSS content to ccss/ directory.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $ccss      The CCSS content.
-	 * @param string $queue_k   The queue key.
-	 * @param bool   $is_mobile Whether is mobile.
-	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
-	 * @return void
-	 */
-	private function _save_ccss( $ccss, $queue_k, $is_mobile, $is_nextgen ) {
-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
-		$vary    = $this->_queue[ $queue_k ]['vary'];
-		$this->_save_css_con( 'ccss', $ccss, $url_tag, $vary, $queue_k, $is_mobile, $is_nextgen );
 	}
 
 	/**
@@ -476,16 +326,16 @@ class Optimax extends Base {
 	}
 
 	/**
-	 * Save optimized content.
+	 * Save optimized HTML content.
 	 *
-	 * @since 8.0
-	 *
-	 * @param string $content   The optimized content.
-	 * @param string $queue_k   The queue key.
-	 * @param bool   $is_mobile Whether is mobile.
+	 * @param string $content    The optimized content.
+	 * @param string $queue_k    The queue key.
+	 * @param bool   $is_mobile  Whether is mobile.
 	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
+	 * @param array  $v          Queue item.
+	 * @return void
 	 */
-	private function _save_con( $content, $queue_k, $is_mobile, $is_nextgen ) {
+	private function _save_con( $content, $queue_k, $is_mobile, $is_nextgen, $v ) {
 		$content = apply_filters( 'litespeed_optimax', $content, $queue_k );
 		self::debug2( 'con: ', $content );
 
@@ -497,38 +347,12 @@ class Optimax extends Base {
 
 		File::save( $static_file, $content, true );
 
-		$url_tag = $this->_queue[ $queue_k ]['url_tag'];
-		$vary    = $this->_queue[ $queue_k ]['vary'];
+		$url_tag = $v['url_tag'];
+		$vary    = $v['vary'];
 		self::debug2( "Save URL to file [file] $static_file [vary] $vary" );
 
 		$this->cls( 'Data' )->save_url( $url_tag, $vary, 'optimax', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
 
 		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
-	}
-
-	/**
-	 * Handle all request actions from main cls.
-	 *
-	 * @since 8.0
-	 *
-	 * @return void
-	 */
-	public function handler() {
-		$type = Router::verify_type();
-
-		switch ( $type ) {
-			case self::TYPE_GEN:
-				self::cron( true );
-				break;
-
-			case self::TYPE_CLEAR_Q:
-				$this->clear_q( 'optimax' );
-				break;
-
-			default:
-				break;
-		}
-
-		Admin::redirect();
 	}
 }

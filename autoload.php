@@ -33,6 +33,7 @@ $litespeed_php_files = array(
 	'src/cloud-node.trait.php',
 	'src/cloud-misc.trait.php',
 	'src/cloud.cls.php',
+	'src/cloud-queue-svc.cls.php',
 	'src/conf.cls.php',
 	'src/control.cls.php',
 	'src/core.cls.php',

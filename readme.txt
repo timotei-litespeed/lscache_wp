@@ -3,8 +3,8 @@ Contributors: LiteSpeedTech
 Tags: caching, optimize, performance, pagespeed, seo, image optimize, object cache, redis, memcached, database cleaner
 Requires at least: 5.3
 Requires PHP: 7.2
-Tested up to: 6.9
-Stable tag: 7.8.0.1
+Tested up to: 7.0
+Stable tag: 7.8.1
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl.html
 
@@ -257,14 +257,45 @@ You can report security bugs through the Patchstack Vulnerability Disclosure Pro
 
 == Changelog ==
 
-= 8.0 - May 2026 =
+= 8.0 - Coming soon 2026 =
 * 🌱**OptiMax** OptiMax to maximize the page score.
+
+= 7.9 - Jul 2026 =
 * **Cloud** Changed Health service to async run.
-* **Object Cache** Dropped `Store Transients` option. Transients now always use Object Cache when available, preventing potential database bloat from expired transients not being cleared. (ravanh)
-* **Object Cache** Fixed methods returning `null` instead of `false` on failure, matching WordPress Object Cache API convention.(jkolodziej)
+* **Cache** Respect existing cache control header when sending default WP header. (dieter93)
+* **Conf** Updated default cache login value to false.
+* **CDN** Removed file types from settings if special options are disabled.
+* **CDN** Add Cloudflare purge only if CF is active. (PR#996)
+* **CDN** Bypassed CDN replacement for REST JSON. (#216585)
+* **Object Cache** Bypass object cache operations if failed to connect due to object cache failure.
 * **Object Cache** Enabled Redis zstd compression via phpredis. (Octavian)
+* **Object Cache** Validate the Host setting on save. (PR#889)
 * **UCSS** Dropped notification step. Added try_later handling and sync mode support for CCSS generation.
 * **CCSS** Dropped notification step.
+* **Page Optimize** Fixed race condition when concurrent requests come to same CSS file. (unsetfocus)
+* **Page Optimize** Fixed blob execution in JS Delay. (PR#956, Zsombor Franczia, Marks Dev)
+* **Page Optimize** Fixed JS Combine corrupting URLs inside template literals. (mschroettle #981)
+* **Page Optimize** Fixed CSS Combine serving unstyled pages when the placeholder link tag uses default WordPress whitespace. (Faisal Ahammad #999 PR#1002)
+* **Image Optimize** Skipped sending queued images from the queue when their optimized files already exist. (terratag)
+* **Crawler** Retried 3 times before totally put into blacklist. (Ryan D)
+* **ESI** Fixed duplicate comment form appearing alongside its ESI block on non-optimized pages.
+* **VPI** Added `fetchpriority=high` to VPI preload links. (Maciej Mroziński PR#993)
+* **Toolbox** Delayed report submission to finish 3rd part conf injection.
+* **3rd** Crawler can now support WCML currencies.
+* **3rd** Cache purge compatibility w/ RankMath SEO. (Ryan D, PR#977)
+* **3rd** DIVI 5 - Disable Rest API cache to fix the invalid_nonce issue. (PR#1004)
+* **Misc** Disabled visits to static folder data files. (Alexander #335626)
+* **Misc** Deactivation survey modal now shows only until the first real deactivation, then stays suppressed. (narratorben)
+
+= 7.8.1 - Apr 1 2026 =
+* **CDN** Fixed Cloudflare API key type detection for the compatibility w/ the new key format.
+
+= 7.8.0.1 - Mar 17 2026 =
+* **Object Cache** Improved Object Cache resilience: auto disable when connection fails, network subsites fallback to database, and dropped TTL setting to respect never-expired transients.
+
+= 7.8 - Mar 3 2026 =
+* **Cloud** Changed Health service to run asynchronously.
+* **Object Cache** Dropped `Store Transients` option. Transients now always use Object Cache when available, preventing potential database bloat from expired transients not being cleared. (ravanh)
 * **Media** Added extension check for WebP/AVIF replacement efficiency - only processes jpg/jpeg/png/gif, skips svg/ico/bmp etc.
 * **Media** Added WebP/AVIF support for macOS Safari >= 16.4. (PR#948)
 * **Media** Fixed pie chart not displaying in media library.
@@ -273,17 +304,12 @@ You can report security bugs through the Patchstack Vulnerability Disclosure Pro
 * **Image Optimize** Fixed reset single image not deleting records from img_optm and img_optming database tables.
 * **Page Optimize** Fixed font optimization in certain themes. (rbabt PR#955)
 * **Page Optimize** Filtered HTML tags when saving CSS content.
+* **Object Cache** Fixed methods returning `null` instead of `false` on failure, matching WordPress Object Cache API convention.(jkolodziej)
 * **Conf** Improved network subsites config loading efficiency. (dassels43)
 * **Toolbox** Added download button for log files to download complete logs.
 * **3rd** Purge product cache when orders are cancelled in WooCommerce. (haralampiev12 PR#954)
 * **Misc** Added Apache rewrite rule support for security check. (PR#948)
 * **Misc** Split Cloud and Image Optimization classes into traits for better maintainability.
-
-= 7.8.1 - Apr 1 2026 =
-* **CDN** Fixed Cloudflare API key type detection for the compatibility w/ the new key format.
-
-= 7.8.0.1 - Mar 17 2026 =
-* **Object Cache** Improved Object Cache resilience: auto disable when connection fails, network subsites fallback to database, and dropped TTL setting to respect never-expired transients.
 
 = 7.7 - Dec 16 2025 =
 * **Task** Increased default cron interval from 1 minute to 15 minutes.
