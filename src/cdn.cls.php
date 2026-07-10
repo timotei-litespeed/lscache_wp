@@ -335,6 +335,15 @@ class CDN extends Root {
 
 			foreach ($matches[$v[0] ? 3 : 2] as $k2 => $url) {
 				// self::debug2( 'check ' . $url );
+				// Style-like attributes hold CSS instead of a bare URL — replace their url() tokens instead.
+				if ( false !== stripos( $url, 'url(' ) ) {
+					$attr_str = $this->_replace_css_urls( $matches[0][ $k2 ] );
+					if ( $attr_str !== $matches[0][ $k2 ] ) {
+						$this->content = str_replace( $matches[0][ $k2 ], $attr_str, $this->content );
+					}
+					continue;
+				}
+
 				$postfix = '.' . pathinfo((string) wp_parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
 				if (!array_key_exists($postfix, $this->_cfg_cdn_mapping)) {
 					// self::debug2( 'non-existed postfix ' . $postfix );
@@ -394,6 +403,21 @@ class CDN extends Root {
 	private function _replace_inline_css() {
 		self::debug2( '_replace_inline_css', $this->_cfg_cdn_mapping );
 
+		$this->content = $this->_replace_css_urls( $this->content );
+
+		self::debug2( '_replace_inline_css done' );
+	}
+
+	/**
+	 * Replace url() tokens in a CSS snippet with CDN URLs.
+	 *
+	 * @since 7.9
+	 * @access private
+	 *
+	 * @param string $content CSS-bearing content (full buffer or a single attribute snippet).
+	 * @return string The content with eligible url() values rewritten.
+	 */
+	private function _replace_css_urls( $content ) {
 		/**
 		 * Excludes `\` from URL matching
 		 *
@@ -401,9 +425,10 @@ class CDN extends Root {
 		 * @see  #685485
 		 * @since 3.0
 		 */
-		preg_match_all( '/url\((?![\'"]?data)[\'"]?(.+?)[\'"]?\)/i', $this->content, $matches );
+		preg_match_all( '/url\((?![\'"]?data)[\'"]?(.+?)[\'"]?\)/i', $content, $matches );
 		foreach ( $matches[1] as $k => $url ) {
-			$url = str_replace( [ ' ', '\t', '\n', '\r', '\0', '\x0B', '"', "'", '&quot;', '&#039;' ], '', $url );
+			// Quotes may appear HTML-encoded inside attribute values (e.g. `&apos;` from esc_attr'd inline styles).
+			$url = str_replace( [ ' ', '\t', '\n', '\r', '\0', '\x0B', '"', "'", '&quot;', '&#034;', '&#34;', '&#x22;', '&apos;', '&#039;', '&#39;', '&#x27;' ], '', $url );
 
 			// Skip escaped JSON/JS contexts — same family as #959152.
 			if ( false !== strpos( $url, '\\' ) ) {
@@ -432,11 +457,11 @@ class CDN extends Root {
 				continue;
 			}
 
-			$attr          = str_replace( $matches[1][ $k ], $url2, $matches[0][ $k ] );
-			$this->content = str_replace( $matches[0][ $k ], $attr, $this->content );
+			$attr    = str_replace( $matches[1][ $k ], $url2, $matches[0][ $k ] );
+			$content = str_replace( $matches[0][ $k ], $attr, $content );
 		}
 
-		self::debug2( '_replace_inline_css done' );
+		return $content;
 	}
 
 	/**
