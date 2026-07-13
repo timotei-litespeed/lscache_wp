@@ -78,6 +78,8 @@ class WooCommerce extends Base {
 		add_action('litespeed_control_finalize', [ $this, 'set_control' ]);
 		add_action('litespeed_tag_finalize', [ $this, 'set_tag' ]);
 
+		add_filter( 'litespeed_ucss_whitelist', [ $this, 'add_ucss_whitelist' ] );
+
 		// Purge affected product caches when WooCommerce stock changes, including cancellation restocks.
 		add_action('woocommerce_product_set_stock', [ $this, 'purge_product' ]);
 		add_action('woocommerce_variation_set_stock', [ $this, 'purge_product' ]); // #984479 Update variations stock
@@ -140,6 +142,27 @@ class WooCommerce extends Base {
 				}
 			);
 		}
+	}
+
+	/**
+	 * Append WooCommerce selectors to the UCSS whitelist.
+	 *
+	 * @since  7.9
+	 * @access public
+	 *
+	 * @param string[] $list List of whitelisted selectors.
+	 * @return string[]
+	 */
+	public function add_ucss_whitelist( $list ) {
+		// The filter should always pass an array, but other hooked callbacks may misbehave.
+		if ( ! is_array( $list ) ) {
+			$list = empty( $list ) ? [] : (array) $list;
+		}
+
+		$list[] = '.woocommerce div.product div.images .woocommerce-product-gallery__trigger';
+
+		// The selector may already be whitelisted, e.g. added manually in the settings.
+		return array_values( array_unique( $list ) );
 	}
 
 	/**
