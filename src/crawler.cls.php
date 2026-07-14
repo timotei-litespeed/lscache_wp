@@ -1410,9 +1410,26 @@ class Crawler extends Root {
 	 * @return void
 	 */
 	public function reset_pos() {
-		File::save( $this->_resetfile, time(), true );
+		// A crawl is actively running: leave the signal file for the running process to consume and reset itself.
+		if ( ! empty( $this->_summary['is_running'] ) && time() - $this->_summary['is_running'] <= 900 ) {
+			File::save( $this->_resetfile, time(), true );
 
-		self::save_summary( [ 'is_running' => 0 ] );
+			self::save_summary( [ 'is_running' => 0 ] );
+			return;
+		}
+
+		// No crawl in progress: reset the position directly. A leftover signal file would terminate the next run right after it starts.
+		if ( file_exists( $this->_resetfile ) ) {
+			unlink( $this->_resetfile ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+		}
+
+		$this->_summary['last_pos']                 = 0;
+		$this->_summary['curr_crawler']             = 0;
+		$this->_summary['crawler_stats'][0]         = [];
+		$this->_summary['done']                     = 0;
+		$this->_summary['this_full_beginning_time'] = 0;
+		$this->_summary['is_running']               = 0;
+		self::save_summary();
 	}
 
 	/**

@@ -230,7 +230,7 @@ class Crawler extends Base {
 		self::debug('⚠️⚠️⚠️ Forced take over lane (CLI)');
 		$this->crawler->Release_lane();
 
-		Task::async_call('crawler');
+		Task::async_call('crawler_force');
 
 		$summary = Crawler2::get_summary();
 
