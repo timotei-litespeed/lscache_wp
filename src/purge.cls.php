@@ -543,7 +543,7 @@ class Purge extends Base {
 			if ( ! $silence ) {
 				$msg = __( 'Reset the OPcache failed.', 'litespeed-cache' );
 				if ( ! defined( 'LITESPEED_PURGE_SILENT' ) ) {
-					Admin_Display::success( $msg );
+					Admin_Display::error( $msg );
 				}
 			}
 
