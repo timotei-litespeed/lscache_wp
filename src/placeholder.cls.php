@@ -226,9 +226,10 @@ class Placeholder extends Base {
 						continue;
 					}
 
+					$file = Str::trim_quotes( File::read( $lqip_folder . '/' . $v ) );
+
 					if ( 0 === $total_files ) {
-						$file = Str::trim_quotes( File::read( $lqip_folder . '/' . $v ) );
-						echo '<div class="litespeed-media-lqip"><img src="' . 
+						echo '<div class="litespeed-media-lqip"><img src="' .
 							esc_attr( $file ) .
 							'" alt="' .
 							esc_attr( sprintf( __( 'LQIP image preview for size %s', 'litespeed-cache' ), $v ) ) .
