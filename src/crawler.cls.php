@@ -926,6 +926,9 @@ class Crawler extends Root {
 					if ( file_exists( $this->_resetfile ) && unlink( $this->_resetfile ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
 						self::debug( 'Terminated due to reset file' );
 
+						// Flush pending results under the crawler that produced them BEFORE resetting the position, or _terminate_running() would attribute them to crawler 0.
+						$this->_map_status_list = $this->cls( 'Crawler_Map' )->save_map_status( $this->_map_status_list, $this->_summary['curr_crawler'] );
+
 						$this->_summary['last_pos']     = 0;
 						$this->_summary['curr_crawler'] = 0;
 						$this->_summary['crawler_stats'][ $this->_summary['curr_crawler'] ] = [];
