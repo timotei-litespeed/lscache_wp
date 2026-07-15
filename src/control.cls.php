@@ -76,7 +76,8 @@ class Control extends Root {
 		$this->_response_header_ttls = $this->conf( Base::O_CACHE_TTL_STATUS );
 		foreach ( $this->_response_header_ttls as $k => $v ) {
 			$v = explode( ' ', $v );
-			if ( empty( $v[0] ) || empty( $v[1] ) ) {
+			// Keep TTL `0` entries (`empty('0')` is true), which mean no-cache for that status code.
+			if ( empty( $v[0] ) || ! isset( $v[1] ) || '' === $v[1] ) {
 				continue;
 			}
 			$this->_response_header_ttls[ $v[0] ] = $v[1];
