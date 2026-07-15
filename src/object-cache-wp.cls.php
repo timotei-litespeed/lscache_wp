@@ -592,12 +592,14 @@ class WP_Object_Cache {
 
 		$id = $this->_key( $key, $group );
 
-		if ( array_key_exists( $id, $this->_cache ) ) {
+		$existed = array_key_exists( $id, $this->_cache );
+		if ( $existed ) {
 			unset( $this->_cache[ $id ] );
 		}
 
 		if ( $this->_object_cache->is_non_persistent( $group ) ) {
-			return false;
+			// WP core returns true when the key existed and was removed.
+			return $existed;
 		}
 
 		return $this->_object_cache->delete( $id );
