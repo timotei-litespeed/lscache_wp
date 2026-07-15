@@ -327,9 +327,9 @@ class WP_Object_Cache {
 			$group = 'default';
 		}
 
-		$id = $this->_key( $key, $group );
-
-		if ( array_key_exists( $id, $this->_cache ) ) {
+		// Probe the persistent backend too, not only the runtime cache, per WP_Object_Cache add() semantics.
+		$this->get( $key, $group, false, $found );
+		if ( $found ) {
 			return false;
 		}
 
@@ -382,9 +382,9 @@ class WP_Object_Cache {
 			$group = 'default';
 		}
 
-		$id = $this->_key( $key, $group );
-
-		if ( ! array_key_exists( $id, $this->_cache ) ) {
+		// Probe the persistent backend too, not only the runtime cache, per WP_Object_Cache replace() semantics.
+		$this->get( $key, $group, false, $found );
+		if ( ! $found ) {
 			return false;
 		}
 
