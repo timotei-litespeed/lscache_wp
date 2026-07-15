@@ -52,8 +52,9 @@ trait Cloud_Misc {
 		// Try to update dash content
 		$data = self::post( self::SVC_D_DASH, [ 'action2' => ( 'cdn_dash_mini' === $type ? 'cdn_dash' : $type ) ] );
 		if ( ! empty( $data['qc_activated'] ) ) {
-			// Sync conf as changed
-			if ( empty( $this->_summary['qc_activated'] ) || $this->_summary['qc_activated'] !== $data['qc_activated'] ) {
+			// Sync conf as changed. Only an upgrade to `cdn` may turn on the CDN option (ref: update_cdn_status()).
+			$qc_activated_changed = empty( $this->_summary['qc_activated'] ) || $this->_summary['qc_activated'] !== $data['qc_activated'];
+			if ( $qc_activated_changed && 'cdn' === $data['qc_activated'] ) {
 				$msg = sprintf( __( 'Congratulations, %s successfully set this domain up for the online services with CDN service.', 'litespeed-cache' ), 'QUIC.cloud' );
 				Admin_Display::success( '🎊 ' . $msg );
 				$this->_clear_reset_qc_reg_msg();
