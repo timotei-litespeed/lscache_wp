@@ -501,7 +501,8 @@ class WP_Object_Cache {
 		$found_in_oc = false;
 		$cache_val   = false;
 
-		if ( array_key_exists( $id, $this->_cache ) && ! $force ) {
+		// `$force` only refreshes from the persistent backend; for non-persistent groups there is nothing to refresh, so serve the runtime cache (WP core semantics).
+		if ( array_key_exists( $id, $this->_cache ) && ( ! $force || $this->_object_cache->is_non_persistent( $group ) ) ) {
 			$found     = true;
 			$cache_val = $this->_cache[ $id ];
 			++$this->count_hit_incall;
@@ -518,6 +519,11 @@ class WP_Object_Cache {
 				$found       = true;
 				$found_in_oc = true;
 				$cache_val   = $v['data'];
+			} elseif ( array_key_exists( $id, $this->_cache ) ) {
+				// Backend can't serve (e.g. forced get while backend reads are refused) but the runtime cache holds the live value — don't 404-poison it.
+				$found     = true;
+				$cache_val = $this->_cache[ $id ];
+				++$this->count_hit_incall;
 			} else {
 				// Can't find key, cache it to 404.
 				$this->_cache_404[ $id ] = 1;
