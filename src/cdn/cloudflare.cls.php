@@ -62,6 +62,7 @@ class Cloudflare extends Base {
 	 * @since  1.7.2
 	 * @access private
 	 * @param bool $show_msg Whether to show success/error message.
+	 * @return array|void The development mode API result on success.
 	 */
 	private function get_devmode( $show_msg = true ) {
 		Debug2::debug('[Cloudflare] get_devmode');
@@ -89,6 +90,8 @@ class Cloudflare extends Base {
 
 		// update status
 		self::update_option(self::ITEM_STATUS, $curr_status);
+
+		return $res;
 	}
 
 	/**
