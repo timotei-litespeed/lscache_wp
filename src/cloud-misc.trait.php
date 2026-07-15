@@ -282,7 +282,8 @@ trait Cloud_Misc {
 	 */
 	public function sync_usage() {
 		$usage = $this->_post( self::SVC_D_USAGE );
-		if ( ! $usage ) {
+		if ( ! $usage || ! is_array( $usage ) ) {
+			// Bypass the `svc_hot` string response too, to avoid wiping the cached usage data.
 			return;
 		}
 
