@@ -156,7 +156,10 @@ class Admin extends Root {
 	}
 
 	/**
-	 * Clean up the input (array or scalar) of any extra slashes/spaces.
+	 * Clean up the input (array or scalar) of any extra spaces.
+	 *
+	 * Note: callers pass data already unslashed via `wp_unslash()`, so no
+	 * `stripslashes()` here or literal backslashes in values would be lost.
 	 *
 	 * @since 1.0.4
 	 *
@@ -168,7 +171,7 @@ class Admin extends Root {
 			return array_map( __CLASS__ . '::cleanup_text', $input );
 		}
 
-		return stripslashes(trim($input));
+		return trim( $input );
 	}
 
 	/**
