@@ -501,7 +501,7 @@ class Control extends Root {
 	public static function set_custom_ttl( $ttl, $reason = false ) {
 		if ( is_numeric( $ttl ) ) {
 			self::$_custom_ttl = (int) $ttl;
-			self::debug( 'X Cache_control TTL -> ' . $ttl . ( $reason ? ' [reason] ' . $ttl : '' ) );
+			self::debug( 'X Cache_control TTL -> ' . $ttl . ( $reason ? ' [reason] ' . $reason : '' ) );
 		}
 	}
 
