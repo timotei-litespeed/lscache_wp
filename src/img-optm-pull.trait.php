@@ -518,6 +518,8 @@ trait Img_Optm_Pull {
 						do_action( 'litespeed_img_pull_ori', $row_img, $local_file );
 
 						self::debug2( 'Remove _table_img_optming record [id] ' . $row_img->id );
+
+						++$total_pulled_ori;
 					}
 
 					// Delete working table
@@ -532,8 +534,6 @@ trait Img_Optm_Pull {
 
 					$server_info_id                          = ! empty( $server_info['file_id'] ) ? $server_info['file_id'] : $server_info['id'];
 					$server_list[ $server_info['server'] ][] = $server_info_id;
-
-					++$total_pulled_ori;
 				};
 
 				$force_wp_remote_get = defined( 'LITESPEED_FORCE_WP_REMOTE_GET' ) && constant( 'LITESPEED_FORCE_WP_REMOTE_GET' );
