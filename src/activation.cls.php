@@ -711,7 +711,7 @@ class Activation extends Base {
 				if ( ! empty( $summary['news.zip'] ) ) {
 					Cloud::save_summary( [ 'news.new' => 0 ] );
 
-					$this->cls( 'Debug2' )->beta_test( $summary['zip'] );
+					$this->cls( 'Debug2' )->beta_test( $summary['news.zip'] );
 				}
 				break;
 
