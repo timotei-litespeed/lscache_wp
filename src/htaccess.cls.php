@@ -453,9 +453,8 @@ class Htaccess extends Root {
 
 		$rule_cookie = substr( $rule, strlen( 'RewriteRule .? - [E=' ), -1 );
 
-		if ( LITESPEED_SERVER_TYPE === 'LITESPEED_SERVER_OLS' ) {
-			$rule_cookie = trim( $rule_cookie, '"' );
-		}
+		// The env is always written quoted (see _generate_rules()), so unquote on all server types.
+		$rule_cookie = trim( $rule_cookie, '"' );
 
 		// Drop `Cache-Vary:`.
 		$rule_cookie = substr( $rule_cookie, strlen( 'Cache-Vary:' ) );
