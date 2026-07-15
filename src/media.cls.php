@@ -149,25 +149,22 @@ class Media extends Root {
 	public function rescale_ori( $metadata, $attachment_id ) {
 		// Test if create and image was resized.
 		if ( $metadata && isset( $metadata['original_image'], $metadata['file'] ) && false !== strpos( $metadata['file'], '-scaled' ) ) {
-			// Get rescaled file name.
-			$path_exploded      = explode( '/', strrev( $metadata['file'] ), 2 );
-			$rescaled_file_name = strrev( $path_exploded[0] );
+			// Extract subdirectory from metadata file path (e.g. "2024/05/photo-scaled.jpg" → "2024/05").
+			$subdir = pathinfo( $metadata['file'], PATHINFO_DIRNAME );
+			$subdir = '.' === $subdir ? '' : $subdir . '/';
 
 			// Create paths for images: resized and original.
-			$base_path     = $this->_wp_upload_dir['basedir'] . $this->_wp_upload_dir['subdir'] . '/';
-			$rescaled_path = $base_path . $rescaled_file_name;
+			$base_path     = $this->_wp_upload_dir['basedir'] . '/' . $subdir;
+			$rescaled_path = $base_path . basename( $metadata['file'] );
 			$new_path      = $base_path . $metadata['original_image'];
 
-			// Change array file key.
-			$metadata['file'] = $this->_wp_upload_dir['subdir'] . '/' . $metadata['original_image'];
-			if ( 0 === strpos( $metadata['file'], '/' ) ) {
-				$metadata['file'] = substr( $metadata['file'], 1 );
-			}
-
-			// Delete array "original_image" key.
-			unset( $metadata['original_image'] );
-
 			if ( file_exists( $rescaled_path ) && file_exists( $new_path ) ) {
+				// Change array file key.
+				$metadata['file'] = $subdir . $metadata['original_image'];
+
+				// Delete array "original_image" key.
+				unset( $metadata['original_image'] );
+
 				// Move rescaled to original using WP_Filesystem.
 				global $wp_filesystem;
 				if ( ! $wp_filesystem ) {
