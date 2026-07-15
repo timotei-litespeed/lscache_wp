@@ -65,7 +65,7 @@ trait Img_Optm_Pull {
 			$this->_summary['reduced'] = 0;
 		}
 
-		if ( self::STATUS_NOTIFIED === $status ) {
+		if ( self::STATUS_NOTIFIED == $status ) {
 			// Notified data format: [ img_optm_id => [ id=>, src_size=>, ori=>, ori_md5=>, ori_reduced=>, webp=>, webp_md5=>, webp_reduced=> ] ]
 			$q =
 				"SELECT a.*, b.meta_id as b_meta_id, b.meta_value AS b_optm_info
