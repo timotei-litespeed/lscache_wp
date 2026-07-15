@@ -75,7 +75,7 @@ class Task extends Root {
 	 *
 	 * @var array<int,string>
 	 */
-	private static $_guest_options = [ Base::O_OPTM_CSS_ASYNC, Base::O_OPTM_UCSS, Base::O_MEDIA_VPI ];
+	private static $_guest_options = [ Base::O_OPTM_CSS_ASYNC, Base::O_OPTM_UCSS, Base::O_MEDIA_VPI_CRON ];
 
 	/**
 	 * Schedule id for crawler.
