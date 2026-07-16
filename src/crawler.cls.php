@@ -402,6 +402,14 @@ class Crawler extends Root {
 			$this->cls( 'Crawler_Map' )->gen();
 		}
 
+		// Consume any pending reset signal now (incl. the one gen() above just dropped) and apply it to this fresh run, instead of letting the mid-run check abort on it after the first batch.
+		if ( file_exists( $this->_resetfile ) && unlink( $this->_resetfile ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+			self::debug( 'Applied reset position signal before starting' );
+			$this->_summary['last_pos']         = 0;
+			$this->_summary['curr_crawler']     = 0;
+			$this->_summary['crawler_stats'][0] = [];
+		}
+
 		$crawlers       = $this->list_crawlers();
 		$crawlers_count = count( $crawlers );
 
