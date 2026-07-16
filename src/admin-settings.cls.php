@@ -131,12 +131,15 @@ class Admin_Settings extends Base {
 							}
 
 							if ( self::CDN_MAPPING_URL === $child ) {
-								// If not a valid URL, turn off CDN.
-								if ( 0 !== strpos( $v, 'https://' ) ) {
-									self::debug( '❌ CDN mapping set to OFF due to invalid URL' );
-									$the_matrix[ self::O_CDN ] = false;
+								// Blank rows are dropped below; don't let them disable CDN or morph into `/` via trailingslashit().
+								if ( $v ) {
+									// If not a valid URL, turn off CDN.
+									if ( 0 !== strpos( $v, 'https://' ) ) {
+										self::debug( '❌ CDN mapping set to OFF due to invalid URL' );
+										$the_matrix[ self::O_CDN ] = false;
+									}
+									$v = trailingslashit( $v );
 								}
-								$v = trailingslashit( $v );
 							}
 
 							if ( in_array( $child, [ self::CDN_MAPPING_INC_IMG, self::CDN_MAPPING_INC_CSS, self::CDN_MAPPING_INC_JS ], true ) ) {
