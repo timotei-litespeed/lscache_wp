@@ -642,19 +642,19 @@ class Object_Cache extends Root {
 	 *
 	 * @param string $key   Cache key.
 	 * @param string $group Optional. Cache group name.
-	 * @return mixed|false
+	 * @return mixed|false|null False on a genuine backend miss; null when the backend cannot serve reads at all (disabled, non-cacheable group, or no connection).
 	 */
 	public function get( $key, $group = '' ) {
 		if ( ! $this->_cfg_enabled ) {
-			return false;
+			return null;
 		}
 
 		if ( ! $this->_can_cache( $group ) ) {
-			return false;
+			return null;
 		}
 
 		if ( ! $this->_connect() ) {
-			return false;
+			return null;
 		}
 
 		if ( 'Redis' === $this->_oc_driver ) {
@@ -662,7 +662,7 @@ class Object_Cache extends Root {
 				$res = $this->_conn->get( $key );
 			} catch ( \RedisException $ex ) {
 				$this->_redis_error( $ex );
-				return false;
+				return null;
 			}
 		} else {
 			$res = $this->_conn->get( $key );

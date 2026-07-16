@@ -509,7 +509,7 @@ class WP_Object_Cache {
 		} elseif ( ! array_key_exists( $id, $this->_cache_404 ) && ! $this->_object_cache->is_non_persistent( $group ) ) {
 			$v = $this->_object_cache->get( $id, $group );
 
-			if ( false !== $v ) {
+			if ( null !== $v && false !== $v ) {
 				$v = maybe_unserialize( $v );
 			}
 
@@ -519,8 +519,8 @@ class WP_Object_Cache {
 				$found       = true;
 				$found_in_oc = true;
 				$cache_val   = $v['data'];
-			} elseif ( array_key_exists( $id, $this->_cache ) ) {
-				// Backend can't serve (e.g. forced get while backend reads are refused) but the runtime cache holds the live value — don't 404-poison it.
+			} elseif ( null === $v && array_key_exists( $id, $this->_cache ) ) {
+				// Backend refused the read (e.g. forced get while backend reads are disabled) but the runtime cache holds the live value — don't 404-poison it. A genuine backend miss (false) falls through to the miss path so forced gets stay correct across nodes.
 				$found     = true;
 				$cache_val = $this->_cache[ $id ];
 				++$this->count_hit_incall;
