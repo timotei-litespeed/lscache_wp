@@ -406,15 +406,22 @@ class Crawler extends Root {
 		$crawlers_count = count( $crawlers );
 
 		// Skip the crawlers that in bypassed list.
+		$skipped = false;
 		while ( ! $this->is_active( $this->_summary['curr_crawler'] ) && $this->_summary['curr_crawler'] < $crawlers_count ) {
 			self::debug( 'Skipped the Crawler #' . $this->_summary['curr_crawler'] . ' ......' );
 			$this->_summary['curr_crawler'] = (int) $this->_summary['curr_crawler'] + 1;
+			$skipped                        = true;
 		}
 		if ( $this->_summary['curr_crawler'] >= $crawlers_count ) {
 			$this->_end_reason = 'end';
 			$this->_terminate_running();
 			$this->Release_lane();
 			return;
+		}
+		if ( $skipped ) {
+			// The saved position/stats belong to the skipped crawler; start the landed crawler from the beginning.
+			$this->_summary['last_pos']                                         = 0;
+			$this->_summary['crawler_stats'][ $this->_summary['curr_crawler'] ] = [];
 		}
 
 		// In case crawlers are all done but not reload, reload it.
