@@ -946,12 +946,12 @@ trait Img_Optm_Manage {
 		if ( $list ) {
 			foreach ( $list as $v ) {
 				$img_data[] = [
-					'id'              => $v->id,
-					'optm_status'     => $v->optm_status,
-					'src'             => $v->src,
-					'src_filesize'    => $v->src_filesize,
-					'target_filesize' => $v->target_filesize,
-					'webp_filesize'   => $v->webp_filesize,
+					'id'          => $v->id,
+					'optm_status' => $v->optm_status,
+					'src'         => $v->src,
+					'srcpath_md5' => $v->srcpath_md5,
+					'src_md5'     => $v->src_md5,
+					'server_info' => $v->server_info,
 				];
 			}
 		}
