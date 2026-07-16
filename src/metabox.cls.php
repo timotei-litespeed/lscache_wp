@@ -196,7 +196,8 @@ class Metabox extends Root {
 			$excludes = Utility::sanitize_lines( $excludes, 'basename' );
 			if ( $excludes ) {
 				// Check if contains `data:` (invalid result, need to clear existing result) or not.
-				if ( Utility::str_hit_array( 'data:', $excludes ) ) {
+				// The joined lines are the needle tested against the `data:` rule, per str_hit_array( $needle, $rules ).
+				if ( Utility::str_hit_array( implode( "\n", $excludes ), [ 'data:' ] ) ) {
 					$this->cls( 'VPI' )->add_to_queue();
 				} else {
 					return array_merge( $exclude_list, $excludes );
