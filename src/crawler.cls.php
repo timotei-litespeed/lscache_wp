@@ -302,7 +302,8 @@ class Crawler extends Root {
 
 		parent::save_summary( $data, $reload, $overwrite );
 
-		File::save( LITESPEED_STATIC_DIR . '/crawler/' . $instance->_sitemeta, wp_json_encode( $data ), true );
+		// Always dump the full merged summary — a partial `$data` (e.g. reset_pos()'s `is_running`) would clobber the meta file the status UI polls.
+		File::save( LITESPEED_STATIC_DIR . '/crawler/' . $instance->_sitemeta, wp_json_encode( $instance->_summary ), true );
 	}
 
 	/**
