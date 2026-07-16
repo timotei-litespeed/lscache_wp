@@ -251,13 +251,14 @@ class Media extends Root {
 
 			$attachment_id = $v->ID;
 
-			// Extract subdirectory from metadata file path (e.g. "2024/05/photo-scaled.jpg" → "2024/05").
+			// Extract subdirectory from metadata file path (e.g. "2024/05/photo-scaled.jpg" → "2024/05"); '' when uploads are not organized into folders.
 			$subdir = pathinfo( $meta_value['file'], PATHINFO_DIRNAME );
+			$subdir = '.' === $subdir ? '' : $subdir . '/';
 
 			// Build relative paths for rename().
 			$scaled_filename = wp_basename( $meta_value['file'] );
-			$scaled_path     = $subdir . '/' . $scaled_filename;
-			$original_path   = $subdir . '/' . $meta_value['original_image'];
+			$scaled_path     = $subdir . $scaled_filename;
+			$original_path   = $subdir . $meta_value['original_image'];
 
 			// Verify scaled file exists before proceeding
 			// TODO: need to ues isfile func to allow hook from offload plugins
@@ -271,7 +272,7 @@ class Media extends Root {
 			$this->rename( $scaled_path, $original_path, $attachment_id );
 
 			// Update metadata: point file to original, remove original_image key.
-			$meta_value['file'] = $subdir . '/' . $meta_value['original_image'];
+			$meta_value['file'] = $subdir . $meta_value['original_image'];
 			unset( $meta_value['original_image'] );
 
 			wp_update_attachment_metadata( $attachment_id, $meta_value );
