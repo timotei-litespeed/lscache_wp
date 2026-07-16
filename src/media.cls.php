@@ -155,7 +155,7 @@ class Media extends Root {
 
 			// Create paths for images: resized and original.
 			$base_path     = $this->_wp_upload_dir['basedir'] . '/' . $subdir;
-			$rescaled_path = $base_path . basename( $metadata['file'] );
+			$rescaled_path = $base_path . wp_basename( $metadata['file'] );
 			$new_path      = $base_path . $metadata['original_image'];
 
 			if ( file_exists( $rescaled_path ) && file_exists( $new_path ) ) {
@@ -255,7 +255,7 @@ class Media extends Root {
 			$subdir = pathinfo( $meta_value['file'], PATHINFO_DIRNAME );
 
 			// Build relative paths for rename().
-			$scaled_filename = basename( $meta_value['file'] );
+			$scaled_filename = wp_basename( $meta_value['file'] );
 			$scaled_path     = $subdir . '/' . $scaled_filename;
 			$original_path   = $subdir . '/' . $meta_value['original_image'];
 
