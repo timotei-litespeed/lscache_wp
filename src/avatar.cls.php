@@ -94,6 +94,12 @@ class Avatar extends Base {
 
 		self::debug( '[Avatar] is avatar request' );
 
+		// The routed path is `<md5>.jpg` (prefixed with `<blog_id>/` on multisite) per _filepath(); reduce it to the bare md5.
+		$md5 = basename( $md5 );
+		if ( '.jpg' === substr( $md5, -4 ) ) {
+			$md5 = substr( $md5, 0, -4 );
+		}
+
 		if ( strlen( $md5 ) !== 32 ) {
 			self::debug( '[Avatar] wrong md5 ' . $md5 );
 			return;
