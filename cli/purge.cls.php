@@ -202,7 +202,7 @@ class Purge {
 			$term = $callback( $val );
 			if ( ! empty( $term ) ) {
 				WP_CLI::line( $term->name );
-				$filtered[] = in_array( $callback, array( 'get_tag', 'get_category' ), true ) ? $term->name : $val;
+				$filtered[] = in_array( $callback, array( 'get_tag', 'get_category' ), true ) ? $term->slug : $val; // Purge::purge_tag()/purge_cat() look terms up by slug.
 			} else {
 				WP_CLI::debug( '[LSCACHE] Skip val, not a valid term. ' . $val );
 			}
