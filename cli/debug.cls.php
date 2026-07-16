@@ -46,6 +46,10 @@ class Debug {
 	 */
 	public function send() {
 		$num = $this->report->post_env();
+		if ( ! $num ) {
+			WP_CLI::error( 'Failed to send the report!' );
+			return;
+		}
 		WP_CLI::success( 'Report Number = ' . $num );
 	}
 }
