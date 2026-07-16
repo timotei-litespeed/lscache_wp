@@ -163,12 +163,12 @@ class Crawler extends Base {
 	public function enable( $args ) {
 		$id = $args[0] - 1;
 		if ($this->crawler->is_active($id)) {
-			WP_CLI::error('ID #' . $id . ' had been enabled');
+			WP_CLI::error('ID #' . $args[0] . ' had been enabled');
 			return;
 		}
 
 		$this->crawler->toggle_activeness($id);
-		WP_CLI::success('Enabled crawler #' . $id);
+		WP_CLI::success('Enabled crawler #' . $args[0]);
 	}
 
 	/**
@@ -190,12 +190,12 @@ class Crawler extends Base {
 	public function disable( $args ) {
 		$id = $args[0] - 1;
 		if (!$this->crawler->is_active($id)) {
-			WP_CLI::error('ID #' . $id . ' has been disabled');
+			WP_CLI::error('ID #' . $args[0] . ' has been disabled');
 			return;
 		}
 
 		$this->crawler->toggle_activeness($id);
-		WP_CLI::success('Disabled crawler #' . $id);
+		WP_CLI::success('Disabled crawler #' . $args[0]);
 	}
 
 	/**
