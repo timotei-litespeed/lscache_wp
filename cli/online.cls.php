@@ -187,6 +187,11 @@ class Online {
 	public function sync( $args, $assoc_args ) {
 		$json = $this->cloud->sync_usage();
 
+		if ( ! $json ) {
+			WP_CLI::error( 'Sync failed! No valid response from QUIC.cloud.' );
+			return;
+		}
+
 		if ( ! empty( $assoc_args['format'] ) ) {
 			WP_CLI::print_value( $json, $assoc_args );
 			return;
