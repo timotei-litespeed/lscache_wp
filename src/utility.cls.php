@@ -588,7 +588,8 @@ class Utility extends Root {
 		}
 
 		self::compatibility();
-		$domain = http_build_url( get_home_url(), [], HTTP_URL_STRIP_ALL ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
+		// Keep the port (don't use HTTP_URL_STRIP_ALL) — port-based installs need it for uri2url()/make_relative() to round-trip.
+		$domain = http_build_url( get_home_url(), [], HTTP_URL_STRIP_AUTH | HTTP_URL_STRIP_PATH | HTTP_URL_STRIP_QUERY | HTTP_URL_STRIP_FRAGMENT ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
 
 		define( 'LSCWP_DOMAIN', $domain );
 	}
