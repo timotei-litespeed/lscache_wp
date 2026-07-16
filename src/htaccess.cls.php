@@ -897,7 +897,7 @@ class Htaccess extends Root {
 		clearstatcache();
 		$path = $this->htaccess_path( $kind );
 		if ( ! $this->_readable( $kind ) ) {
-			Error::t( 'E_HTA_R' );
+			Error::t( 'HTA_R' );
 		}
 
 		$rules       = File::extract_from_markers( $path, self::MARKER );
