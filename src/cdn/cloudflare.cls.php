@@ -198,7 +198,7 @@ class Cloudflare extends Base {
 	private function fetch_zone() {
 		$kw = $this->conf(self::O_CDN_CLOUDFLARE_NAME);
 
-		$url = 'https://api.cloudflare.com/client/v4/zones?status=active&match=all';
+		$url = 'https://api.cloudflare.com/client/v4/zones?status=active&match=all&per_page=50';
 
 		// Try exact match first
 		if ($kw && false !== strpos($kw, '.')) {
@@ -229,9 +229,9 @@ class Cloudflare extends Base {
 			}
 		}
 
-		// Can't match current name, return default one
-		Debug2::debug('[Cloudflare] fetch_zone failed match name, use first one by default');
-		return $zones[0];
+		// Can't match the configured name — fail instead of silently binding (and saving) an unrelated zone.
+		Debug2::debug('[Cloudflare] fetch_zone failed to match ' . $kw);
+		return false;
 	}
 
 	/**
