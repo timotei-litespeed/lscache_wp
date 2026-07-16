@@ -432,8 +432,8 @@ class Crawler extends Root {
 			$this->_summary['crawler_stats'][ $this->_summary['curr_crawler'] ] = [];
 		}
 
-		// In case crawlers are all done but not reload, reload it.
-		if ( empty( $this->_summary['curr_crawler'] ) || empty( $this->_crawlers[ $this->_summary['curr_crawler'] ] ) ) {
+		// In case crawlers are all done but not reload, reload it. NOTE: index 0 is a valid current crawler — `empty()` on it used to wipe crawler #0's stats on every resume.
+		if ( empty( $this->_crawlers[ $this->_summary['curr_crawler'] ] ) ) {
 			$this->_summary['curr_crawler']                                     = 0;
 			$this->_summary['crawler_stats'][ $this->_summary['curr_crawler'] ] = [];
 		}
