@@ -75,8 +75,9 @@ trait Img_Optm_Pull {
 				implode( ',', array_fill( 0, count( $notified_data ), '%d' ) ) .
 				' )';
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-			$list                            = $wpdb->get_results( $wpdb->prepare( $q, array_merge( [ self::DB_SIZE ], array_keys( $notified_data ) ) ) );
-			$ls_optm_size_row_exists_postids = [];
+			$list = $wpdb->get_results( $wpdb->prepare( $q, array_merge( [ self::DB_SIZE ], array_keys( $notified_data ) ) ) );
+			// Accumulate size info per post across the whole batch — writing per row would keep only the last size of each post.
+			$postmeta_rows = [];
 			foreach ( $list as $v ) {
 				$json = $notified_data[ $v->id ];
 				// self::debug('Notified data for [id] ' . $v->id, $json);
@@ -93,20 +94,25 @@ trait Img_Optm_Pull {
 					$server_info['file_id'] = $json['file_id'];
 				}
 
-				// Optm info array
-				$postmeta_info = [
-					'ori_total'  => 0,
-					'ori_saved'  => 0,
-					'webp_total' => 0,
-					'webp_saved' => 0,
-					'avif_total' => 0,
-					'avif_saved' => 0,
-				];
-				// Init postmeta_info for the first one
-				if ( ! empty( $v->b_meta_id ) ) {
-					foreach ( maybe_unserialize( $v->b_optm_info ) as $k2 => $v2 ) {
-						$postmeta_info[ $k2 ] += $v2;
+				// Optm info array, initialized once per post from the stored value
+				if ( ! isset( $postmeta_rows[ $v->post_id ] ) ) {
+					$postmeta_info = [
+						'ori_total'  => 0,
+						'ori_saved'  => 0,
+						'webp_total' => 0,
+						'webp_saved' => 0,
+						'avif_total' => 0,
+						'avif_saved' => 0,
+					];
+					if ( ! empty( $v->b_meta_id ) ) {
+						foreach ( maybe_unserialize( $v->b_optm_info ) as $k2 => $v2 ) {
+							$postmeta_info[ $k2 ] += $v2;
+						}
 					}
+					$postmeta_rows[ $v->post_id ] = [
+						'meta_id' => (int) $v->b_meta_id,
+						'info'    => $postmeta_info,
+					];
 				}
 
 				if ( ! empty( $json['ori'] ) ) {
@@ -114,8 +120,8 @@ trait Img_Optm_Pull {
 					$server_info['ori']     = $json['ori'];
 
 					// Append meta info
-					$postmeta_info['ori_total'] += $json['src_size'];
-					$postmeta_info['ori_saved'] += $json['ori_reduced']; // optimized image size info in img_optm tb will be updated when pull
+					$postmeta_rows[ $v->post_id ]['info']['ori_total'] += $json['src_size'];
+					$postmeta_rows[ $v->post_id ]['info']['ori_saved'] += $json['ori_reduced']; // optimized image size info in img_optm tb will be updated when pull
 
 					$this->_summary['reduced'] += $json['ori_reduced'];
 				}
@@ -125,8 +131,8 @@ trait Img_Optm_Pull {
 					$server_info['webp']     = $json['webp'];
 
 					// Append meta info
-					$postmeta_info['webp_total'] += $json['src_size'];
-					$postmeta_info['webp_saved'] += $json['webp_reduced'];
+					$postmeta_rows[ $v->post_id ]['info']['webp_total'] += $json['src_size'];
+					$postmeta_rows[ $v->post_id ]['info']['webp_saved'] += $json['webp_reduced'];
 
 					$this->_summary['reduced'] += $json['webp_reduced'];
 				}
@@ -136,8 +142,8 @@ trait Img_Optm_Pull {
 					$server_info['avif']     = $json['avif'];
 
 					// Append meta info
-					$postmeta_info['avif_total'] += $json['src_size'];
-					$postmeta_info['avif_saved'] += $json['avif_reduced'];
+					$postmeta_rows[ $v->post_id ]['info']['avif_total'] += $json['src_size'];
+					$postmeta_rows[ $v->post_id ]['info']['avif_saved'] += $json['avif_reduced'];
 
 					$this->_summary['reduced'] += $json['avif_reduced'];
 				}
@@ -147,25 +153,26 @@ trait Img_Optm_Pull {
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
 				$wpdb->query( $wpdb->prepare( $q, [ $status, wp_json_encode( $server_info ), $v->id ] ) );
 
-				// Update postmeta for optm summary
-				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize
-				$postmeta_info = serialize( $postmeta_info );
-				if ( empty( $v->b_meta_id ) && ! in_array( $v->post_id, $ls_optm_size_row_exists_postids, true ) ) {
-					self::debug( 'New size info [pid] ' . $v->post_id );
-					$q = "INSERT INTO `$wpdb->postmeta` ( post_id, meta_key, meta_value ) VALUES ( %d, %s, %s )";
-					// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-					$wpdb->query( $wpdb->prepare( $q, [ $v->post_id, self::DB_SIZE, $postmeta_info ] ) );
-					$ls_optm_size_row_exists_postids[] = $v->post_id;
-				} else {
-					$q = "UPDATE `$wpdb->postmeta` SET meta_value = %s WHERE meta_id = %d ";
-					// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-					$wpdb->query( $wpdb->prepare( $q, [ $postmeta_info, $v->b_meta_id ] ) );
-				}
-
 				// write log
 				$pid_log = $last_log_pid === $v->post_id ? '.' : $v->post_id;
 				self::debug( 'notify_img [status] ' . $status . " \t\t[pid] " . $pid_log . " \t\t[id] " . $v->id );
 				$last_log_pid = $v->post_id;
+			}
+
+			// Update postmeta for optm summary, once per post with the accumulated info
+			foreach ( $postmeta_rows as $pid => $row ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize
+				$postmeta_info = serialize( $row['info'] );
+				if ( $row['meta_id'] ) {
+					$q = "UPDATE `$wpdb->postmeta` SET meta_value = %s WHERE meta_id = %d ";
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+					$wpdb->query( $wpdb->prepare( $q, [ $postmeta_info, $row['meta_id'] ] ) );
+				} else {
+					self::debug( 'New size info [pid] ' . $pid );
+					$q = "INSERT INTO `$wpdb->postmeta` ( post_id, meta_key, meta_value ) VALUES ( %d, %s, %s )";
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+					$wpdb->query( $wpdb->prepare( $q, [ $pid, self::DB_SIZE, $postmeta_info ] ) );
+				}
 			}
 
 			self::save_summary();
