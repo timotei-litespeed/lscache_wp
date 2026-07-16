@@ -53,10 +53,15 @@ trait Cloud_Auth_IP {
 		$check_point = time() - 86400 * self::TTL_IPS;
 		if ( empty( $this->_summary['ips'] ) || empty( $this->_summary['ips_ts'] ) || $this->_summary['ips_ts'] < $check_point ) {
 			self::debug( 'Force updating ip as ips_ts is older than ' . self::TTL_IPS . ' days' );
-			$this->_update_ips();
+			try {
+				$this->_update_ips();
+			} catch ( \Exception $e ) {
+				// This runs inside REST permission callbacks — deny access instead of fataling w/ HTTP 500.
+				self::debug( '❌ Failed to update Cloud IP list: ' . $e->getMessage() );
+			}
 		}
 
-		$res = $this->cls( 'Router' )->ip_access( $this->_summary['ips'] );
+		$res = $this->cls( 'Router' )->ip_access( ! empty( $this->_summary['ips'] ) ? $this->_summary['ips'] : [] );
 		if ( ! $res ) {
 			self::debug( '❌ Not our cloud IP' );
 
@@ -64,8 +69,12 @@ trait Cloud_Auth_IP {
 			if ( empty( $this->_summary['ips_ts_runner'] ) || time() - (int) $this->_summary['ips_ts_runner'] > 600 ) {
 				self::debug( 'Force updating ip as ips_ts_runner is older than 10mins' );
 				// Refresh IP list for future detection
-				$this->_update_ips();
-				$res = $this->cls( 'Router' )->ip_access( $this->_summary['ips'] );
+				try {
+					$this->_update_ips();
+				} catch ( \Exception $e ) {
+					self::debug( '❌ Failed to update Cloud IP list: ' . $e->getMessage() );
+				}
+				$res = $this->cls( 'Router' )->ip_access( ! empty( $this->_summary['ips'] ) ? $this->_summary['ips'] : [] );
 				if ( ! $res ) {
 					self::debug( '❌ 2nd time: Not our cloud IP' );
 				} else {
@@ -103,6 +112,11 @@ trait Cloud_Auth_IP {
 		}
 
 		$json = \json_decode( $response['body'], true );
+		if ( ! $json || ! is_array( $json ) ) {
+			// Non-JSON body (challenge page, HTML error, etc.) — keep the existing IP list instead of wiping it.
+			self::debug( 'Invalid IP whitelist response, keep existing list' );
+			return;
+		}
 
 		self::debug( 'Load ips', $json );
 		self::save_summary( [ 'ips' => $json ] );
