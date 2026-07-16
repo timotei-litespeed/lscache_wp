@@ -190,7 +190,6 @@ abstract class Root {
 		$static_path     = LITESPEED_STATIC_DIR . $filepath_prefix . '.litespeed_conf.dat';
 
 		if (file_exists($static_path)) {
-			$silent = false;
 			unlink($static_path);
 		}
 
