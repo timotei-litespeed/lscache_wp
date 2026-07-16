@@ -1041,9 +1041,9 @@ class Purge extends Base {
 	public function purge_post( $pid ) {
 		$pid = (int) $pid;
 
-		// Ignore the status we don't care.
+		// Ignore the status we don't care. `pending`/`future` are included so unpublishing a live post purges it too.
 		$status = get_post_status( $pid );
-		if ( ! $pid || ! in_array( $status, [ 'publish', 'trash', 'private', 'draft' ], true ) ) {
+		if ( ! $pid || ! in_array( $status, [ 'publish', 'trash', 'private', 'draft', 'pending', 'future' ], true ) ) {
 			return;
 		}
 
