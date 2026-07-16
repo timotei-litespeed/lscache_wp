@@ -65,28 +65,35 @@ class Database {
 	 * Change to blog sent as param.
 	 *
 	 * @param array $args Description.
+	 * @return bool True when it is safe to proceed (no blog param, or switched successfully).
 	 */
 	private function change_to_blog( $args ) {
 		if ( !isset( $args[0] ) || 'blog' !== $args[0] ) {
-			return;
+			return true;
 		}
 
-		$this->current_blog = get_current_blog_id();
-		$blogid             = $args[1];
+		if ( !is_multisite() ) {
+			WP_CLI::line( WP_CLI::colorize( '%RError: this is not a multisite installation.%n' ) );
+			return false;
+		}
+
+		$blogid = isset( $args[1] ) ? $args[1] : '';
 		if ( !is_numeric( $blogid ) ) {
 			$error = WP_CLI::colorize( '%RError: invalid blog id entered.%n' );
 			WP_CLI::line( $error );
 			$this->network_list( $args );
-			return;
+			return false;
 		}
 		$site = get_blog_details( $blogid );
 		if ( false === $site ) {
 			$error = WP_CLI::colorize( '%RError: invalid blog id entered.%n' );
 			WP_CLI::line( $error );
 			$this->network_list( $args );
-			return;
+			return false;
 		}
+		$this->current_blog = get_current_blog_id();
 		switch_to_blog( $blogid );
+		return true;
 	}
 
 	/**
@@ -122,7 +129,10 @@ class Database {
 	 * @param array $types What data to clean.
 	 */
 	private function clean_action( $args, $types ) {
-		$this->change_to_blog( $args );
+		if ( ! $this->change_to_blog( $args ) ) {
+			// Don't run the cleanup on the current blog when the requested blog wasn't switched to.
+			return;
+		}
 		foreach ( $types as $type ) {
 			$result = $this->db->handler_clean_db_cli( $type );
 			$this->show_response( $result, $type );
