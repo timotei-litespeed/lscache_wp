@@ -256,12 +256,13 @@ trait Cloud_Auth_Callback {
 		} else {
 			$this->_summary['qc_activated'] = $qc_activated;
 			$this->save_summary();
+			// Any confirmed activation status (anonymous/linked/cdn) invalidates the pinned `reactivate QUIC.cloud` notice.
+			$this->_clear_reset_qc_reg_msg();
 		}
 
 		if ( 'cdn' === $qc_activated ) {
 			$msg = sprintf( __( 'Congratulations, %s successfully set this domain up for the online services with CDN service.', 'litespeed-cache' ), 'QUIC.cloud' );
 			Admin_Display::success( '🎊 ' . $msg );
-			$this->_clear_reset_qc_reg_msg();
 			// Turn on CDN option
 			$this->cls( 'Conf' )->update_confs( [ self::O_CDN_QUIC => true ] );
 			$this->cls( 'CDN\Quic' )->try_sync_conf( true );

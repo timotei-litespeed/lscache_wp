@@ -54,10 +54,13 @@ trait Cloud_Misc {
 		if ( ! empty( $data['qc_activated'] ) ) {
 			// Sync conf as changed. Only an upgrade to `cdn` may turn on the CDN option (ref: update_cdn_status()).
 			$qc_activated_changed = empty( $this->_summary['qc_activated'] ) || $this->_summary['qc_activated'] !== $data['qc_activated'];
+			if ( $qc_activated_changed ) {
+				// Any confirmed activation status (anonymous/linked/cdn) invalidates the pinned `reactivate QUIC.cloud` notice.
+				$this->_clear_reset_qc_reg_msg();
+			}
 			if ( $qc_activated_changed && 'cdn' === $data['qc_activated'] ) {
 				$msg = sprintf( __( 'Congratulations, %s successfully set this domain up for the online services with CDN service.', 'litespeed-cache' ), 'QUIC.cloud' );
 				Admin_Display::success( '🎊 ' . $msg );
-				$this->_clear_reset_qc_reg_msg();
 				// Turn on CDN option
 				$this->cls( 'Conf' )->update_confs( [ self::O_CDN_QUIC => true ] );
 				$this->cls( 'CDN\Quic' )->try_sync_conf( true );
