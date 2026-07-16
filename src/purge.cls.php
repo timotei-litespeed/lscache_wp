@@ -1396,17 +1396,17 @@ class Purge extends Base {
 			$purge_tags[] = Tag::TYPE_PAGES_WITH_RECENT_POSTS;
 		}
 
-		// Date archives (use gmdate as per WPCS).
-		$date_gmt = $the_post ? strtotime( $the_post->post_date_gmt ) : false;
-		if ( $date_gmt ) {
+		// Date archives (site-local post_date, to match the archive page tags built in Tag::_build_type_tags()).
+		$date = $the_post ? strtotime( $the_post->post_date ) : false;
+		if ( $date ) {
 			if ( $this->conf( self::O_PURGE_POST_DATE ) ) {
-				$purge_tags[] = Tag::TYPE_ARCHIVE_DATE . gmdate( 'Ymd', $date_gmt );
+				$purge_tags[] = Tag::TYPE_ARCHIVE_DATE . gmdate( 'Ymd', $date );
 			}
 			if ( $this->conf( self::O_PURGE_POST_MONTH ) ) {
-				$purge_tags[] = Tag::TYPE_ARCHIVE_DATE . gmdate( 'Ym', $date_gmt );
+				$purge_tags[] = Tag::TYPE_ARCHIVE_DATE . gmdate( 'Ym', $date );
 			}
 			if ( $this->conf( self::O_PURGE_POST_YEAR ) ) {
-				$purge_tags[] = Tag::TYPE_ARCHIVE_DATE . gmdate( 'Y', $date_gmt );
+				$purge_tags[] = Tag::TYPE_ARCHIVE_DATE . gmdate( 'Y', $date );
 			}
 		}
 
