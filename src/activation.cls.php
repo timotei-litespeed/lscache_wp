@@ -449,9 +449,16 @@ class Activation extends Base {
 	public function manage_wp_cache_const( $enable ) {
 		if ( $enable ) {
 			if ( defined( 'WP_CACHE' ) && WP_CACHE ) {
+				$this->_maybe_tidy_wp_config();
 				return false;
 			}
 		} elseif ( ! defined( 'WP_CACHE' ) || ( defined( 'WP_CACHE' ) && ! WP_CACHE ) ) {
+			$this->_maybe_tidy_wp_config();
+			return false;
+		}
+
+		// wp-config.php is shared by the whole network: a subsite w/ cache off must not strip the const other sites rely on.
+		if ( ! $enable && is_multisite() && ! is_main_site() ) {
 			return false;
 		}
 
@@ -459,38 +466,136 @@ class Activation extends Base {
 			throw new \Exception( 'wp-config file is forbidden to modify due to API hook: litespeed_wpconfig_readonly' );
 		}
 
-		/**
-		 * Follow WP's logic to locate wp-config file
-		 *
-		 * @see wp-load.php
-		 */
-		$conf_file = ABSPATH . 'wp-config.php';
-		if ( ! file_exists( $conf_file ) ) {
-			$conf_file = dirname( ABSPATH ) . '/wp-config.php';
-		}
+		$conf_file = self::_locate_wp_config();
 
 		$content = File::read( $conf_file );
+		if ( ! $content ) {
+			// Another request may be rewriting the file at this moment; retry once before treating it as an error.
+			usleep( 100000 );
+			clearstatcache( true, $conf_file );
+			$content = File::read( $conf_file );
+		}
 		if ( ! $content ) {
 			throw new \Exception( 'wp-config file content is empty: ' . wp_kses_post( $conf_file ) );
 		}
 
-		// Remove the line `define('WP_CACHE', true/false);` first
+		// Remove the line `define('WP_CACHE', true/false);` first, incl. its trailing newline so repeated rewrites don't grow blank lines
 		if ( defined( 'WP_CACHE' ) ) {
-			$content = preg_replace( '/define\(\s*([\'"])WP_CACHE\1\s*,\s*\w+\s*\)\s*;/sU', '', $content );
+			$content = preg_replace( '/define\(\s*([\'"])WP_CACHE\1\s*,\s*\w+\s*\)\s*;[ \t]*\r?\n?/s', '', $content );
 		}
 
-		// Insert const
+		// Clean up blank lines accumulated by older versions of this rewrite
+		$content = self::_clean_wp_config_blanks( $content );
+
+		// Insert const, reusing the file's own line ending so the rewrite is byte-stable
 		if ( $enable ) {
-			$content = preg_replace( '/^<\?php/', "<?php\ndefine( 'WP_CACHE', true );", $content );
+			$new_content = preg_replace( '/^<\?php(\r?\n)/', "<?php\${1}define( 'WP_CACHE', true );\${1}", $content, 1, $count );
+			if ( $count ) {
+				$content = $new_content;
+			} else {
+				$content = preg_replace( '/^<\?php/', "<?php\ndefine( 'WP_CACHE', true );", $content );
+			}
 		}
 
-		$res = File::save( $conf_file, $content, false, false, false );
+		$res = self::_save_atomically( $conf_file, $content );
 
 		if ( true !== $res ) {
 			throw new \Exception( 'wp-config.php operation failed when changing `WP_CACHE` const: ' . wp_kses_post( $res ) );
 		}
 
 		return true;
+	}
+
+	/**
+	 * Locate wp-config.php following WP's own logic.
+	 *
+	 * @see wp-load.php
+	 * @since 7.9
+	 * @return string Full path to wp-config.php.
+	 */
+	private static function _locate_wp_config() {
+		$conf_file = ABSPATH . 'wp-config.php';
+		if ( ! file_exists( $conf_file ) ) {
+			$conf_file = dirname( ABSPATH ) . '/wp-config.php';
+		}
+		return $conf_file;
+	}
+
+	/**
+	 * Collapse blank-line runs left behind by older versions of the WP_CACHE rewrite.
+	 *
+	 * Older versions leaked one newline per remove/re-add cycle, piling up blank lines
+	 * under `<?php` and under the `define( 'WP_CACHE', ... );` line.
+	 *
+	 * @since 7.9
+	 * @param string $content wp-config.php content.
+	 * @return string Cleaned content.
+	 */
+	private static function _clean_wp_config_blanks( $content ) {
+		$content = preg_replace( '/^(<\?php[ \t]*\r?\n)(?:[ \t]*\r?\n)+/', '$1', $content );
+		$content = preg_replace( '/(define\(\s*([\'"])WP_CACHE\2\s*,\s*\w+\s*\)\s*;[ \t]*\r?\n)(?:[ \t]*\r?\n)+/', '$1', $content );
+		return $content;
+	}
+
+	/**
+	 * Remove historically accumulated blank lines from wp-config.php when no const change is needed.
+	 *
+	 * Purely cosmetic and best-effort: silent on any failure, honors the readonly API hook,
+	 * and only writes when the content actually changes.
+	 *
+	 * @since 7.9
+	 * @return void
+	 */
+	private function _maybe_tidy_wp_config() {
+		if ( apply_filters( 'litespeed_wpconfig_readonly', false ) ) {
+			return;
+		}
+
+		$conf_file = self::_locate_wp_config();
+
+		$content = File::read( $conf_file );
+		if ( ! $content ) {
+			return;
+		}
+
+		$cleaned = self::_clean_wp_config_blanks( $content );
+		if ( $cleaned !== $content ) {
+			self::_save_atomically( $conf_file, $cleaned );
+		}
+	}
+
+	/**
+	 * Write a file via temp file + rename so concurrent readers never see a truncated file.
+	 *
+	 * `file_put_contents` truncates before writing; a request reading wp-config.php in that window
+	 * gets empty/partial content. `rename()` on the same filesystem replaces the file atomically.
+	 *
+	 * @since 7.9
+	 * @param string $filename Target file path.
+	 * @param string $content  Content to write.
+	 * @return true|string True on success, error message otherwise.
+	 */
+	private static function _save_atomically( $filename, $content ) {
+		$tmp_file = $filename . '.lscwp.tmp';
+
+		$res = File::save( $tmp_file, $content, false, false, false );
+		if ( true !== $res ) {
+			return $res;
+		}
+
+		// Carry over the target's permissions (e.g. hardened 0600 wp-config.php).
+		$perms = @fileperms( $filename );
+		if ( false !== $perms ) {
+			@chmod( $tmp_file, $perms & 0777 );
+		}
+
+		if ( @rename( $tmp_file, $filename ) ) {
+			return true;
+		}
+
+		// Rename failed (e.g. cross-device/AV lock): fall back to direct write rather than leaving the file untouched.
+		@unlink( $tmp_file );
+		return File::save( $filename, $content, false, false, false );
 	}
 
 	/**
