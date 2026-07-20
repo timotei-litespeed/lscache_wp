@@ -146,6 +146,8 @@ trait Img_Optm_Manage {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
 		$list = $wpdb->get_results( $q );
 		$i    = 0;
+		// Batch teardown restores originals from their backups.
+		$this->tmp_restore_bk = true;
 		foreach ( $list as $v ) {
 			if ( ! $v->post_id ) {
 				continue;
@@ -229,9 +231,15 @@ trait Img_Optm_Manage {
 
 		// del optimized ori
 		if ( $this->__media->info( $bk_file, $this->tmp_pid ) ) {
-			self::debug( 'deleting optim ori' );
-			$this->__media->del( $short_file_path, $this->tmp_pid );
-			$this->__media->rename( $bk_file, $short_file_path, $this->tmp_pid );
+			if ( $this->tmp_restore_bk ) {
+				self::debug( 'deleting optim ori' );
+				$this->__media->del( $short_file_path, $this->tmp_pid );
+				$this->__media->rename( $bk_file, $short_file_path, $this->tmp_pid );
+			} else {
+				// The file was replaced in-place: the backup holds the previous image, so restoring it would overwrite the new file.
+				self::debug( 'deleting stale bk' );
+				$this->__media->del( $bk_file, $this->tmp_pid );
+			}
 		}
 		$this->__media->info( $bk_optm_file, $this->tmp_pid ) && $this->__media->del( $bk_optm_file, $this->tmp_pid );
 	}
@@ -868,31 +876,39 @@ trait Img_Optm_Manage {
 	 * Delete one optm data and recover original file
 	 *
 	 * @since 2.4.2
+	 * @since 7.9 Added `$restore_bk` and `$meta_value` params.
 	 * @access public
-	 * @param int  $post_id The post ID to reset.
-	 * @param bool $silent  Whether to suppress success message. Default false.
+	 * @param int        $post_id    The post ID to reset.
+	 * @param bool       $silent     Whether to suppress success message. Default false.
+	 * @param bool       $restore_bk Whether to restore the original-file backup (`.bk.`). Pass false when the file was replaced in-place, as the backup still holds the previous image and restoring it would overwrite the new file. Default true.
+	 * @param array|null $meta_value Pre-loaded attachment metadata, to skip the extra DB read when the caller already holds it. Default null.
 	 */
-	public function reset_row( $post_id, $silent = false ) {
+	public function reset_row( $post_id, $silent = false, $restore_bk = true, $meta_value = null ) {
 		global $wpdb;
 
 		if ( ! $post_id ) {
 			return;
 		}
 
-		self::debug( '_reset_row [pid] ' . $post_id );
+		self::debug( '_reset_row [pid] ' . $post_id . ( $restore_bk ? '' : ' (no bk restore)' ) );
 
-		// TODO: Load image sub files
-		$img_q = "SELECT b.post_id, b.meta_value
-			FROM `$wpdb->postmeta` b
-			WHERE b.post_id =%d  AND b.meta_key = '_wp_attachment_metadata'";
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$q = $wpdb->prepare( $img_q, [ $post_id ] );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-		$v = $wpdb->get_row( $q );
+		$this->tmp_restore_bk = $restore_bk;
 
-		$meta_value = $this->_parse_wp_meta_value( $v );
+		if ( empty( $meta_value['file'] ) ) {
+			// TODO: Load image sub files
+			$img_q = "SELECT b.post_id, b.meta_value
+				FROM `$wpdb->postmeta` b
+				WHERE b.post_id =%d  AND b.meta_key = '_wp_attachment_metadata'";
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+			$q = $wpdb->prepare( $img_q, [ $post_id ] );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+			$v = $wpdb->get_row( $q );
+
+			$meta_value = $this->_parse_wp_meta_value( $v );
+		}
+
 		if ( $meta_value ) {
-			$this->tmp_pid  = $v->post_id;
+			$this->tmp_pid  = $post_id;
 			$this->tmp_path = pathinfo( $meta_value['file'], PATHINFO_DIRNAME ) . '/';
 			$this->_destroy_optm_file( $meta_value, true );
 			if ( ! empty( $meta_value['sizes'] ) ) {
@@ -909,10 +925,55 @@ trait Img_Optm_Manage {
 			$wpdb->query( $wpdb->prepare( "DELETE FROM `$this->_table_img_optming` WHERE post_id = %d", $post_id ) );
 		}
 
+		// Invalidate the in-memory gathered-src cache, otherwise a re-gather later in this same request (e.g. image replacement) would skip all sizes as already handled.
+		$this->_invalidate_gathered_src( $post_id );
+
 		if ( ! $silent ) {
 			$msg = __( 'Reset the optimized data successfully.', 'litespeed-cache' );
 			Admin_Display::success( $msg );
 		}
+	}
+
+	/**
+	 * Reset an attachment's optimization data and re-queue it for optimization.
+	 *
+	 * For when an attachment's file was replaced in-place (e.g. by a media
+	 * replace plugin) and its existing optimization no longer matches the file.
+	 * Also available to 3rd parties via action `litespeed_img_optm_requeue`.
+	 *
+	 * Queue-only: gathers the image into the img_optming table regardless of the
+	 * Auto Request Cron setting (the manual scan cursor can never rediscover an
+	 * already-passed ID). Pushing to the cloud still follows the existing gates:
+	 * auto cron when enabled, otherwise the manual optimization request.
+	 *
+	 * @since 7.9
+	 * @access public
+	 * @param int        $post_id The attachment post ID.
+	 * @param array|null $meta    Pre-loaded attachment metadata, e.g. the array passed to the `wp_generate_attachment_metadata` filter (which may not be persisted to DB yet). Loaded from DB when omitted.
+	 * @return void
+	 */
+	public function requeue( $post_id, $meta = null ) {
+		$post_id = (int) $post_id;
+		if ( ! $post_id ) {
+			return;
+		}
+
+		self::debug( 'requeue [pid] ' . $post_id );
+
+		if ( empty( $meta['file'] ) ) {
+			$meta = wp_get_attachment_metadata( $post_id );
+		}
+
+		// Tear down existing optimization data without restoring the stale backup. Also invalidates the in-request gathered-src cache so the re-gather below isn't skipped.
+		$this->reset_row( $post_id, true, false, $meta );
+
+		// Teardown always runs, but only supported types get re-queued (the file may have been replaced with an unsupported type).
+		if ( ! in_array( get_post_mime_type( $post_id ), [ 'image/jpeg', 'image/png', 'image/gif' ], true ) ) {
+			self::debug( 'requeue bypassed gather: unsupported mime type [pid] ' . $post_id );
+			return;
+		}
+
+		$this->wp_update_attachment_metadata( $meta, $post_id );
 	}
 
 	/**
