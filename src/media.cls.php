@@ -1101,11 +1101,13 @@ class Media extends Root {
 					if ( $dimensions ) {
 						$ori_width  = $dimensions[0];
 						$ori_height = $dimensions[1];
-						// Calculate height based on width.
+						// Keep the existing valid attr and scale the missing one by the intrinsic ratio.
 						if ( ! empty( $attrs['width'] ) && 'auto' !== $attrs['width'] ) {
 							$ori_height = (int) ( ( $ori_height * (int) $attrs['width'] ) / max( 1, $ori_width ) );
+							$ori_width  = (int) $attrs['width'];
 						} elseif ( ! empty( $attrs['height'] ) && 'auto' !== $attrs['height'] ) {
-							$ori_width = (int) ( ( $ori_width * (int) $attrs['height'] ) / max( 1, $ori_height ) );
+							$ori_width  = (int) ( ( $ori_width * (int) $attrs['height'] ) / max( 1, $ori_height ) );
+							$ori_height = (int) $attrs['height'];
 						}
 
 						// Remove existing width/height, then append new values
@@ -1137,33 +1139,62 @@ class Media extends Root {
 	/**
 	 * Detect the original sizes.
 	 *
+	 * First hit wins: object cache (incl. negative entries) -> filename `-WxH.ext` suffix -> local file read -> remote probe (max 3 probes / 2s total per render, first 32KB only).
+	 *
 	 * @since 4.0
+	 * @since 7.9 Added caching, filename parsing and budgeted partial-fetch remote probes.
 	 *
 	 * @param string $src Source URL/path.
-	 * @return array|false getimagesize array or false.
+	 * @return array|false Array( width, height ) or false.
 	 */
 	private function _detect_dimensions( $src ) {
-		$pathinfo = Utility::is_internal_file( $src );
-		if ( $pathinfo ) {
-			$src = $pathinfo[0];
-		} elseif ( apply_filters( 'litespeed_media_ignore_remote_missing_sizes', false ) ) {
-			return false;
+		$cache_key = md5( $src );
+		$found     = false;
+		$cached    = wp_cache_get( $cache_key, 'litespeed_img_dim', false, $found );
+		if ( $found && is_array( $cached ) ) {
+			return empty( $cached[0] ) || empty( $cached[1] ) ? false : $cached;
 		}
 
-		if ( 0 === strpos( $src, '//' ) ) {
-			$src = 'https:' . $src;
-		}
-
-		try {
-			$sizes = getimagesize( $src );
-		} catch ( \Exception $e ) {
-			return false;
-		}
-
-		if ( ! empty( $sizes[0] ) && ! empty( $sizes[1] ) ) {
+		// WP intermediate filenames carry the dimensions, zero I/O needed.
+		$path = wp_parse_url( $src, PHP_URL_PATH );
+		if ( $path && preg_match( '#-([1-9]\d*)x([1-9]\d*)\.(?:jpe?g|png|gif|webp|avif)$#i', $path, $matches ) ) {
+			self::debug( 'Dimensions from filename suffix ' . $matches[1] . 'x' . $matches[2] . ' [src] ' . $src );
+			$sizes = [ (int) $matches[1], (int) $matches[2] ];
+			wp_cache_set( $cache_key, $sizes, 'litespeed_img_dim', WEEK_IN_SECONDS );
 			return $sizes;
 		}
 
+		$pathinfo = Utility::is_internal_file( $src );
+		if ( $pathinfo ) {
+			$sizes = @getimagesize( $pathinfo[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Emits warnings, not exceptions, on invalid files.
+		} elseif ( apply_filters( 'litespeed_media_ignore_remote_missing_sizes', false ) ) {
+			return false;
+		} else {
+			// Partial remote fetch under a shared per-render budget.
+			static $probes = 0, $spent = 0;
+			if ( $probes >= 3 || $spent >= 2 ) {
+				self::debug( 'Dimension probe budget exhausted, bypassed remote probe [src] ' . $src );
+				return false; // Not cached, retry next render.
+			}
+			++$probes;
+			$start = microtime( true );
+			$res   = wp_remote_get(( 0 === strpos( $src, '//' ) ? 'https:' : '' ) . $src, [
+				'timeout'             => min( 2, max( 0.1, 2 - $spent ) ),
+				'headers'             => [ 'Range' => 'bytes=0-32767' ],
+				'limit_response_size' => 32768,
+			]);
+			$spent += microtime( true ) - $start;
+			$body   = is_wp_error( $res ) ? '' : wp_remote_retrieve_body( $res );
+			$sizes  = $body ? @getimagesizefromstring( $body ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Emits warnings, not exceptions, on truncated data.
+		}
+
+		if ( ! empty( $sizes[0] ) && ! empty( $sizes[1] ) ) {
+			$sizes = [ (int) $sizes[0], (int) $sizes[1] ];
+			wp_cache_set( $cache_key, $sizes, 'litespeed_img_dim', WEEK_IN_SECONDS );
+			return $sizes;
+		}
+
+		wp_cache_set( $cache_key, [ 0, 0 ], 'litespeed_img_dim', DAY_IN_SECONDS );
 		return false;
 	}
 
