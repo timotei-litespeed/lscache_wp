@@ -72,23 +72,6 @@ trait Img_Optm_Send {
 	}
 
 	/**
-	 * Drop a post's entries from the in-memory gathered-src cache.
-	 *
-	 * For after the post's img_optming rows were deleted (see `reset_row()`), so a re-gather later in the same request doesn't skip its sizes as already handled.
-	 *
-	 * @since 7.9
-	 * @access private
-	 * @param int $post_id The attachment post ID whose entries to drop.
-	 */
-	private function _invalidate_gathered_src( $post_id ) {
-		foreach ( $this->_existed_src_list as $k => $v ) {
-			if ( strpos( $v, $post_id . '.' ) === 0 ) {
-				unset( $this->_existed_src_list[ $k ] );
-			}
-		}
-	}
-
-	/**
 	 * Auto send optm request
 	 *
 	 * @since  2.4.1

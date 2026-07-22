@@ -112,8 +112,7 @@ class Admin extends Root {
 		// Check if has existing optimization records, if so it's a replacement
 		if ( $img_optm->has_optm_record( $attachment_id, $metadata ) ) {
 			self::debug( 'Image replaced, resetting optimization data [pid] ' . $attachment_id );
-			// No bk restore: the file was replaced, the backup holds the previous image. Pass $metadata along: at this filter it may not be persisted to DB yet.
-			$img_optm->reset_row( $attachment_id, true, false, $metadata );
+			$img_optm->reset_row( $attachment_id, true );
 		}
 
 		return $metadata;
