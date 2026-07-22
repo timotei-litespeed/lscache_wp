@@ -75,6 +75,14 @@ class Img_Optm extends Base {
 	private $tmp_pid;
 
 	/**
+	 * Whether the current destroy operation restores the original-file backup (`.bk.`) or deletes it as stale.
+	 *
+	 * @since 7.9
+	 * @var bool
+	 */
+	private $tmp_restore_bk = true;
+
+	/**
 	 * Temporary type for current operation.
 	 *
 	 * @var string

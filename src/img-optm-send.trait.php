@@ -286,12 +286,14 @@ trait Img_Optm_Send {
 	 *
 	 * @since 1.6
 	 * @since 7.5 Allow to choose which image sizes should be optimized + added parameter $img_size_name.
+	 * @since 7.9 Added parameter $force.
 	 * @access private
 	 * @param array       $meta_value    The meta value array.
 	 * @param bool        $is_ori_file   Whether this is the original file.
 	 * @param string|bool $img_size_name The image size name or false.
+	 * @param bool        $force         Whether to queue the image even when its optimized files already exist (e.g. re-queueing a replaced file whose previous optimized files are still on disk). Default false.
 	 */
-	private function _append_img_queue( $meta_value, $is_ori_file = false, $img_size_name = false ) {
+	private function _append_img_queue( $meta_value, $is_ori_file = false, $img_size_name = false, $force = false ) {
 		if ( empty( $meta_value['file'] ) || empty( $meta_value['width'] ) || empty( $meta_value['height'] ) ) {
 			self::debug2( 'bypass image due to lack of file/w/h: pid ' . $this->tmp_pid, $meta_value );
 			return;
@@ -341,7 +343,7 @@ trait Img_Optm_Send {
 				$target_needed = true;
 			}
 		}
-		if ( ! $target_needed ) {
+		if ( ! $force && ! $target_needed ) {
 			self::debug2( 'bypass image due to optimized file exists: pid ' . $this->tmp_pid . ' ' . $short_file_path );
 			return;
 		}
@@ -367,6 +369,9 @@ trait Img_Optm_Send {
 		if ( empty( $this->_img_in_queue ) ) {
 			return;
 		}
+
+		// Ensure the table exists
+		$this->__data->tb_create( 'img_optming' );
 		$data     = [];
 		$pid_list = [];
 		foreach ( $this->_img_in_queue as $k => $v ) {

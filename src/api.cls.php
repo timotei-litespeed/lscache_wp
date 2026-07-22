@@ -122,6 +122,11 @@ class API extends Base {
 		add_action( 'litespeed_purge_ucss', __NAMESPACE__ . '\Purge::purge_ucss' );
 
 		/**
+		 * Image Optimization
+		 */
+		add_action( 'litespeed_img_optm_requeue', [ $this, 'img_optm_requeue' ] );
+
+		/**
 		 * ESI
 		 */
 		// Action `litespeed_nonce`
@@ -252,6 +257,19 @@ class API extends Base {
 	 */
 	public function purge_url( $url ) {
 		$this->cls( 'Purge' )->purge_url( $url );
+	}
+
+	/**
+	 * Re-queue an attachment for image optimization
+	 *
+	 * Adds the attachment (back) to the optimization queue, dropping any of its queued rows first. For use after an attachment's file was replaced in-place (e.g. by a media replace plugin). Existing optimized files are overwritten when the new optimization is pulled.
+	 *
+	 * @since 7.9
+	 * @access public
+	 * @param int $post_id Attachment post ID to re-queue.
+	 */
+	public function img_optm_requeue( $post_id ) {
+		$this->cls( 'Img_Optm' )->requeue( $post_id );
 	}
 
 	/**

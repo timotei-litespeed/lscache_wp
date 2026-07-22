@@ -229,9 +229,15 @@ trait Img_Optm_Manage {
 
 		// del optimized ori
 		if ( $this->__media->info( $bk_file, $this->tmp_pid ) ) {
-			self::debug( 'deleting optim ori' );
-			$this->__media->del( $short_file_path, $this->tmp_pid );
-			$this->__media->rename( $bk_file, $short_file_path, $this->tmp_pid );
+			if ( $this->tmp_restore_bk ) {
+				self::debug( 'deleting optim ori' );
+				$this->__media->del( $short_file_path, $this->tmp_pid );
+				$this->__media->rename( $bk_file, $short_file_path, $this->tmp_pid );
+			} else {
+				// The file was replaced in-place: the backup holds the previous image, so restoring it would overwrite the new file.
+				self::debug( 'deleting stale bk' );
+				$this->__media->del( $bk_file, $this->tmp_pid );
+			}
 		}
 		$this->__media->info( $bk_optm_file, $this->tmp_pid ) && $this->__media->del( $bk_optm_file, $this->tmp_pid );
 	}
@@ -868,18 +874,22 @@ trait Img_Optm_Manage {
 	 * Delete one optm data and recover original file
 	 *
 	 * @since 2.4.2
+	 * @since 7.9 Added `$restore_bk` param.
 	 * @access public
-	 * @param int  $post_id The post ID to reset.
-	 * @param bool $silent  Whether to suppress success message. Default false.
+	 * @param int  $post_id    The post ID to reset.
+	 * @param bool $silent     Whether to suppress success message. Default false.
+	 * @param bool $restore_bk Whether to restore the original-file backup (`.bk.`). Pass false when the file was replaced in-place, as the backup still holds the previous image and restoring it would overwrite the new file. Default true.
 	 */
-	public function reset_row( $post_id, $silent = false ) {
+	public function reset_row( $post_id, $silent = false, $restore_bk = true ) {
 		global $wpdb;
 
 		if ( ! $post_id ) {
 			return;
 		}
 
-		self::debug( '_reset_row [pid] ' . $post_id );
+		self::debug( '_reset_row [pid] ' . $post_id . ( $restore_bk ? '' : ' (no bk restore)' ) );
+
+		$this->tmp_restore_bk = $restore_bk;
 
 		// TODO: Load image sub files
 		$img_q = "SELECT b.post_id, b.meta_value
@@ -900,6 +910,8 @@ trait Img_Optm_Manage {
 			}
 		}
 
+		$this->tmp_restore_bk = true;
+
 		delete_post_meta( $post_id, self::DB_SIZE );
 		delete_post_meta( $post_id, self::DB_SET );
 
@@ -913,6 +925,79 @@ trait Img_Optm_Manage {
 			$msg = __( 'Reset the optimized data successfully.', 'litespeed-cache' );
 			Admin_Display::success( $msg );
 		}
+	}
+
+	/**
+	 * Delete an image's derived files: next-gen (webp/avif) files including the parked `.optm.` variants, and LQIP placeholders.
+	 *
+	 * For requeue: the files were generated from the previous image and would keep being served until regenerated.
+	 *
+	 * @since 7.9
+	 * @access private
+	 * @param string $short_file_path Image path relative to the upload folder.
+	 * @return void
+	 */
+	private function _del_derived_files( $short_file_path ) {
+		foreach ( [ '.webp', '.optm.webp', '.avif', '.optm.avif' ] as $ext ) {
+			$this->__media->info( $short_file_path . $ext, $this->tmp_pid ) && $this->__media->del( $short_file_path . $ext, $this->tmp_pid );
+		}
+
+		// LQIP placeholders: one folder per image path, one file per display size.
+		$lqip_folder = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'lqip' ) . $short_file_path;
+		is_dir( $lqip_folder ) && File::rrmdir( $lqip_folder );
+	}
+
+	/**
+	 * Add an attachment (back) to the image optimization queue.
+	 *
+	 * Also available to 3rd parties via action `litespeed_img_optm_requeue`.
+	 * Queues regardless of the Auto Request Cron setting (the manual scan
+	 * cursor can never rediscover an already-passed ID). Pushing to the cloud
+	 * still follows the existing gates: auto cron when enabled, otherwise the
+	 * manual optimization request.
+	 *
+	 * @since 7.9
+	 * @access public
+	 * @param int $post_id The attachment post ID.
+	 * @return void
+	 */
+	public function requeue( $post_id ) {
+		global $wpdb;
+
+		$post_id = (int) $post_id;
+		if ( ! $post_id ) {
+			return;
+		}
+
+		self::debug( 'requeue [pid] ' . $post_id );
+
+		// Always drop the post's queued rows: rows in flight for a previous file would pull that file's optimized images over the current one.
+		if ( $this->__data->tb_exist( 'img_optming' ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( $wpdb->prepare( "DELETE FROM `$this->_table_img_optming` WHERE post_id = %d", $post_id ) );
+		}
+
+		$meta = wp_get_attachment_metadata( $post_id );
+		if ( empty( $meta['file'] ) ) {
+			return;
+		}
+
+		// The post's queue rows are gone; drop the in-request gathered-src cache too so the gather below isn't skipped as already handled.
+		$this->_existed_src_list = [];
+
+		// Per file (scaled/main + all sizes): delete the stale derived files (webp/avif, LQIP) — generated from the previous image, they would keep being served until regenerated — then gather. Force: the backup may still exist, which would otherwise bypass the size as already optimized.
+		$this->tmp_pid  = $post_id;
+		$this->tmp_path = pathinfo( $meta['file'], PATHINFO_DIRNAME ) . '/';
+		$this->_del_derived_files( $meta['file'] );
+		$this->_append_img_queue( $meta, true, false, true );
+		if ( ! empty( $meta['sizes'] ) ) {
+			foreach ( $meta['sizes'] as $img_size_name => $img_size ) {
+				! empty( $img_size['file'] ) && $this->_del_derived_files( $this->tmp_path . $img_size['file'] );
+				$this->_append_img_queue( $img_size, false, $img_size_name, true );
+			}
+		}
+
+		$this->_save_raw();
 	}
 
 	/**
