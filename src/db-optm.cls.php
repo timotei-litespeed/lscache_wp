@@ -323,18 +323,36 @@ class DB_Optm extends Root {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 			$result = (array) $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT table_name, DATA_FREE FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND ENGINE <> 'InnoDB' AND DATA_FREE > 0",
+					// MySQL 8 exposes information_schema as views w/ uppercase column names, so alias it.
+					"SELECT TABLE_NAME AS table_name, DATA_FREE AS data_free FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND ENGINE <> 'InnoDB' AND DATA_FREE > 0",
 					DB_NAME
 				)
 			);
 			if ( $result ) {
 				foreach ( $result as $row ) {
+					if ( empty( $row->table_name ) ) {
+						continue;
+					}
 					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-					$wpdb->query( 'OPTIMIZE TABLE ' . esc_sql( $row->table_name ) );
+					$wpdb->query( 'OPTIMIZE TABLE ' . self::_quote_ident( $row->table_name ) );
 				}
 			}
 				return __( 'Optimized all tables.', 'litespeed-cache' );
 		}
+	}
+
+	/**
+	 * Backquote a DB/table identifier for use in a raw query.
+	 *
+	 * `esc_sql()` escapes string literals, not identifiers.
+	 *
+	 * @since 7.9
+	 * @access private
+	 * @param string $ident Identifier to quote.
+	 * @return string
+	 */
+	private static function _quote_ident( $ident ) {
+		return '`' . str_replace( '`', '``', $ident ) . '`';
 	}
 
 	/**
@@ -392,7 +410,7 @@ class DB_Optm extends Root {
 		}
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.SchemaChange
-		$wpdb->query( 'ALTER TABLE ' . esc_sql( DB_NAME ) . '.' . esc_sql( $tb ) . ' ENGINE = InnoDB' );
+		$wpdb->query( 'ALTER TABLE ' . self::_quote_ident( DB_NAME ) . '.' . self::_quote_ident( $tb ) . ' ENGINE = InnoDB' );
 
 		Debug2::debug( "[DB] Converted $tb to InnoDB" );
 
