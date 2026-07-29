@@ -23,6 +23,17 @@ abstract class Root {
 	private static $_network_options = array();
 
 	/**
+	 * Summary cache, written by `save_summary()`/`reload_summary()`.
+	 *
+	 * Declared here so subclasses relying on the summary API don't create a
+	 * dynamic property (deprecated as of PHP 8.2).
+	 *
+	 * @since 7.9
+	 * @var array
+	 */
+	protected $_summary = array();
+
+	/**
 	 * Check if need to separate ccss for mobile
 	 *
 	 * @since  4.7
