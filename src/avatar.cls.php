@@ -338,25 +338,48 @@ class Avatar extends Base {
 		);
 
 		// Update/insert DB record
-		$md5 = md5( $url );
+		$md5      = md5( $url );
+		$dateline = time();
 
-		$existed = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		// Test existence w/ a lookup on the unique key, not w/ the UPDATE return value: `$wpdb->query()`
+		// reports *changed* rows, so a row already holding this second's timestamp comes back as 0 and
+		// used to be mistaken for a missing record, ending in a duplicate `md5` insert.
+		$existed = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$wpdb->prepare(
-				'UPDATE `' . $this->_tb . '` SET dateline = %d WHERE md5 = %s', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-				time(),
+				'SELECT id FROM `' . $this->_tb . '` WHERE md5 = %s', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 				$md5
 			)
 		);
 
-		if ( ! $existed ) {
+		if ( $existed ) {
 			$wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->prepare(
+					'UPDATE `' . $this->_tb . '` SET dateline = %d WHERE md5 = %s', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$dateline,
+					$md5
+				)
+			);
+		} else {
+			// A parallel request (2nd visitor, cron, or the static avatar route) can still insert the same
+			// md5 between the lookup above and this insert. The unique key makes that collision harmless,
+			// so keep the expected error out of the DB error log.
+			$save_state = $wpdb->suppress_errors;
+			$wpdb->suppress_errors( true );
+
+			$inserted = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 				$wpdb->prepare(
 					'INSERT INTO `' . $this->_tb . '` (url, md5, dateline) VALUES (%s, %s, %d)', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 					$url,
 					$md5,
-					time()
+					$dateline
 				)
 			);
+
+			$wpdb->suppress_errors( $save_state );
+
+			if ( false === $inserted ) {
+				self::debug2( '[Avatar] record already added by a parallel request [md5] ' . $md5 );
+			}
 		}
 
 		self::debug( '[Avatar] saved avatar ' . $file );
