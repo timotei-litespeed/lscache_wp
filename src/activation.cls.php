@@ -413,6 +413,7 @@ class Activation extends Base {
 
 		if ( $options[ self::O_GUEST ] ) {
 			$this_ids = [
+				self::O_DEBUG, // `lib/guest.cls.php` needs it to build the same vary value as `Vary::finalize_default_vary()`
 				self::HASH,
 				self::O_CACHE_LOGIN_COOKIE,
 				self::O_DEBUG_IPS,
