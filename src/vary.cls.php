@@ -562,13 +562,11 @@ class Vary extends Root {
 		}
 
 		$res = implode( ';', $list );
-
-		// Always encrypt. This value is a cache key, so it must not depend on per-request
-		// state like `LSCWP_LOG`, which `lib/guest.cls.php` can't reproduce. Log it instead.
-		$hash = md5( $this->conf( Base::HASH ) . $res );
-		self::debug( 'default vary: ' . $res . ' => ' . $hash );
-
-		return $hash;
+		if ( defined( 'LSCWP_LOG' ) ) {
+			return $res;
+		}
+		// Encrypt in production.
+		return md5( $this->conf( Base::HASH ) . $res );
 	}
 
 	/**

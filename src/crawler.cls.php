@@ -1269,8 +1269,10 @@ class Crawler extends Root {
 		// Guest Mode on/off.
 		if ( $this->conf( Base::O_GUEST ) ) {
 			$vary_name = $this->cls( 'Vary' )->get_vary_name();
-			// Must match Vary::finalize_default_vary(): always hashed.
-			$vary_val = md5( $this->conf( Base::HASH ) . 'guest_mode:1' );
+			$vary_val  = 'guest_mode:1';
+			if ( ! defined( 'LSCWP_LOG' ) ) {
+				$vary_val = md5( $this->conf( Base::HASH ) . $vary_val );
+			}
 			$crawler_factors[ 'cookie:' . $vary_name ] = [
 				$vary_val => '',
 				'_null'   => '<font data-balloon-pos="up" aria-label="Guest Mode">👒</font>',
