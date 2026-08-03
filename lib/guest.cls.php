@@ -98,11 +98,15 @@ class Guest {
 			exit;
 		}
 
-		// Send vary cookie
-		$vary = 'guest_mode:1';
-		if ( $this->_conf && empty( $this->_conf[ self::O_DEBUG ] ) ) {
-			$vary = md5( $this->_conf[ self::HASH ] . $vary );
+		// No hash means Guest Mode is off (Activation only stores it when Guest Mode is on,
+		// but still writes this file for Object Cache) so there is no vary to issue.
+		if ( ! $this->_conf || empty( $this->_conf[ self::HASH ] ) ) {
+			echo '[]';
+			exit;
 		}
+
+		// Send vary cookie. Must match Vary::finalize_default_vary(): always hashed.
+		$vary = md5( $this->_conf[ self::HASH ] . 'guest_mode:1' );
 
 		$expire = time() + 2 * 86400;
 		$is_ssl = ! empty( $this->_conf[ self::O_UTIL_NO_HTTPS_VARY ] ) ? false : $this->is_ssl();
