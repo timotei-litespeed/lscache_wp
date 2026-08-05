@@ -23,6 +23,13 @@ class Utility extends Root {
 	private static $_internal_domains;
 
 	/**
+	 * Cached document root fallback for contexts where the server supplies none.
+	 *
+	 * @var string|null
+	 */
+	private static $_doc_root;
+
+	/**
 	 * Validate a list of regex rules by attempting to compile them.
 	 *
 	 * @since 1.0.9
@@ -817,6 +824,10 @@ class Utility extends Root {
 		// Parse file path.
 		if ( '/' === substr( $url_parsed['path'], 0, 1 ) ) {
 			$docroot = isset( $_SERVER['DOCUMENT_ROOT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['DOCUMENT_ROOT'] ) ) : '';
+			if ( '' === $docroot ) {
+				// CLI and cron have an empty DOCUMENT_ROOT, derive one so lookups stay context independent.
+				$docroot = self::_doc_root();
+			}
 			if ( defined( 'LITESPEED_WP_REALPATH' ) ) {
 				$file_path_ori = $docroot . constant( 'LITESPEED_WP_REALPATH' ) . $url_parsed['path'];
 			} else {
@@ -834,12 +845,94 @@ class Utility extends Root {
 		$file_path_ori = apply_filters( 'litespeed_realpath', $file_path_ori );
 
 		$file_path = realpath( $file_path_ori );
-		if ( ! is_file( $file_path ) ) {
-			Debug2::debug2( '[Util] file not exist: ' . $file_path_ori );
-			return false;
+		if ( ! $file_path || ! is_file( $file_path ) ) {
+			// The URL may be percent encoded (spaces, accents, non ASCII filenames). Retry decoded.
+			$file_path_dec = self::_safe_rawurldecode_path( $file_path_ori );
+			$file_path     = $file_path_dec ? realpath( $file_path_dec ) : false;
+			if ( ! $file_path || ! is_file( $file_path ) ) {
+				Debug2::debug2( '[Util] file not exist: ' . $file_path_ori );
+				return false;
+			}
 		}
 
 		return [ $file_path, (int) filesize( $file_path ) ];
+	}
+
+	/**
+	 * Document root to fall back on when the server did not supply one.
+	 *
+	 * `$_SERVER['DOCUMENT_ROOT']` is an empty string under CLI and cron, which made every lookup
+	 * resolve from the filesystem root and fail. Derive it from ABSPATH instead, less the path
+	 * WordPress is installed under, so the result matches what the web server would report.
+	 *
+	 * @since 7.9
+	 *
+	 * @return string Document root without a trailing slash.
+	 */
+	private static function _doc_root() {
+		if ( null !== self::$_doc_root ) {
+			return self::$_doc_root;
+		}
+
+		$docroot   = untrailingslashit( wp_normalize_path( ABSPATH ) );
+		$site_path = untrailingslashit( (string) wp_parse_url( site_url(), PHP_URL_PATH ) );
+
+		// WP in its own directory: strip that directory to land on the real document root.
+		if ( '' !== $site_path && substr( $docroot, - strlen( $site_path ) ) === $site_path ) {
+			$docroot = substr( $docroot, 0, - strlen( $site_path ) );
+		}
+
+		self::$_doc_root = $docroot;
+
+		return self::$_doc_root;
+	}
+
+	/**
+	 * Percent decode a path for filesystem lookup, or false when decoding is needless or unsafe.
+	 *
+	 * Only ever called with the raw path, never with its own output, so a path is never decoded twice.
+	 * The raw path is always tried first by the caller, which keeps filenames holding a literal `%` working.
+	 *
+	 * @since 7.9
+	 *
+	 * @param string $path Filesystem path built from the URL.
+	 * @return string|false Decoded path, or false to skip the decoded attempt.
+	 */
+	private static function _safe_rawurldecode_path( $path ) {
+		// Nothing encoded, the decoded attempt would only repeat the raw one.
+		if ( false === strpos( $path, '%' ) ) {
+			return false;
+		}
+
+		// rawurldecode() not urldecode(), as `+` is a literal character in a path.
+		$decoded = rawurldecode( $path );
+		if ( $decoded === $path ) {
+			return false;
+		}
+
+		// realpath() throws a ValueError on PHP 8 when the path holds a NUL byte.
+		if ( false !== strpos( $decoded, "\0" ) ) {
+			return false;
+		}
+
+		// Decoding must not introduce traversal that the raw path did not already have.
+		if ( self::_has_dotdot_segment( $decoded ) && ! self::_has_dotdot_segment( $path ) ) {
+			return false;
+		}
+
+		return $decoded;
+	}
+
+	/**
+	 * Check if a path holds a `..` segment.
+	 *
+	 * @since 7.9
+	 *
+	 * @param string $path Path to check.
+	 * @return bool True if a `..` segment exists.
+	 */
+	private static function _has_dotdot_segment( $path ) {
+		return (bool) preg_match( '#(^|[/\\\\])\.\.([/\\\\]|$)#', $path );
 	}
 
 	/**
