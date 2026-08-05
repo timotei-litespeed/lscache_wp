@@ -105,24 +105,6 @@ class REST extends Root {
 			'permission_callback' => [ $this, 'is_from_cloud' ],
 		] );
 
-		register_rest_route( 'litespeed/v1', '/notify_ccss', [
-			'methods'             => 'POST',
-			'callback'            => [ $this, 'notify_ccss' ],
-			'permission_callback' => [ $this, 'is_from_cloud' ],
-		] );
-
-		register_rest_route( 'litespeed/v1', '/notify_ucss', [
-			'methods'             => 'POST',
-			'callback'            => [ $this, 'notify_ucss' ],
-			'permission_callback' => [ $this, 'is_from_cloud' ],
-		] );
-
-		register_rest_route( 'litespeed/v1', '/notify_vpi', [
-			'methods'             => 'POST',
-			'callback'            => [ $this, 'notify_vpi' ],
-			'permission_callback' => [ $this, 'is_from_cloud' ],
-		] );
-
 		register_rest_route( 'litespeed/v3', '/err_domains', [
 			'methods'             => 'POST',
 			'callback'            => [ $this, 'err_domains' ],
@@ -231,39 +213,6 @@ class REST extends Root {
 	 */
 	public function notify_img() {
 		return Img_Optm::cls()->notify_img();
-	}
-
-	/**
-	 * Critical CSS notification.
-	 *
-	 * @since 7.1
-	 * @return mixed
-	 */
-	public function notify_ccss() {
-		self::debug( 'notify_ccss' );
-		return CSS::cls()->notify();
-	}
-
-	/**
-	 * Unique CSS notification.
-	 *
-	 * @since 5.2
-	 * @return mixed
-	 */
-	public function notify_ucss() {
-		self::debug( 'notify_ucss' );
-		return UCSS::cls()->notify();
-	}
-
-	/**
-	 * Viewport Images notification.
-	 *
-	 * @since 4.7
-	 * @return mixed
-	 */
-	public function notify_vpi() {
-		self::debug( 'notify_vpi' );
-		return VPI::cls()->notify();
 	}
 
 	/**

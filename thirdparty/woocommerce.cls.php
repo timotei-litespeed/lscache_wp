@@ -1,4 +1,4 @@
-<?php 
+<?php
 /**
  * The Third Party integration with the WooCommerce plugin.
  *
@@ -84,6 +84,15 @@ class WooCommerce extends Base {
 		add_action( 'woocommerce_product_set_stock_status', [ $this, 'purge_product_stock_status' ], 10, 3 );
 		add_action( 'woocommerce_variation_set_stock_status', [ $this, 'purge_product_stock_status' ], 10, 3 );
 		add_action( 'woocommerce_order_status_cancelled', [ $this, 'purge_cancelled_order_products' ], 20 );
+
+		// Purge product pages when WooCommerce scheduled sales flip prices (#941).
+		// Daily cron after-hooks (WC < 10.5 path, and post-10.5 safety net for products missed by AS):
+		add_action( 'wc_after_products_starting_sales', [ $this, 'purge_products_on_sale_change' ] );
+		add_action( 'wc_after_products_ending_sales', [ $this, 'purge_products_on_sale_change' ] );
+		// Per-product Action Scheduler events (WC 10.5+, main path — fire at exact sale times).
+		// Priority 99 runs after WC's default-10 callback so the price flip is committed before we purge.
+		add_action( 'wc_product_start_scheduled_sale', [ $this, 'purge_products_on_sale_change' ], 99 );
+		add_action( 'wc_product_end_scheduled_sale', [ $this, 'purge_products_on_sale_change' ], 99 );
 
 		add_action('comment_post', [ $this, 'add_review' ], 10, 3);
 
@@ -690,6 +699,34 @@ class WooCommerce extends Base {
 		foreach ( $products as $product ) {
 			do_action( 'litespeed_debug', '[3rd] Woo Purge cancelled order managed stock [pid] ' . $product->get_id() );
 			$this->purge_product( $product );
+		}
+	}
+
+	/**
+	 * Purge products whose sale status flipped (#941).
+	 *
+	 * Handles both WC paths:
+	 * - Daily cron after-hooks (`wc_after_products_starting_sales` / `wc_after_products_ending_sales`) → array of IDs.
+	 * - Per-product Action Scheduler events (`wc_product_start_scheduled_sale` / `wc_product_end_scheduled_sale`, WC 10.5+) → single ID.
+	 *
+	 * Force purge via `$stock_status_changed = true` so a price flip is not gated by the stock-update interval config.
+	 *
+	 * @since 7.9
+	 * @param int|int[] $product_ids Single product ID (per-product AS callback) or array of IDs (daily cron after-hook).
+	 * @return void
+	 */
+	public function purge_products_on_sale_change( $product_ids ) {
+		if ( ! function_exists( 'wc_get_product' ) ) {
+			return;
+		}
+
+		foreach ( (array) $product_ids as $product_id ) {
+			$product = wc_get_product( $product_id );
+			if ( ! $product ) {
+				continue;
+			}
+			do_action( 'litespeed_debug', '[3rd] Woo Purge sale change [pid] ' . $product->get_id() );
+			$this->purge_product( $product, true );
 		}
 	}
 

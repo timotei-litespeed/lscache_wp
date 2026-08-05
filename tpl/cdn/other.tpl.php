@@ -26,7 +26,7 @@ $this->form_action();
 
 <h3 class="litespeed-title-short">
 	<?php esc_html_e( 'CDN Settings', 'litespeed-cache' ); ?>
-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/' ); ?>
+	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#other-static-cdn-tab' ); ?>
 </h3>
 
 <table class="wp-list-table striped litespeed-table">
@@ -70,7 +70,7 @@ $this->form_action();
 
 				<script type="text/babel">
 					ReactDOM.render(
-						<CDNMapping list={ <?php echo wp_json_encode( $cdn_mapping ); ?> } />,
+						<CDNMapping list={ <?php echo wp_json_encode( $cdn_mapping, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?> } />,
 						document.getElementById( 'litespeed_cdn_mapping_div' )
 					);
 				</script>
@@ -106,14 +106,6 @@ $this->form_action();
 					);
 					?>
 					<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#include-file-types', esc_html__( 'Default value', 'litespeed-cache' ) ); ?>
-					<br>
-					<?php
-					printf(
-						esc_html__( 'If you turn any of the above settings OFF, please remove the related file types from the %s box.', 'litespeed-cache' ),
-						'<b>' . esc_html__( 'Include File Types', 'litespeed-cache' ) . '</b>'
-					);
-					?>
-					<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#include-file-types' ); ?>
 				</div>
 			</td>
 		</tr>

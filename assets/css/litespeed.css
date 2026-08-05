@@ -527,6 +527,11 @@ button.litespeed-form-action:hover {
 	padding: 1px 20px 20px 20px;
 }
 
+/* Paint the right tab before JS runs (no flash); jQuery .show()/.hide() override these afterwards. */
+.litespeed-body [data-litespeed-layout][id] { display: none; scroll-margin-top: 100px; }
+.litespeed-body [data-litespeed-layout][id]:target { display: block; }
+.litespeed-body:not(:has([data-litespeed-layout][id]:target)) [data-litespeed-default-tab="1"] { display: block; }
+
 @media screen and (min-width: 681px) {
 	.litespeed-header + .litespeed-body {
 		border-top: none;
@@ -1027,6 +1032,7 @@ h3 .litespeed-learn-more {
 	line-height: inherit;
 	font-size: inherit;
 	box-shadow: none;
+	padding: 7px;
 }
 
 .litespeed-wrap .button-link:hover,
@@ -1145,7 +1151,7 @@ h3 .litespeed-learn-more {
 	color: #fff;
 }
 
-.litespeed-wrap .button:not(.litespeed-btn-large) .dashicons {
+body:not(.branch-7) .litespeed-wrap .button:not(.litespeed-btn-large) .dashicons {
 	position: relative;
 	top: -0.075em;
 	vertical-align: middle;
@@ -1674,6 +1680,7 @@ ul.litespeed-shell-body {
 
 .litespeed-callout {
 	margin: 1.5rem 0;
+	padding-bottom: 10px;
 
 	border-right: 1px solid #e5e5e5;
 	border-top: 1px solid #e5e5e5;
@@ -1961,14 +1968,22 @@ input.litespeed-input-warning {
 	margin-left: -5px;
 }
 
-.litespeed-collection-button .dashicons {
+.button.litespeed-collection-button .dashicons {
 	vertical-align: baseline;
+	line-height: 1;
 }
 
 .litespeed-wrap .button:not(.litespeed-btn-large).litespeed-form-action .dashicons {
-	font-size: 1.2em;
+	font-size: 1.5em;
 	vertical-align: middle;
+	line-height: 1;
 	top: 0;
+}
+
+body:not(.branch-7) .litespeed-form-action.button .dashicons,
+body:not(.branch-7) .litespeed-link-with-icon.button .dashicons,
+body:not(.branch-7) .litespeed-collection-button.button .dashicons {
+	line-height: 1.2;
 }
 
 @media screen and (max-width: 680px) {
@@ -2475,6 +2490,12 @@ g.litespeed-pie_info .litespeed-pie-done {
 
 .litespeed-crawler-sitemap-nav > div {
 	margin-top: 10px;
+}
+
+#crawler-map-legend i{
+	top: 5px;
+    display: inline-block;
+    position: relative;
 }
 
 @media screen and (max-width: 680px) {
@@ -3371,6 +3392,7 @@ p.litespeed-dashboard-unlock-footer {
 	vertical-align: baseline;
 	top: 0.25em;
 	margin-right: 0.5em;
+	position: relative;
 }
 
 .litespeed-dashboard-unlock + .litespeed-dashboard-qc-enable {
@@ -3797,6 +3819,7 @@ a.litespeed-media-href svg:hover {
 	height: 20px;
 	color: white;
 	text-align: center;
+	text-indent: -2px;
 }
 
 .litespeed-badge {

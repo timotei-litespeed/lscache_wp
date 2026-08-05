@@ -244,12 +244,11 @@ class Cloudflare extends Base {
 	private function cloudflare_call( $url, $method = 'GET', $data = false, $show_msg = true ) {
 		Debug2::debug("[Cloudflare] cloudflare_call \t\t[URL] $url");
 
-		/**
-		 * Detect key type: Global API Key (37-char hex) vs API Token (Bearer)
-		 * @since 1.9.0
-		 */
-		$cf_key = $this->conf( self::O_CDN_CLOUDFLARE_KEY );
-		if ( strlen( $cf_key ) === 37 && preg_match( '/^[0-9a-f]+$/', $cf_key ) ) {
+		// Route by Cloudflare credential format: new "cfk_" prefix or legacy 37-45 lowercase hex → Global API Key (X-Auth-*); everything else (incl. "cfat_"/"cfut_" tokens or legacy 40-char tokens) → Bearer
+		// @ref https://developers.cloudflare.com/fundamentals/api/get-started/token-formats/
+		$cf_key        = $this->conf( self::O_CDN_CLOUDFLARE_KEY );
+		$is_global_key = 0 === strncmp( $cf_key, 'cfk_', 4 ) || preg_match( '/^[0-9a-f]{37,45}$/', $cf_key );
+		if ( $is_global_key ) {
 			$headers = [
 				'Content-Type' => 'application/json',
 				'X-Auth-Email' => $this->conf( self::O_CDN_CLOUDFLARE_EMAIL ),
@@ -274,7 +273,7 @@ class Cloudflare extends Base {
 			$wp_args['body'] = $data;
 		}
 		add_filter( 'http_api_curl', $fn = function ( $handle ) {
-			defined( 'CURLOPT_SSL_ENABLE_ALPN' ) && \curl_setopt( $handle, CURLOPT_SSL_ENABLE_ALPN, false );
+			defined( 'CURLOPT_SSL_ENABLE_ALPN' ) && \curl_setopt( $handle, CURLOPT_SSL_ENABLE_ALPN, false ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- http_api_curl filter requires direct curl handle manipulation; wp_remote_get() is not applicable here.
 			return $handle;
 		}, 9999 );
 		$resp = wp_remote_request( $url, $wp_args );
@@ -322,16 +321,16 @@ class Cloudflare extends Base {
 
 		switch ($type) {
 			case self::TYPE_PURGE_ALL:
-				$this->purge_all_private();
+			$this->purge_all_private();
 				break;
 
 			case self::TYPE_GET_DEVMODE:
-				$this->get_devmode();
+            $this->get_devmode();
 				break;
 
 			case self::TYPE_SET_DEVMODE_ON:
 			case self::TYPE_SET_DEVMODE_OFF:
-				$this->set_devmode($type);
+            $this->set_devmode($type);
 				break;
 
 			default:

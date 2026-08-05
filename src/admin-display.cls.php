@@ -244,6 +244,7 @@ class Admin_Display extends Base {
 	 * Initialize the class and set its properties.
 	 *
 	 * @since 1.0.7
+	 * @since 7.9 Change admin bar items hook from wp_before_admin_bar_render to admin_bar_menu.
 	 */
 	public function __construct() {
 		$this->_pages = [
@@ -273,7 +274,7 @@ class Admin_Display extends Base {
 		$manage = ( $this->_is_multisite && $this->_is_network_admin ) ? 'manage_network_options' : 'manage_options';
 
 		if ( current_user_can( $manage ) ) {
-			add_action( 'wp_before_admin_bar_render', [ GUI::cls(), 'backend_shortcut' ] );
+			add_action( 'admin_bar_menu', [ GUI::cls(), 'backend_shortcut' ], 95 );
 
 			// `admin_notices` is after `admin_enqueue_scripts`.
 			add_action( $this->_is_network_admin ? 'network_admin_notices' : 'admin_notices', [ $this, 'display_messages' ] );
@@ -330,10 +331,10 @@ class Admin_Display extends Base {
 				},
 				1
 			);
-			// Add unified body class for settings page and top-level page
+			// Add unified body class for the top-level page
 			add_filter( 'admin_body_class', function ( $classes ) {
 				$screen = get_current_screen();
-				if ( $screen && in_array( $screen->id, [ 'settings_page_litespeed-cache-options', 'toplevel_page_litespeed' ], true ) ) {
+				if ( $screen && in_array( $screen->id, [ 'toplevel_page_litespeed' ], true ) ) {
 					$classes .= ' litespeed-cache_page_litespeed';
 				}
 				return $classes;
@@ -388,18 +389,6 @@ class Admin_Display extends Base {
 			);
 			$this->bind_page( $hook );
 		}
-
-		// sub menus under options.
-		$hook = add_options_page(
-			'LiteSpeed Cache',
-			'LiteSpeed Cache',
-			$capability,
-			'litespeed-cache-options',
-			function () {
-				$this->render_page( 'litespeed-cache' );
-			}
-		);
-		$this->bind_page( $hook );
 	}
 
 	/**
@@ -473,18 +462,20 @@ class Admin_Display extends Base {
 				$cdn_url = 'https://cdn.' . substr( $home_url, 2 );
 
 				wp_enqueue_script( Core::PLUGIN_NAME . '-cdn', LSWCP_PLUGIN_URL . 'assets/js/component.cdn.js', [], Core::VER, false );
-				$localize_data['lang']                         = [];
-				$localize_data['lang']['cdn_mapping_url']      = Lang::title( self::CDN_MAPPING_URL );
-				$localize_data['lang']['cdn_mapping_inc_img']  = Lang::title( self::CDN_MAPPING_INC_IMG );
-				$localize_data['lang']['cdn_mapping_inc_css']  = Lang::title( self::CDN_MAPPING_INC_CSS );
-				$localize_data['lang']['cdn_mapping_inc_js']   = Lang::title( self::CDN_MAPPING_INC_JS );
-				$localize_data['lang']['cdn_mapping_filetype'] = Lang::title( self::CDN_MAPPING_FILETYPE );
-				$localize_data['lang']['cdn_mapping_url_desc'] = sprintf( __( 'CDN URL to be used. For example, %s', 'litespeed-cache' ), '<code>' . esc_html( $cdn_url ) . '</code>' );
-				$localize_data['lang']['one_per_line']         = Doc::one_per_line( true );
-				$localize_data['lang']['cdn_mapping_remove']   = __( 'Remove CDN URL', 'litespeed-cache' );
-				$localize_data['lang']['add_cdn_mapping_row']  = __( 'Add new CDN URL', 'litespeed-cache' );
-				$localize_data['lang']['on']                   = __( 'ON', 'litespeed-cache' );
-				$localize_data['lang']['off']                  = __( 'OFF', 'litespeed-cache' );
+				$localize_data['lang']                             = [];
+				$localize_data['lang']['cdn_mapping_url']          = Lang::title( self::CDN_MAPPING_URL );
+				$localize_data['lang']['cdn_mapping_inc_img']      = Lang::title( self::CDN_MAPPING_INC_IMG );
+				$localize_data['lang']['cdn_mapping_inc_css']      = Lang::title( self::CDN_MAPPING_INC_CSS );
+				$localize_data['lang']['cdn_mapping_inc_js']       = Lang::title( self::CDN_MAPPING_INC_JS );
+				$localize_data['lang']['cdn_mapping_filetype']     = Lang::title( self::CDN_MAPPING_FILETYPE );
+				$localize_data['lang']['cdn_mapping_url_desc']     = sprintf( __( 'CDN URL to be used. For example, %s', 'litespeed-cache' ), '<code>' . esc_html( $cdn_url ) . '</code>' );
+				$localize_data['lang']['one_per_line']             = Doc::one_per_line( true );
+				$localize_data['lang']['cdn_mapping_remove']       = __( 'Remove CDN URL', 'litespeed-cache' );
+				$localize_data['lang']['add_cdn_mapping_row']      = __( 'Add new CDN URL', 'litespeed-cache' );
+				$localize_data['lang']['cdn_file_types_url']       = 'https://docs.litespeedtech.com/lscache/lscwp/cdn/#include-file-types';
+				$localize_data['lang']['cdn_file_types_link_text'] = __( 'Learn more about file types', 'litespeed-cache' );
+				$localize_data['lang']['on']                       = __( 'ON', 'litespeed-cache' );
+				$localize_data['lang']['off']                      = __( 'OFF', 'litespeed-cache' );
 				if ( empty( $localize_data['ids'] ) ) {
 					$localize_data['ids'] = [];
 				}
@@ -494,6 +485,10 @@ class Admin_Display extends Base {
 
 		// Load iziModal JS and CSS
 		$show_deactivation_modal = ( is_multisite() && ! is_network_admin() ) ? false : true;
+		// Once the survey has been answered on a prior deactivation, suppress the modal for good.
+		if ( file_exists( LITESPEED_STATIC_DIR . '/' . Activation::SURVEY_DONE_FLAG ) ) {
+			$show_deactivation_modal = false;
+		}
 		if ( $show_deactivation_modal && 'plugins.php' === $pagenow ) {
 			wp_enqueue_script( Core::PLUGIN_NAME . '-iziModal', LSWCP_PLUGIN_URL . 'assets/js/iziModal.min.js', [], Core::VER, true );
 			wp_enqueue_style( Core::PLUGIN_NAME . '-iziModal', LSWCP_PLUGIN_URL . 'assets/css/iziModal.min.css', [], Core::VER, 'all' );
@@ -1662,7 +1657,7 @@ class Admin_Display extends Base {
 
 		switch ( $type ) {
 			case self::TYPE_QC_HIDE_BANNER:
-				self::set_qc_hide_banner();
+            self::set_qc_hide_banner();
 				break;
 
 			default:

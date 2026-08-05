@@ -37,15 +37,7 @@ trait Img_Optm_Send {
 		// Load gathered images
 		if ( ! $this->_existed_src_list ) {
 			// To aavoid extra query when recalling this function
-			self::debug( 'SELECT src from img_optm table' );
-			if ( $this->__data->tb_exist( 'img_optm' ) ) {
-				$q = "SELECT src FROM `$this->_table_img_optm` WHERE post_id = %d";
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
-				$list = $wpdb->get_results( $wpdb->prepare( $q, $post_id ) );
-				foreach ( $list as $v ) {
-					$this->_existed_src_list[] = $post_id . '.' . $v->src;
-				}
-			}
+			self::debug( 'SELECT src from img_optming table' );
 			if ( $this->__data->tb_exist( 'img_optming' ) ) {
 				$q = "SELECT src FROM `$this->_table_img_optming` WHERE post_id = %d";
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
@@ -254,12 +246,10 @@ trait Img_Optm_Send {
 			self::debug( 'Images after duplicated: ' . count( $this->_img_in_queue ) );
 			$this->_filter_invalid_src();
 			self::debug( 'Images after invalid: ' . count( $this->_img_in_queue ) );
-			// Check w/ legacy imgoptm table, bypass finished images
-			$this->_filter_legacy_src();
 
 			$num_b = count( $this->_img_in_queue );
 			if ( $num_b !== $num_a ) {
-				self::debug( 'Images after filtered duplicated/invalid/legacy src: ' . $num_b );
+				self::debug( 'Images after filtered duplicated/invalid src: ' . $num_b );
 			}
 
 			// Save to DB
@@ -498,46 +488,6 @@ trait Img_Optm_Send {
 	}
 
 	/**
-	 * Filter legacy finished ones
-	 *
-	 * @since 5.4
-	 * @access private
-	 */
-	private function _filter_legacy_src() {
-		global $wpdb;
-
-		if ( ! $this->__data->tb_exist( 'img_optm' ) ) {
-			return;
-		}
-
-		if ( ! $this->_img_in_queue ) {
-			return;
-		}
-
-		$finished_ids = [];
-
-		Utility::compatibility();
-		$post_ids = array_unique( array_column( $this->_img_in_queue, 'pid' ) );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$list = $wpdb->get_results( "SELECT post_id FROM `$this->_table_img_optm` WHERE post_id in (" . implode( ',', $post_ids ) . ') GROUP BY post_id' );
-		foreach ( $list as $v ) {
-			$finished_ids[] = $v->post_id;
-		}
-
-		foreach ( $this->_img_in_queue as $k => $v ) {
-			if ( in_array( $v['pid'], $finished_ids, true ) ) {
-				self::debug( 'Legacy image optimized [pid] ' . $v['pid'] );
-				unset( $this->_img_in_queue[ $k ] );
-				continue;
-			}
-		}
-
-		// Drop all existing legacy records
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$wpdb->query( "DELETE FROM `$this->_table_img_optm` WHERE post_id in (" . implode( ',', $post_ids ) . ')' );
-	}
-
-	/**
 	 * Filter the invalid src before sending
 	 *
 	 * @since 3.0.8.3
@@ -605,10 +555,13 @@ trait Img_Optm_Send {
 				'md5' => $_img_info['md5'],
 			];
 			// Build the needed image types for request as we now support soft reset counter
+			$target_needed = false;
 			if ( $this->_format ) {
 				$target_file_path = $v->src . '.' . $this->_format;
 				if ( $this->__media->info( $target_file_path, $v->post_id ) ) {
 					$img[ 'optm_' . $this->_format ] = 0;
+				} else {
+					$target_needed = true;
 				}
 			}
 			if ( $this->conf( self::O_IMG_OPTM_ORI ) ) {
@@ -616,7 +569,17 @@ trait Img_Optm_Send {
 				$target_file_path = substr( $v->src, 0, -strlen( $extension ) ) . 'bk.' . $extension;
 				if ( $this->__media->info( $target_file_path, $v->post_id ) ) {
 					$img['optm_ori'] = 0;
+				} else {
+					$target_needed = true;
 				}
+			}
+
+			// Drop the queued row if all optimization targets already exist, mirroring the gather-time test in _append_img_queue()
+			if ( ! $target_needed ) {
+				self::debug( 'Drop queued image as all optimized files exist: pid ' . $v->post_id . ' ' . $v->src );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$wpdb->query( $wpdb->prepare( "DELETE FROM `$this->_table_img_optming` WHERE id=%d", $v->id ) );
+				continue;
 			}
 
 			$list[] = $img;

@@ -19,13 +19,6 @@ class GUI extends Base {
 	const LOG_TAG = '[GUI]';
 
 	/**
-	 * Counter for temporary HTML wrappers.
-	 *
-	 * @var int Counter for temporary HTML wrappers to remove from the buffer.
-	 */
-	private static $_clean_counter = 0;
-
-	/**
 	 * Promo display flag.
 	 *
 	 * @var bool Internal flag used by promo templates to decide whether to display.
@@ -110,7 +103,6 @@ class GUI extends Base {
 			add_action( 'wp_enqueue_scripts', [ $this, 'frontend_enqueue_style_public' ] );
 		}
 
-		// NOTE: this needs to be before optimizer to avoid wrapper being removed.
 		add_filter( 'litespeed_buffer_finalize', [ $this, 'finalize' ], 8 );
 	}
 
@@ -154,6 +146,25 @@ class GUI extends Base {
 			);
 			++$i;
 		}
+	}
+
+	/**
+	 * Open a settings tab layout panel with an id + default-tab marker so CSS paints the active tab before JS runs (no flash).
+	 *
+	 * @since 7.9
+	 *
+	 * @param array<string,string> $tabs The full tab list (key => label).
+	 * @param string               $key  The current tab key.
+	 * @return void
+	 */
+	public static function display_tab_layout( $tabs, $key ) {
+		global $plugin_page;
+		// Scope the cookie to the current admin page so different menus' tabs don't pollute each other.
+		$cookie_name = 'litespeed_tab_' . ( $plugin_page ? sanitize_key( $plugin_page ) : '' );
+		$cookie_tab  = isset( $_COOKIE[ $cookie_name ] ) ? sanitize_key( wp_unslash( $_COOKIE[ $cookie_name ] ) ) : '';
+		$keys        = array_keys( $tabs );
+		$default_tab = isset( $tabs[ $cookie_tab ] ) ? $cookie_tab : reset( $keys );
+		echo '<div data-litespeed-layout="' . esc_attr( $key ) . '" id="' . esc_attr( $key ) . '"' . ( $key === $default_tab ? ' data-litespeed-default-tab="1"' : '' ) . '>';
 	}
 
 	/**
@@ -536,7 +547,7 @@ class GUI extends Base {
 			LSWCP_PLUGIN_URL . 'assets/js/instant_click.min.js',
 			[],
 			Core::VER,
-			[ 
+			[
 				'strategy' => 'defer',
 				'in_footer' => true,
 			]
@@ -791,7 +802,7 @@ class GUI extends Base {
 				]
 			);
 		}
-    
+
 		if ( $this->has_cache_folder( 'vpi' ) ) {
 			$wp_admin_bar->add_menu(
 				[
@@ -824,13 +835,12 @@ class GUI extends Base {
 	 * Adds links to the admin bar so users can quickly manage/purge.
 	 *
 	 * @since 1.7.2 Moved from admin_display.cls to gui.cls; Renamed from `add_quick_purge` to `backend_shortcut`.
+	 * @since 7.9 Added $wp_admin_bar as parameter.
 	 * @access public
-	 * @global \WP_Admin_Bar $wp_admin_bar
+	 * @param \WP_Admin_Bar $wp_admin_bar Admin menu bar info.
 	 * @return void
 	 */
-	public function backend_shortcut() {
-		global $wp_admin_bar;
-
+	public function backend_shortcut( &$wp_admin_bar ) {
 		if ( defined( 'LITESPEED_DISABLE_ALL' ) && LITESPEED_DISABLE_ALL ) {
 			$wp_admin_bar->add_menu(
 				[
@@ -1011,7 +1021,7 @@ class GUI extends Base {
 				]
 			);
 		}
-    
+
     	if ( $this->has_cache_folder( 'vpi' ) ) {
 			$wp_admin_bar->add_menu(
 				[
@@ -1140,8 +1150,6 @@ class GUI extends Base {
 	 * @return string Filtered buffer.
 	 */
 	public function finalize( $buffer ) {
-		$buffer = $this->_clean_wrapper( $buffer );
-
 		// Maybe restore doc.ref.
 		if ( $this->conf( Base::O_GUEST ) && false !== strpos( $buffer, '<head>' ) && defined( 'LITESPEED_IS_HTML' ) ) {
 			$buffer = $this->_enqueue_guest_docref_js( $buffer );
@@ -1183,84 +1191,5 @@ class GUI extends Base {
 		$js_con            = str_replace( 'litespeed_url', esc_url( $guest_update_path ), $js_con );
 		$buffer            = preg_replace( '/<\/body>/', '<script data-no-optimize="1">' . $js_con . '</script></body>', $buffer, 1 );
 		return $buffer;
-	}
-
-	/**
-	 * Clean wrapper from buffer.
-	 *
-	 * @since 1.4
-	 * @since 1.6 Converted to private with adding prefix _.
-	 * @access private
-	 *
-	 * @param string $buffer HTML buffer.
-	 * @return string Cleaned buffer.
-	 */
-	private function _clean_wrapper( $buffer ) {
-		if ( self::$_clean_counter < 1 ) {
-			self::debug2( 'bypassed by no counter' );
-			return $buffer;
-		}
-
-		self::debug2( 'start cleaning counter ' . self::$_clean_counter );
-
-		for ( $i = 1; $i <= self::$_clean_counter; $i++ ) {
-			// If miss beginning.
-			$start = strpos( $buffer, self::clean_wrapper_begin( $i ) );
-			if ( false === $start ) {
-				$buffer = str_replace( self::clean_wrapper_end( $i ), '', $buffer );
-				self::debug2( "lost beginning wrapper $i" );
-				continue;
-			}
-
-			// If miss end.
-			$end_wrapper = self::clean_wrapper_end( $i );
-			$end         = strpos( $buffer, $end_wrapper );
-			if ( false === $end ) {
-				$buffer = str_replace( self::clean_wrapper_begin( $i ), '', $buffer );
-				self::debug2( "lost ending wrapper $i" );
-				continue;
-			}
-
-			// Now replace wrapped content.
-			$buffer = substr_replace( $buffer, '', $start, $end - $start + strlen( $end_wrapper ) );
-			self::debug2( "cleaned wrapper $i" );
-		}
-
-		return $buffer;
-	}
-
-	/**
-	 * Display a to-be-removed HTML wrapper (begin tag).
-	 *
-	 * @since 1.4
-	 * @access public
-	 *
-	 * @param int|false $counter Optional explicit wrapper id; auto-increment if false.
-	 * @return string Wrapper begin HTML comment.
-	 */
-	public static function clean_wrapper_begin( $counter = false ) {
-		if ( false === $counter ) {
-			++self::$_clean_counter;
-			$counter = self::$_clean_counter;
-			self::debug( 'clean wrapper ' . $counter . ' begin' );
-		}
-		return '<!-- LiteSpeed To Be Removed begin ' . $counter . ' -->';
-	}
-
-	/**
-	 * Display a to-be-removed HTML wrapper (end tag).
-	 *
-	 * @since 1.4
-	 * @access public
-	 *
-	 * @param int|false $counter Optional explicit wrapper id; use latest if false.
-	 * @return string Wrapper end HTML comment.
-	 */
-	public static function clean_wrapper_end( $counter = false ) {
-		if ( false === $counter ) {
-			$counter = self::$_clean_counter;
-			self::debug( 'clean wrapper ' . $counter . ' end' );
-		}
-		return '<!-- LiteSpeed To Be Removed end ' . $counter . ' -->';
 	}
 }

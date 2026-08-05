@@ -15,7 +15,7 @@ $this->form_action();
 
 <h3 class="litespeed-title-short">
 	<?php esc_html_e( 'Crawler General Settings', 'litespeed-cache' ); ?>
-	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/crawler/#general-settings-tab' ); ?>
+	<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/crawler/#settings-tab' ); ?>
 </h3>
 
 <table class="wp-list-table striped litespeed-table">
@@ -164,7 +164,7 @@ $this->form_action();
 				<div id="litespeed_crawler_simulation_div"></div>
 				<script type="text/babel">
 					ReactDOM.render(
-						<CrawlerSimulate list={ <?php echo wp_json_encode( $this->conf( $option_id ) ); ?> } />,
+						<CrawlerSimulate list={ <?php echo wp_json_encode( $this->conf( $option_id ), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ); ?> } />,
 						document.getElementById( 'litespeed_crawler_simulation_div' )
 					);
 				</script>
@@ -181,6 +181,7 @@ $this->form_action();
 						?>
 					</p>
 				</div>
+				<?php do_action( 'litespeed_crawler_cookies_after' ); ?>
 			</td>
 		</tr>
 	</tbody>

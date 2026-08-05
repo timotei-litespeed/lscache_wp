@@ -156,13 +156,6 @@ class Object_Cache extends Root {
 	private $_cfg_port;
 
 	/**
-	 * TTL in seconds.
-	 *
-	 * @var int
-	 */
-	private $_cfg_life;
-
-	/**
 	 * Use persistent connection.
 	 *
 	 * @var bool
@@ -196,13 +189,6 @@ class Object_Cache extends Root {
 	 * @var string
 	 */
 	private $_cfg_pswd;
-
-	/**
-	 * Default TTL in seconds.
-	 *
-	 * @var int
-	 */
-	private $_default_life = 360;
 
 	/**
 	 * 'Redis' or 'Memcached'.
@@ -246,7 +232,6 @@ class Object_Cache extends Root {
 			$this->_cfg_method            = $cfg[ Base::O_OBJECT_KIND ] ? true : false;
 			$this->_cfg_host              = $cfg[ Base::O_OBJECT_HOST ];
 			$this->_cfg_port              = $cfg[ Base::O_OBJECT_PORT ];
-			$this->_cfg_life              = $cfg[ Base::O_OBJECT_LIFE ];
 			$this->_cfg_persistent        = $cfg[ Base::O_OBJECT_PERSISTENT ];
 			$this->_cfg_admin             = $cfg[ Base::O_OBJECT_ADMIN ];
 			$this->_cfg_db                = $cfg[ Base::O_OBJECT_DB_ID ];
@@ -264,7 +249,6 @@ class Object_Cache extends Root {
 			$this->_cfg_method            = $this->conf( Base::O_OBJECT_KIND ) ? true : false;
 			$this->_cfg_host              = $this->conf( Base::O_OBJECT_HOST );
 			$this->_cfg_port              = $this->conf( Base::O_OBJECT_PORT );
-			$this->_cfg_life              = $this->conf( Base::O_OBJECT_LIFE );
 			$this->_cfg_persistent        = $this->conf( Base::O_OBJECT_PERSISTENT );
 			$this->_cfg_admin             = $this->conf( Base::O_OBJECT_ADMIN );
 			$this->_cfg_db                = $this->conf( Base::O_OBJECT_DB_ID );
@@ -286,7 +270,6 @@ class Object_Cache extends Root {
 				$this->_cfg_method            = ! empty( $cfg[ self::O_OBJECT_KIND ] ) ? $cfg[ self::O_OBJECT_KIND ] : false;
 				$this->_cfg_host              = $cfg[ self::O_OBJECT_HOST ];
 				$this->_cfg_port              = $cfg[ self::O_OBJECT_PORT ];
-				$this->_cfg_life              = ! empty( $cfg[ self::O_OBJECT_LIFE ] ) ? $cfg[ self::O_OBJECT_LIFE ] : $this->_default_life;
 				$this->_cfg_persistent        = ! empty( $cfg[ self::O_OBJECT_PERSISTENT ] ) ? $cfg[ self::O_OBJECT_PERSISTENT ] : false;
 				$this->_cfg_admin             = ! empty( $cfg[ self::O_OBJECT_ADMIN ] ) ? $cfg[ self::O_OBJECT_ADMIN ] : false;
 				$this->_cfg_db                = ! empty( $cfg[ self::O_OBJECT_DB_ID ] ) ? $cfg[ self::O_OBJECT_DB_ID ] : 0;
@@ -508,9 +491,15 @@ class Object_Cache extends Root {
 					}
 				}
 
-				if (defined('Redis::OPT_REPLY_LITERAL')) {
+				if ( defined( 'Redis::OPT_REPLY_LITERAL' ) ) {
 					$this->debug_oc( 'Redis set OPT_REPLY_LITERAL' );
-					$this->_conn->setOption(\Redis::OPT_REPLY_LITERAL, true);
+					$this->_conn->setOption( \Redis::OPT_REPLY_LITERAL, true );
+				}
+
+				// Enable phpredis-level zstd compression to cut Redis memory use. Payload-level only: do NOT set OPT_SERIALIZER, LSCWP already runs maybe_serialize upstream and a second serializer would corrupt reads.
+				if ( defined( 'Redis::OPT_COMPRESSION' ) && defined( 'Redis::COMPRESSION_ZSTD' ) ) {
+					$this->debug_oc( 'Redis set OPT_COMPRESSION to ZSTD' );
+					$this->_conn->setOption( \Redis::OPT_COMPRESSION, \Redis::COMPRESSION_ZSTD );
 				}
 
 				if ( $this->_cfg_db ) {
@@ -583,9 +572,15 @@ class Object_Cache extends Root {
 			// After muplugins_loaded, all wp_start_object_cache() calls are done — safe to call directly.
 			// Before that (early bootstrap), defer via hook to avoid multisite "Cannot redeclare" fatal.
 			if ( function_exists( 'did_action' ) && did_action( 'muplugins_loaded' ) ) {
-				litespeed_oc_disable_ext_cache();
+				wp_using_ext_object_cache( false );
 			} elseif ( function_exists( 'add_action' ) ) {
-				add_action( 'muplugins_loaded', 'litespeed_oc_disable_ext_cache', -999 );
+				add_action(
+					'muplugins_loaded',
+					function () {
+						wp_using_ext_object_cache( false );
+					},
+					-999
+				);
 			}
 
 			return false;
@@ -662,7 +657,16 @@ class Object_Cache extends Root {
 			return false;
 		}
 
-		$res = $this->_conn->get( $key );
+		if ( 'Redis' === $this->_oc_driver ) {
+			try {
+				$res = $this->_conn->get( $key );
+			} catch ( \RedisException $ex ) {
+				$this->_redis_error( $ex );
+				return false;
+			}
+		} else {
+			$res = $this->_conn->get( $key );
+		}
 
 		return $res;
 	}
@@ -705,9 +709,7 @@ class Object_Cache extends Root {
 				$res     = $this->_conn->set( $key, $data, $options );
 			} catch ( \RedisException $ex ) {
 				$res = false;
-				$msg = sprintf( __( 'Redis encountered a fatal error: %1$s (code: %2$d)', 'litespeed-cache' ), $ex->getMessage(), $ex->getCode() );
-				$this->debug_oc( $msg );
-				Admin_Display::error( $msg );
+				$this->_redis_error( $ex );
 			}
 		} else {
 			$res = $this->_conn->set( $key, $data, $ttl );
@@ -755,7 +757,12 @@ class Object_Cache extends Root {
 		}
 
 		if ( 'Redis' === $this->_oc_driver ) {
-			$res = $this->_conn->del( $key );
+			try {
+				$res = $this->_conn->del( $key );
+			} catch ( \RedisException $ex ) {
+				$this->_redis_error( $ex );
+				return false;
+			}
 		} else {
 			$res = $this->_conn->delete( $key );
 		}
@@ -784,13 +791,37 @@ class Object_Cache extends Root {
 		$this->debug_oc( 'flush!' );
 
 		if ( 'Redis' === $this->_oc_driver ) {
-			$res = $this->_conn->flushDb();
+			try {
+				$res = $this->_conn->flushDb();
+			} catch ( \RedisException $ex ) {
+				$this->_redis_error( $ex );
+				return false;
+			}
 		} else {
 			$res = $this->_conn->flush();
 			$this->_conn->resetServerList();
 		}
 
 		return $res;
+	}
+
+	/**
+	 * Log a Redis exception and surface it as an admin notice.
+	 *
+	 * @since 7.9
+	 * @access private
+	 *
+	 * @param \RedisException $ex Exception raised by phpredis.
+	 * @return void
+	 */
+	private function _redis_error( $ex ) {
+		$this->debug_oc( sprintf( 'Redis op failed: %s (code: %d)', $ex->getMessage(), $ex->getCode() ) );
+
+		$this->_cfg_enabled = false;
+
+		if ( did_action( 'plugins_loaded' ) ) {
+			Admin_Display::error( 'LiteSpeed Object Cache: Redis is unavailable. Check Redis server status (memory, connectivity) and the plugin debug log for details.' );
+		}
 	}
 
 	/**

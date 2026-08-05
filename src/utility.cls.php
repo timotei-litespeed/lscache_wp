@@ -271,7 +271,15 @@ class Utility extends Root {
 		$attrs  = [];
 		$parsed = wp_kses_hair( $str, self::_kses_protocols() );
 		foreach ( $parsed as $name => $data ) {
-			$attrs[ $name ] = $data['value'];
+			$value = $data['value'];
+			// Fix for WP 7.0+ wp_kses_hair() re-encodes character references (`&#038;` -> `&amp;`).
+			if ( '' !== $value
+				&& false === strpos( $str, $value )
+				&& preg_match( '#(?:^|\s)' . preg_quote( $name, '#' ) . '\s*=\s*(["\'])(.*?)\1#is', $str, $m )
+				&& html_entity_decode( $m[2], ENT_QUOTES | ENT_HTML5 ) === html_entity_decode( $value, ENT_QUOTES | ENT_HTML5 ) ) {
+				$value = $m[2];
+			}
+			$attrs[ $name ] = trim( $value );
 		}
 		return $attrs;
 	}
@@ -446,11 +454,24 @@ class Utility extends Root {
 	 * @return string Cleaned filename.
 	 */
 	public static function drop_webp( $filename ) {
-		if ( in_array( substr( $filename, -5 ), [ '.webp', '.avif' ], true ) ) {
-			$filename = substr( $filename, 0, -5 );
+		$path = (string) wp_parse_url( $filename, PHP_URL_PATH );
+		if ( ! $path ) {
+			$path = $filename;
 		}
 
-		return $filename;
+		$base_ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		if ( ! in_array( $base_ext, [ 'webp', 'avif' ], true ) ) {
+			return $filename;
+		}
+
+		// Only strip the optimized suffix when a real source image extension exists underneath, e.g. `.png.webp`. Native `image.webp` is returned unchanged.
+		$prev_ext = strtolower( pathinfo( pathinfo( $path, PATHINFO_FILENAME ), PATHINFO_EXTENSION ) );
+		if ( ! in_array( $prev_ext, [ 'png', 'jpg', 'jpeg', 'gif', 'bmp' ], true ) ) {
+			return $filename;
+		}
+
+		// Remove the `.webp`/`.avif` suffix only, preserving any query string or fragment (lazyload can pass raw cache-busted `<img src>` URLs).
+		return preg_replace( '~\.' . $base_ext . '(?=$|[?#])~i', '', $filename, 1 );
 	}
 
 	/**
