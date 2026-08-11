@@ -250,6 +250,12 @@ class CSS extends Minify {
 					continue;
 				}
 
+				// data: URIs and remote references are not local files. The dirname() prefix below hides
+				// their scheme from canImportFile(), so test the raw reference, as importStyles() does.
+				if ( ! $this->canImportByPath( $match[2] ) ) {
+					continue;
+				}
+
 				// get the path for the file that will be imported
 				$path = $match[2];
 				$path = dirname( $source ) . '/' . $path;
@@ -823,7 +829,9 @@ class CSS extends Minify {
 	 * @return bool
 	 */
 	protected function canImportByPath( $path ) {
-		return preg_match( '/^(data:|https?:|\\/)/', $path ) === 0;
+		// A leading # is an in-document reference such as url(#gradient), not a relative file: it must
+		// not be imported, and must not be rewritten when the stylesheet moves to another directory.
+		return preg_match( '/^(data:|https?:|\\/|#)/', $path ) === 0;
 	}
 
 	/**

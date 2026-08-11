@@ -456,22 +456,37 @@ abstract class Minify {
 	 * @return bool
 	 */
 	protected function canImportFile( $path ) {
+		// The data can be CSS/JS code instead of a path; keep it away from the filesystem calls below,
+		// as they log warnings (open_basedir, invalid path) with the whole source code in the message.
+		if ( '' === $path || strlen( $path ) >= PHP_MAXPATHLEN || preg_match( '/[\x00-\x1F\x7F{}]/', $path ) ) {
+			return false;
+		}
+
+		// The same asset is commonly referenced by many rules in one stylesheet, and each reference is
+		// checked twice (once by the caller, once by load()); memoize so the stat calls run once per path.
+		static $cache = array();
+		if ( isset( $cache[ $path ] ) ) {
+			return $cache[ $path ];
+		}
+
 		$parsed = parse_url( $path );
 		if (
 			// file is elsewhere
 			isset( $parsed['host'] )
 			// file responds to queries (may change, or need to bypass cache)
 			|| isset( $parsed['query'] )
+			// in-document reference such as url(#gradient), not a file
+			|| isset( $parsed['fragment'] )
 		) {
-			return false;
+			return $cache[ $path ] = false;
 		}
 
 		try {
-			return strlen( $path ) < PHP_MAXPATHLEN && @is_file( $path ) && is_readable( $path );
+			return $cache[ $path ] = @is_file( $path ) && @is_readable( $path );
 		}
 		// catch openbasedir exceptions which are not caught by @ on is_file()
 		catch ( \Exception $e ) {
-			return false;
+			return $cache[ $path ] = false;
 		}
 	}
 
