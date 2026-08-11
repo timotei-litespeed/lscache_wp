@@ -502,8 +502,9 @@ class Object_Cache extends Root {
 					$this->_conn->setOption( \Redis::OPT_COMPRESSION, \Redis::COMPRESSION_ZSTD );
 				}
 
-				if ( $this->_cfg_db ) {
-					if ( ! $this->_conn->select( $this->_cfg_db ) ) {
+				// Persistent connections are pooled by host/port only, so a reused socket may still sit on another site's DB. Always select explicitly in that case, even for DB 0.
+				if ( $this->_cfg_db || $this->_cfg_persistent ) {
+					if ( ! $this->_conn->select( (int) $this->_cfg_db ) ) {
 						$this->debug_oc( 'Database ID is invalid' );
 						$failed = true;
 					}
