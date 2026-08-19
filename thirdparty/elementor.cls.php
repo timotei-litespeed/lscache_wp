@@ -15,10 +15,32 @@ namespace LiteSpeed\Thirdparty;
 
 defined('WPINC') || exit();
 
+use LiteSpeed\Debug2;
+
 /**
  * Handles Elementor compatibility.
  */
 class Elementor {
+
+	/**
+	 * Hooks that mean an Elementor cache clear came from a plugin/core lifecycle event, not an edit.
+	 *
+	 * LiteSpeed already governs these through its own `Purge All On Upgrade` setting, so purging here
+	 * would override that opt-out and flush the whole site on every plugin activate/deactivate/update.
+	 *
+	 * Filterable through `litespeed_3rd_elementor_lifecycle_hooks`.
+	 *
+	 * @since 7.9.1
+	 * @var array
+	 */
+	const LIFECYCLE_HOOKS = [
+		'activated_plugin',
+		'deactivated_plugin',
+		'upgrader_process_complete',
+		'automatic_updates_complete',
+		'admin_action_do-plugin-upgrade',
+		'_core_updated_successfully',
+	];
 
 	/**
 	 * Preload hooks and disable caching features during Elementor edit/preview flows.
@@ -85,10 +107,41 @@ class Elementor {
 	/**
 	 * Purge LiteSpeed Cache when Elementor regenerates its CSS & Data.
 	 *
+	 * Elementor fires `elementor/core/files/clear_cache` both for editorial changes (kit save, settings
+	 * update, manual regeneration) and for plugin/core lifecycle events. Only the former warrants a
+	 * purge; the latter is left to LiteSpeed's own `Purge All On Upgrade` setting.
+	 *
 	 * @since 2.9.8.8
+	 * @since 7.9.1 Skip regenerations triggered by a plugin/core lifecycle event.
 	 * @return void
 	 */
 	public static function regenerate_litespeed_cache() {
+		$lifecycle_hook = self::_lifecycle_hook();
+		$purge_all      = apply_filters( 'litespeed_3rd_elementor_purge_all', '' === $lifecycle_hook, $lifecycle_hook );
+
+		if ( ! $purge_all ) {
+			Debug2::debug( '[3rd] Elementor regenerate CSS & Data purge all skipped [trigger] ' . ( '' !== $lifecycle_hook ? $lifecycle_hook : 'filter' ) );
+			return;
+		}
+
 		do_action( 'litespeed_purge_all', 'Elementor - Regenerate CSS & Data' );
+	}
+
+	/**
+	 * Get the lifecycle hook currently running in the action stack, if any.
+	 *
+	 * @since 7.9.1
+	 * @return string The running lifecycle hook, or an empty string when none is running.
+	 */
+	private static function _lifecycle_hook() {
+		$hooks = apply_filters( 'litespeed_3rd_elementor_lifecycle_hooks', self::LIFECYCLE_HOOKS );
+
+		foreach ( (array) $hooks as $hook ) {
+			if ( $hook && doing_action( $hook ) ) {
+				return $hook;
+			}
+		}
+
+		return '';
 	}
 }
