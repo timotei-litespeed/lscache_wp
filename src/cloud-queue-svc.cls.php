@@ -22,8 +22,9 @@ defined( 'WPINC' ) || exit();
  */
 abstract class Cloud_Queue_Svc extends Base {
 
-	const TYPE_GEN     = 'gen';
-	const TYPE_CLEAR_Q = 'clear_q';
+	const TYPE_GEN      = 'gen';
+	const TYPE_CLEAR_Q  = 'clear_q';
+	const TYPE_GEN_ITEM = 'gen_item';
 
 	/**
 	 * In-memory working queue.
@@ -239,12 +240,31 @@ abstract class Cloud_Queue_Svc extends Base {
 				return;
 			}
 
+			if ( 'not_started' === $res ) {
+				// Nothing is in flight for this item, so the deadline that keeps the
+				// pull cron registered is stale — and a pull is the one run that can
+				// never build it. Clearing the deadline hands the row back to the push
+				// cron, which submits it on the next tick.
+				unset( $this->_summary[ $next_run_key ] );
+				self::save_summary();
+				self::debug( 'Cleared ' . $type . ' try_later deadline; queued item will be resubmitted' );
+
+				if ( ! $keep_going ) {
+					return;
+				}
+				continue;
+			}
+
 			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
 				$ttl                             = (int) $res['try_later'];
 				$next_run_time                   = time() + $ttl;
 				$this->_summary[ $next_run_key ] = $next_run_time;
 				self::save_summary();
 				self::debug( 'Set next ' . $type . ' cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
+
+				// The deadline is service-wide, so continuing would contradict the flag
+				// just set and keep pushing at a service that asked to back off.
+				return;
 			}
 
 			if ( ! $keep_going ) {
@@ -258,7 +278,7 @@ abstract class Cloud_Queue_Svc extends Base {
 	 *
 	 * @param string $queue_k Queue key.
 	 * @param array  $v       Queue item.
-	 * @return bool|string|array True on success, 'out_of_quota'/'svc_hot' to abort, [try_later=>ttl] to throttle, false on error.
+	 * @return bool|string|array True on success, 'out_of_quota'/'svc_hot' to abort, [try_later=>ttl] to throttle, 'not_started' when nothing is pending for the URL, false on error.
 	 */
 	private function _send_req( $queue_k, $v ) {
 		$svc = $this->_svc_const();
@@ -287,13 +307,25 @@ abstract class Cloud_Queue_Svc extends Base {
 
 		if ( ! empty( $json['try_later'] ) ) {
 			$ttl = (int) $json['try_later'];
-			self::debug( 'Server requested try later: ' . $ttl . ' seconds' );
-			return [ 'try_later' => $ttl ];
+			// The service answers 'queued' when it just accepted this job, and omits
+			// status entirely when the URL was already in flight and nothing new was
+			// sent. Carry it through so callers can tell the two apart.
+			$status = isset( $json['status'] ) ? $json['status'] : '';
+			self::debug( 'Server requested try later: ' . $ttl . ' seconds [status] ' . $status );
+			return [
+				'try_later' => $ttl,
+				'status'    => $status,
+			];
 		}
 
+		// `_res` is validated and stripped upstream, so an array reaching here is a
+		// success response. No `try_later` and no `status` therefore means the
+		// service holds nothing for this URL and started nothing: there is no build
+		// to wait for. That is not a failure, and dropping the row would lose the
+		// URL until a visitor happened to queue it again.
 		if ( empty( $json['status'] ) ) {
-			self::debug( '❌ No status in response' );
-			return false;
+			self::debug( 'Nothing pending for [k] ' . $queue_k . ' — keeping it for the next push' );
+			return 'not_started';
 		}
 
 		$data_key = $this->_data_key();
@@ -328,6 +360,86 @@ abstract class Cloud_Queue_Svc extends Base {
 	}
 
 	/**
+	 * Run a single queue item on demand.
+	 *
+	 * Used by the admin UI to optimize one queued URL without processing the
+	 * whole queue, e.g. when the auto request cron is off.
+	 *
+	 * @since 8.0
+	 *
+	 * @return void
+	 */
+	public function gen_item() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$queue_k = ! empty( $_GET['q_k'] ) ? sanitize_text_field( wp_unslash( $_GET['q_k'] ) ) : '';
+		if ( ! $queue_k ) {
+			self::debug( 'gen_item: no queue key specified' );
+			return;
+		}
+
+		$type         = $this->_svc_id();
+		$this->_queue = $this->load_queue( $type );
+
+		if ( ! isset( $this->_queue[ $queue_k ] ) ) {
+			self::debug( 'gen_item: queue item not found [k] ' . $queue_k );
+			Admin_Display::error( __( 'The queue item no longer exists.', 'litespeed-cache' ) );
+			return;
+		}
+
+		$v = $this->_queue[ $queue_k ];
+		if ( ! $this->_valid_queue_item( $queue_k, $v ) ) {
+			self::debug( 'gen_item: invalid queue item, dropping [k] ' . $queue_k );
+			unset( $this->_queue[ $queue_k ] );
+			$this->save_queue( $type, $this->_queue );
+			return;
+		}
+
+		self::debug( 'gen_item [k] ' . $queue_k );
+		$res = $this->_send_req( $queue_k, $v );
+
+		// A finished or failed request drops its row like the cron loop does. Anything
+		// still in flight stays queued: 'try_later' is a build in progress, while
+		// 'out_of_quota'/'svc_hot' short-circuit before the POST ever happens.
+		if ( true === $res ) {
+			Admin_Display::success( __( 'Optimized one queued URL.', 'litespeed-cache' ) );
+		} elseif ( 'out_of_quota' === $res ) {
+			Admin_Display::error( __( 'No available credit for this service. The URL is still queued.', 'litespeed-cache' ) );
+		} elseif ( 'svc_hot' === $res ) {
+			Admin_Display::error( __( 'The service is busy. Please try again shortly.', 'litespeed-cache' ) );
+		} elseif ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
+			// Still building, whether this request handed the job over ('queued') or
+			// found it already in flight. Either way the row must survive: it is the
+			// only handle the next pass has to collect the finished build, and dropping
+			// it here strands a result that the service has already paid to produce.
+			$ttl = (int) $res['try_later'];
+			$this->_summary[ $this->_next_run_after_key() ] = time() + $ttl;
+			self::save_summary();
+
+			self::debug( 'gen_item try_later ' . $ttl . 's, kept [k] ' . $queue_k . ' [status] ' . $res['status'] );
+			Admin_Display::note( sprintf( __( 'This URL is being optimized on the server. It stays in the queue and the result will be collected in about %d second(s).', 'litespeed-cache' ), $ttl ) );
+		} elseif ( 'not_started' === $res ) {
+			// The service holds nothing for this URL and started nothing, so the
+			// deadline keeping the pull cron registered is stale. Clear it and keep
+			// the row: the push cron submits it on the next tick.
+			unset( $this->_summary[ $this->_next_run_after_key() ] );
+			self::save_summary();
+
+			self::debug( 'gen_item nothing pending, kept [k] ' . $queue_k );
+			Admin_Display::note( __( 'This URL is not being optimized yet. It stays in the queue and will be submitted shortly.', 'litespeed-cache' ) );
+		} else {
+			// Anything else means the request went out but came back unusable: a
+			// transport error, a response with no status, or _save_result() rejecting
+			// the payload. Cloud::post() can also yield null when node detection
+			// fails, so this is a catch-all rather than a strict false check —
+			// otherwise that case would silently leave the row with no notice.
+			$this->_queue = $this->load_queue( $type );
+			unset( $this->_queue[ $queue_k ] );
+			$this->save_queue( $type, $this->_queue );
+			Admin_Display::error( __( 'Failed to optimize the queued URL, it has been removed from the queue. Please check the debug log.', 'litespeed-cache' ) );
+		}
+	}
+
+	/**
 	 * Admin action handler dispatched by Router.
 	 *
 	 * @return void
@@ -342,6 +454,10 @@ abstract class Cloud_Queue_Svc extends Base {
 
 			case static::TYPE_CLEAR_Q:
             $this->clear_q( $this->_svc_id() );
+				break;
+
+			case static::TYPE_GEN_ITEM:
+            $this->gen_item();
 				break;
 
 			default:

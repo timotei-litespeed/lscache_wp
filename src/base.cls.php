@@ -569,6 +569,10 @@ class Base extends Root {
 		self::O_QC_NAMESERVERS => '',
 		self::O_QC_CNAME => '',
 
+		self::O_OPTIMAX => false,
+		self::O_OPTIMAX_CRON => false,
+		self::O_OPTIMAX_EXC => [],
+
 		self::DEBUG_TMP_DISABLE => 0,
 	];
 
@@ -932,6 +936,7 @@ class Base extends Root {
 	protected function _conf_filter( $id ) {
 		$filters = [
 			self::O_MEDIA_LAZY_EXC => 'uri',
+			self::O_OPTIMAX_EXC => 'uri',
 			self::O_DEBUG_INC => 'relative',
 			self::O_DEBUG_EXC => 'relative',
 			self::O_MEDIA_LAZY_URI_EXC => 'relative',

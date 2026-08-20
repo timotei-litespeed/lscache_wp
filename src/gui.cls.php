@@ -820,6 +820,18 @@ class GUI extends Base {
 			);
 		}
 
+		if ( $this->has_cache_folder( 'optimax' ) ) {
+			$wp_admin_bar->add_menu(
+				[
+					'parent' => 'litespeed-menu',
+					'id'     => 'litespeed-purge-optimax',
+					'title'  => __( 'Purge All', 'litespeed-cache' ) . ' - OptimaX',
+					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_OPTIMAX, false, '_ori' ),
+					'meta'   => [ 'tabindex' => '0' ],
+				]
+			);
+		}
+
 		do_action( 'litespeed_frontend_shortcut' );
 	}
 
@@ -1034,6 +1046,18 @@ class GUI extends Base {
 					'id'     => 'litespeed-purge-avatar',
 					'title'  => esc_html__( 'Purge All', 'litespeed-cache' ) . ' - ' . esc_html__( 'Gravatar Cache', 'litespeed-cache' ),
 					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_AVATAR ),
+					'meta'   => [ 'tabindex' => '0' ],
+				]
+			);
+		}
+
+		if ( $this->has_cache_folder( 'optimax' ) ) {
+			$wp_admin_bar->add_menu(
+				[
+					'parent' => 'litespeed-menu',
+					'id'     => 'litespeed-purge-optimax',
+					'title'  => __( 'Purge All', 'litespeed-cache' ) . ' - OptimaX',
+					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_OPTIMAX ),
 					'meta'   => [ 'tabindex' => '0' ],
 				]
 			);

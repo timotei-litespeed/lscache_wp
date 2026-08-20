@@ -44,10 +44,14 @@ class Task extends Root {
 			'name' => 'litespeed_task_vpi',
 			'hook' => 'LiteSpeed\VPI::cron',
 		],
-		Base::O_OPTIMAX => [
+		Base::O_OPTIMAX_CRON => [
 			'name' => 'litespeed_task_optimax',
-			'hook' => 'LiteSpeed\Optimax::cron',
+			'hook' => 'LiteSpeed\Optimax::cron_push',
 		],
+		Base::O_OPTIMAX => [
+			'name' => 'litespeed_task_optimax_pull',
+			'hook' => 'LiteSpeed\Optimax::cron_pull',
+		], // always collect finished builds
 		Base::O_MEDIA_PLACEHOLDER_RESP_ASYNC => [
 			'name' => 'litespeed_task_lqip',
 			'hook' => 'LiteSpeed\Placeholder::cron',
@@ -118,6 +122,12 @@ class Task extends Root {
 				if ( ! Img_Optm::need_pull() ) {
 					continue;
 				}
+			} elseif ( Base::O_OPTIMAX === $id ) {
+				// Pull runs on outstanding work, not on the cron switch, but still
+				// requires the feature itself to be on.
+				if ( ! $this->conf( $id ) || ! Optimax::need_pull() ) {
+					continue;
+				}
 			} elseif ( ! $this->conf( $id ) ) {
 				if ( ! $guest_optm || ! in_array( $id, self::$_guest_options, true ) ) {
 					continue;
@@ -126,9 +136,9 @@ class Task extends Root {
 
 			// Skip cron registration if waiting for try_later timeout
 			$try_later_map = [
-				Base::O_OPTM_UCSS     => [ 'UCSS', 'ucss_next_run_after' ],
+				Base::O_OPTM_UCSS      => [ 'UCSS', 'ucss_next_run_after' ],
 				Base::O_OPTM_CSS_ASYNC => [ 'CSS', 'ccss_next_run_after' ],
-				Base::O_OPTIMAX       => [ 'Optimax', 'ox_next_run_after' ],
+				Base::O_OPTIMAX_CRON   => [ 'Optimax', 'ox_next_run_after' ],
 			];
 			if ( isset( $try_later_map[ $id ] ) ) {
 				list( $cls_name, $summary_key ) = $try_later_map[ $id ];
@@ -310,7 +320,7 @@ class Task extends Root {
 	public function lscache_cron_filter( $schedules ) {
 		if ( ! array_key_exists( self::FILTER, $schedules ) ) {
 			$schedules[ self::FILTER ] = [
-				'interval' => 900,
+				'interval' => 60,  // TODO: temporary added OX to speed up cron runs, change back to 900 (15min) after testing
 				'display'  => __( 'Every 15 Minutes', 'litespeed-cache' ),
 			];
 		}
