@@ -729,8 +729,10 @@ class CSS extends Minify {
 		// classes, like `:nth-child(3+2n)`
 		// not in things like `calc(3px + 2px)`, shorthands like `3px -2px`, or
 		// selectors like `div.weird- p`
+		// the `of S` syntax (e.g. `:nth-child(1 of .class)`) needs its whitespace
+		// preserved, so those are skipped entirely
 		$pseudos = array( 'nth-child', 'nth-last-child', 'nth-last-of-type', 'nth-of-type' );
-		$content = preg_replace( '/:(' . implode( '|', $pseudos ) . ')\(\s*([+-]?)\s*(.+?)\s*([+-]?)\s*(.*?)\s*\)/', ':$1($2$3$4$5)', $content );
+		$content = preg_replace( '/:(' . implode( '|', $pseudos ) . ')\((?![^)]*\bof\b)\s*([+-]?)\s*(.+?)\s*([+-]?)\s*(.*?)\s*\)/', ':$1($2$3$4$5)', $content );
 
 		// remove semicolon/whitespace followed by closing bracket
 		$content = str_replace( ';}', '}', $content );
