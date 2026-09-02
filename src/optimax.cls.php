@@ -135,6 +135,26 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
+	 * Reject malformed legacy queue rows before dispatch.
+	 *
+	 * @since 7.9.1
+	 *
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool
+	 */
+	protected function _valid_queue_item( $queue_k, $v ) {
+		foreach ( [ 'url', 'user_agent', 'url_tag', 'vary' ] as $key ) {
+			if ( ! is_array( $v ) || ! isset( $v[ $key ] ) || ! is_string( $v[ $key ] ) ) {
+				return false;
+			}
+		}
+
+		return '' !== $queue_k && '' !== $v['url'] && '' !== $v['url_tag'] &&
+			( empty( $v['is_nextgen'] ) || in_array( $v['is_nextgen'], [ 'webp', 'avif' ], true ) );
+	}
+
+	/**
 	 * Build the request body for Cloud::post.
 	 *
 	 * @param string $queue_k Queue key.
@@ -456,30 +476,49 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return void
 	 */
 	private function _save_imgs( $imgs ) {
+		if ( ! is_array( $imgs ) ) {
+			return false;
+		}
+
+		$hooks = [
+			'webp' => 'litespeed_img_pull_webp',
+			'avif' => 'litespeed_img_pull_avif',
+		];
+
 		foreach ( $imgs as $img ) {
-			if ( empty( $img['src'] ) ) {
+			if ( empty( $img['src'] ) || ! is_string( $img['src'] ) ) {
 				continue;
 			}
 
-			// Convert src to local file path
-			$local = Utility::is_internal_file( $img['src'] );
+			// Resolve through the attachment first, so the file we write is the one
+			// WordPress actually serves, and we learn the post it belongs to.
+			$local = $this->_image_target( $img );
 			if ( ! $local ) {
-				self::debug( 'Skip external img: ' . $img['src'] );
+				self::debug( 'Skip Optimax image entry without a WordPress image target: ' . $img['src'] );
 				continue;
 			}
 
 			$local_path = $local[0];
+			$row        = $local[2];
 
-			// Fetch and save WebP
-			if ( ! empty( $img['webp_url'] ) ) {
-				$this->_fetch_img( $img['webp_url'], $local_path . '.webp' );
-			}
+			foreach ( $hooks as $type => $hook ) {
+				if ( empty( $img[ $type . '_url' ] ) ) {
+					continue;
+				}
 
-			// Fetch and save AVIF
-			if ( ! empty( $img['avif_url'] ) ) {
-				$this->_fetch_img( $img['avif_url'], $local_path . '.avif' );
+				$target = $local_path . '.' . $type;
+				if ( ! $this->_fetch_img( $img[ $type . '_url' ], $target ) ) {
+					continue;
+				}
+
+				// Let Image Optimization record the file it did not fetch itself.
+				if ( $row ) {
+					do_action( $hook, $row, $target );
+				}
 			}
 		}
+
+		return true;
 	}
 
 	/**
@@ -578,6 +617,36 @@ class Optimax extends Cloud_Queue_Svc {
 		Purge::add( 'JS.' . md5( $queue_k ) );
 
 		return LITESPEED_STATIC_URL . $filepath_prefix . $filecon_md5 . '.js';
+	}
+
+	/**
+	 * Resolve an image to a local target and optional attachment hook context.
+	 *
+	 * @param array $img Cloud image entry.
+	 * @return array|false `[ path, bound root, hook row ]`, or false.
+	 */
+	private function _image_target( $img ) {
+		$post_id = attachment_url_to_postid( $img['src'] );
+		if ( 0 < $post_id ) {
+			$uploads  = wp_upload_dir();
+			$base     = ! empty( $uploads['basedir'] ) ? trailingslashit( wp_normalize_path( $uploads['basedir'] ) ) : '';
+			$attached = get_attached_file( $post_id, true );
+			$attached = is_string( $attached ) ? wp_normalize_path( $attached ) : '';
+			$url_path = wp_parse_url( $img['src'], PHP_URL_PATH );
+			$filename = is_string( $url_path ) ? rawurldecode( basename( $url_path ) ) : '';
+			if ( $base && 0 === strpos( $attached, $base ) && $filename ) {
+				$dir   = dirname( substr( $attached, strlen( $base ) ) );
+				$short = ( '.' === $dir ? '' : trailingslashit( $dir ) ) . $filename;
+				$local = Img::normalize_cloud_path( $short ) === $short ? Img::local_file( apply_filters( 'litespeed_realpath', $base . $short ) ) : false;
+				if ( $local && ( file_exists( $local[0] ) || $this->cls( 'Media' )->info( $short, $post_id ) ) ) {
+					return [ $local[0], $local[1], (object) [ 'post_id' => $post_id, 'src' => $short ] ];
+				}
+			}
+		}
+
+		$local = Utility::is_internal_file( $img['src'] );
+		$local = $local && ! empty( $local[0] ) ? Img::local_file( $local[0] ) : false;
+		return $local ? [ $local[0], $local[1], false ] : false;
 	}
 
 	/**
