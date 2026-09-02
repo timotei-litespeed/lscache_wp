@@ -119,6 +119,11 @@ trait Img_Optm_Send {
 	public function new_req() {
 		global $wpdb;
 
+		if ( ! $this->_format && ! $this->conf( self::O_IMG_OPTM_ORI ) ) {
+			Admin_Display::error( __( 'Please enable Optimize Original Images or WebP/AVIF before sending an optimization request.', 'litespeed-cache' ) );
+			return;
+		}
+
 		// check if is running
 		if ( ! empty( $this->_summary['is_running'] ) && time() - $this->_summary['is_running'] < apply_filters( 'litespeed_imgoptm_new_req_interval', 3600 ) ) {
 			self::debug( 'The previous req was in 3600s.' );
@@ -541,7 +546,7 @@ trait Img_Optm_Send {
 
 		$list = [];
 		foreach ( $_img_in_queue as $v ) {
-			$_img_info = $this->__media->info( $v->src, $v->post_id );
+			$_img_info = $this->_local_pull_file( $v ) ? $this->__media->info( $v->src, $v->post_id ) : false;
 			// If record is invalid, remove from img_optming table
 			if ( empty( $_img_info['url'] ) || empty( $_img_info['md5'] ) ) {
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared

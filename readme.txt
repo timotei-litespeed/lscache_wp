@@ -3,8 +3,8 @@ Contributors: LiteSpeedTech
 Tags: caching, optimize, performance, pagespeed, seo, image optimize, object cache, redis, memcached, database cleaner
 Requires at least: 6.0
 Requires PHP: 7.4
-Tested up to: 7.0
-Stable tag: 7.9
+Tested up to: 7.1
+Stable tag: 7.9.1
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl.html
 
@@ -253,16 +253,38 @@ The vast majority of plugins and themes are compatible with LiteSpeed Cache. The
 
 = How can I report security bugs? =
 
-You can report security bugs through the Patchstack Vulnerability Disclosure Program. The Patchstack team help validate, triage and handle any security vulnerabilities. [Report a security vulnerability.](https://patchstack.com/database/vdp/litespeed-cache)
+Report a suspected vulnerability through either channel:
+
+* The [Patchstack Vulnerability Disclosure Program](https://patchstack.com/database/vdp/litespeed-cache), where the Patchstack team help validate and triage the report.
+* Email `support@litespeedtech.com`, or open a private ticket from the LiteSpeed Client Area.
+
+Please don't report a suspected vulnerability in this support forum. Reporting details are in `security.md` in the plugin folder.
 
 == Changelog ==
 
 = 8.0 - Coming soon 2026 =
 * 🌱**OptiMax** OptiMax to maximize the page score.
+* **CDN** Kept the saved Cloudflare zone when the API lookup fails after a plugin update. (nathaningram)
 
-= 7.9.1 - Aug 18 2026 =
+= 7.9.1 - Sep 1 2026 =
 * **Core** Aligned the runtime PHP and WordPress guards with the published minimum requirements.
+* **ESI** Prevented Guest Mode pages from creating ESI subrequests when an integration registered its ESI hooks before Guest Mode detection.
+* **ESI** Bound ESI execution to the signed query payload so POST parameters cannot replace validated block data.
 * **Image Optimize** Fixed a fatal error when the WordPress HTTP fallback could not download an image.
+* **Image Optimize** The image optimization callback is now verified by a QUIC.cloud signature instead of the source IP address, and every notified download location is validated before use.
+* **Image Optimize** Successful callback retries now ignore rows already returned to the raw queue without blocking other live rows in the same batch.
+* **Image Optimize** An image whose queued file can no longer be verified against its attachment is now dropped instead of being sent back for optimization, so it can no longer request optimization again on every cron run.
+* **Image Optimize** Bounded and expired pending image-completion notifications without keeping the image pull cron running indefinitely.
+* **Image Optimize** Optimized image downloads now use the WordPress safe HTTP API, refuse redirects, and validate each response before publication.
+* **Image Optimize** Image pull notices now distinguish download, remote-service, and local-save failures.
+* **Cache** Do Not Cache, Private Cached, Force Cache, Optimization and Lazy Load URI rules now compare the same query string against both spellings of a REST route, so a rule naming a query argument, or anchored to an exact address, applies to plain-permalink sites the same way it does elsewhere.
+* **Optimization** Remote images, avatars, localized JavaScript, CSS/JS cache files, and Guest Mode lists now share bounded streamed downloads and atomic file publication.
+* **VPI** Fixed queue-key collisions on plain-permalink sites and enforced the configured queue limit.
+* **Cloud** Every QUIC.cloud callback — CDN status, error domains, IP validation and ping — is now verified by a QUIC.cloud signature rather than by the source IP address, and the source IP allow list has been removed. Activation, echo, account-link and CDN-enable signatures are now bound to their purpose and site.
+* **Cloud** Added stable callback error codes so QUIC.cloud can distinguish retryable timestamp, storage and replay-cache-capacity failures from terminal authorization failures.
+* **REST** Removed the legacy `check_img` diagnostic endpoint.
+* **API** Removed the `litespeed_is_from_cloud` filter. Each callback is now authorized by its own signature instead of by a request-wide flag.
+* **API** Added the `litespeed_static_dir_htaccess` filter so hosts can remove unsupported directives from the generated static-directory protection file. (vvvllll #1043)
 * **Avatar** Prevented failed on-demand avatar downloads from redirecting visitors to the WordPress admin area.
 
 = 7.9 - Aug 5 2026 =
