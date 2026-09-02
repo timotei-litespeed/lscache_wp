@@ -73,6 +73,10 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return mixed
 	 */
 	public static function cron_pull() {
+		if ( ! static::cls()->conf( self::O_OPTIMAX ) ) {
+			return;
+		}
+
 		self::debug( 'OX CRON PULL started' );
 
 		// Raise it on the singleton that cron() will reuse, so _build_payload() sees it.
@@ -93,6 +97,13 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return mixed
 	 */
 	public static function cron_push() {
+		// The trigger is keyed on the cron switch alone, so a leftover queue would
+		// otherwise keep being sent after the feature itself was turned off — paying
+		// for builds that serve() then refuses to serve.
+		if ( ! static::cls()->conf( self::O_OPTIMAX ) ) {
+			return;
+		}
+
 		self::debug( 'OX CRON PUSH started' );
 
 		return static::cron();
@@ -232,12 +243,7 @@ class Optimax extends Cloud_Queue_Svc {
 			$this->_save_imgs( $ox['imgs'] );
 		}
 
-		// 6. Save viewport images as VPI's own record.
-		if ( ! empty( $ox['vpi'] ) ) {
-			$this->_save_vpi( $ox['vpi'], $v, $is_mobile );
-		}
-
-		// 7. Evict the cached copy of this page.
+		// 6. Evict the cached copy of this page.
 		//
 		// The tag purge in _save_con() only reaches a cached page that carried the
 		// OptiMax tag when it was stored, and that tag is only added on the queueing
@@ -245,7 +251,7 @@ class Optimax extends Cloud_Queue_Svc {
 		// from the page cache, so PHP never runs, serve() is never called, and the
 		// build just saved stays invisible. Purging by URL evicts the entry whatever
 		// tags it holds, so the next visitor regenerates the page and gets it.
-		$this->cls( 'Purge' )->purge_url( $v['url'], false, true );
+		$this->cls( 'Purge' )->purge_url( $v['url'], true, true );
 
 		return true;
 	}
@@ -258,8 +264,27 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param string $request_url Current request URL.
 	 * @return string The URL tag.
 	 */
+	/**
+	 * Whether this 404 should share one build with every other 404.
+	 *
+	 * On by default: a 404 is normally the same page whatever was requested, so
+	 * one build serves all of them and unbounded bot traffic cannot spend a build
+	 * per bad URL. Sites whose 404 is genuinely dynamic can opt out:
+	 *
+	 *     add_filter( 'litespeed_ox_404_one_page', '__return_false' );
+	 *
+	 * and then get a build per URL and vary, like any other page.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	private static function _is_shared_404() {
+		return is_404() && apply_filters( 'litespeed_ox_404_one_page', true );
+	}
+
 	public static function get_url_tag( $request_url ) {
-		if ( is_404() ) {
+		if ( self::_is_shared_404() ) {
 			return '404';
 		}
 
@@ -308,6 +333,14 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
+		// Logged-out pages only. With Cache Logged-in Users on, a logged-in view is
+		// cacheable and would otherwise be queued once per user vary — builds nobody
+		// else can reuse. Optimizing the public page is the whole point.
+		if ( Router::is_logged_in() ) {
+			self::debug( 'serve() bypassed: logged in' );
+			return false;
+		}
+
 		$request_url = $this->_build_request_url();
 
 		// Check URI exclusions
@@ -320,8 +353,9 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
 		$url_tag         = self::get_url_tag( $request_url );
-		$vary            = $this->cls( 'Vary' )->finalize_full_varies();
-		$filename        = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
+		// The shared tag alone still leaves one build per vary, so collapse that too.
+		$vary     = self::_is_shared_404() ? '' : $this->cls( 'Vary' )->finalize_full_varies();
+		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
 
 		if ( $filename && $this->_bundle_intact( $url_tag, $vary ) ) {
 			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.html';
@@ -350,17 +384,9 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
-		// VPI keeps its result as post meta, so the post this URL resolves to has
-		// to be captured here — the same derivation VPI itself uses, including the
-		// blog-home case. Recorded even when it is 0: OptiMax optimizes URLs that
-		// are not single posts, and _save_result() decides what to do with that.
-		$home_id = (int) get_option( 'page_for_posts' );
-		$post_id = ( $home_id > 0 && is_home() ) ? $home_id : (int) get_the_ID();
-
 		$queue_k                  = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
 		$this->_queue[ $queue_k ] = [
 			'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
-			'post_id'    => $post_id,
 			'user_agent' => substr( $ua, 0, 200 ),
 			'is_mobile'  => $this->_separate_mobile(),
 			'is_nextgen' => $this->cls( 'Media' )->webp_support(),
@@ -376,38 +402,6 @@ class Optimax extends Cloud_Queue_Svc {
 		Core::comment( 'QUIC.cloud Optimax in queue' );
 
 		return false;
-	}
-
-	/**
-	 * Store OptiMax's viewport images as a VPI record.
-	 *
-	 * OptiMax runs VPI itself and has already baked the result into the HTML as
-	 * preload and priority hints, so this is not what makes the page fast — it
-	 * keeps the plugin's own VPI list in step, so the metabox shows the same
-	 * images and a later standalone VPI run does not start from nothing.
-	 *
-	 * VPI stores per post, and OptiMax optimizes URLs that are not single posts
-	 * (archives, the shop, 404s). Those have no meta to write, so they are
-	 * skipped rather than guessed at.
-	 *
-	 * @since 8.0
-	 *
-	 * @param array $vpi       Viewport image basenames.
-	 * @param array $v         Queue item.
-	 * @param bool  $is_mobile Whether this build is the mobile variant.
-	 * @return void
-	 */
-	private function _save_vpi( $vpi, $v, $is_mobile ) {
-		$post_id = ! empty( $v['post_id'] ) ? (int) $v['post_id'] : 0;
-		if ( ! $post_id ) {
-			self::debug( 'VPI not saved: no post id for ' . ( isset( $v['url'] ) ? $v['url'] : '' ) );
-			return;
-		}
-
-		$name = $is_mobile ? VPI::POST_META_MOBILE : VPI::POST_META;
-		$this->cls( 'Metabox' )->save( $post_id, $name, array_map( 'urldecode', (array) $vpi ) );
-
-		self::debug( 'Saved vpi [count] ' . count( (array) $vpi ) . ' [post_id] ' . $post_id );
 	}
 
 	/**
@@ -430,12 +424,12 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return bool
 	 */
 	private function _bundle_intact( $url_tag, $vary ) {
-		$js_filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'js' );
+		$js_filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax_js' );
 		if ( ! $js_filename ) {
 			return true;
 		}
 
-		$js_file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'js' ) . $js_filename . '.js';
+		$js_file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . $js_filename . '.js';
 		if ( file_exists( $js_file ) ) {
 			return true;
 		}
@@ -599,7 +593,7 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 
 		$filecon_md5     = md5( $con );
-		$filepath_prefix = $this->_build_filepath_prefix( 'js' );
+		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
 		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.js';
 
 		$ok = File::save( $static_file, $con, true );
@@ -612,7 +606,7 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 		self::debug( 'Saved js: ' . $static_file );
 
-		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'js', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
+		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'optimax_js', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
 
 		Purge::add( 'JS.' . md5( $queue_k ) );
 
@@ -626,13 +620,24 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return array|false `[ path, bound root, hook row ]`, or false.
 	 */
 	private function _image_target( $img ) {
-		$post_id = attachment_url_to_postid( $img['src'] );
+		// OptiMax reports `src` relative to the site root (`/wp-content/uploads/...`).
+		// Both resolvers below want an absolute URL: attachment_url_to_postid()
+		// returns 0 for a bare path, and is_internal_file() falls back to
+		// $_SERVER['DOCUMENT_ROOT'], which the cron request that saves the result
+		// may not have. Without this every image is skipped as having no WordPress
+		// target and nothing is ever downloaded.
+		$src = isset( $img['src'] ) ? (string) $img['src'] : '';
+		if ( '' !== $src && '/' === substr( $src, 0, 1 ) && '//' !== substr( $src, 0, 2 ) ) {
+			$src = home_url( $src );
+		}
+
+		$post_id = attachment_url_to_postid( $src );
 		if ( 0 < $post_id ) {
 			$uploads  = wp_upload_dir();
 			$base     = ! empty( $uploads['basedir'] ) ? trailingslashit( wp_normalize_path( $uploads['basedir'] ) ) : '';
 			$attached = get_attached_file( $post_id, true );
 			$attached = is_string( $attached ) ? wp_normalize_path( $attached ) : '';
-			$url_path = wp_parse_url( $img['src'], PHP_URL_PATH );
+			$url_path = wp_parse_url( $src, PHP_URL_PATH );
 			$filename = is_string( $url_path ) ? rawurldecode( basename( $url_path ) ) : '';
 			if ( $base && 0 === strpos( $attached, $base ) && $filename ) {
 				$dir   = dirname( substr( $attached, strlen( $base ) ) );
@@ -644,7 +649,7 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		}
 
-		$local = Utility::is_internal_file( $img['src'] );
+		$local = Utility::is_internal_file( $src );
 		$local = $local && ! empty( $local[0] ) ? Img::local_file( $local[0] ) : false;
 		return $local ? [ $local[0], $local[1], false ] : false;
 	}

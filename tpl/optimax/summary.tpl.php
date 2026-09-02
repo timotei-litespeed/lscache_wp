@@ -30,71 +30,71 @@ $next_gen       = '<code class="litespeed-success">' . $this->cls( 'Media' )->ne
 				<h4><?php esc_html_e( 'OptimaX is disabled', 'litespeed-cache' ); ?></h4>
 				<p><?php esc_html_e( 'Turn on OptimaX in the OptimaX Settings tab to start queueing pages.', 'litespeed-cache' ); ?></p>
 			</div>
-		<?php endif; ?>
-
-		<?php if ( empty( $queue ) ) : ?>
-			<div class="litespeed-callout notice notice-info inline">
-				<h4><?php esc_html_e( 'The OptimaX queue is empty.', 'litespeed-cache' ); ?></h4>
-				<p><?php esc_html_e( 'Visit a page on the frontend to add it to the queue.', 'litespeed-cache' ); ?></p>
-			</div>
 		<?php else : ?>
-			<div class="litespeed-callout notice notice-warning inline">
-				<h4>
-					<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'OptimaX' ); ?> ( <?php echo esc_html( count( $queue ) ); ?> )
-					<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right" data-litespeed-cfm="<?php esc_attr_e( 'Are you sure you want to clear the OptimaX queue?', 'litespeed-cache' ); ?>"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
-				</h4>
-				<p>
-					<?php
-					$i = 0;
-					foreach ( $queue as $queue_key => $queue_val ) :
-						if ( $i++ > 20 ) :
-							echo '...';
-							break;
-						endif;
-						if ( ! is_array( $queue_val ) ) {
-							continue;
-						}
-						if ( ! empty( $queue_val['_status'] ) ) {
-							echo '<span class="litespeed-success">';
-						}
-						echo esc_html( isset( $queue_val['url'] ) ? $queue_val['url'] : '' );
-						if ( ! empty( $queue_val['_status'] ) ) {
-							echo '</span>';
-						}
-						$pos = strpos( $queue_key, ' ' );
-						if ( $pos ) {
-							echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
-						}
-						if ( ! empty( $queue_val['is_mobile'] ) ) {
-							echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-						}
-						if ( ! empty( $queue_val['is_nextgen'] ) ) {
-							echo ' ' . wp_kses_post( $next_gen );
-						}
-						if ( $ox_service_hot ) {
-							echo ' <button class="button button-small" disabled>' . esc_html__( 'Run', 'litespeed-cache' ) . '</button>';
-						} else {
-							$run_url = Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_GEN_ITEM, false, null, array( 'q_k' => $queue_key ) );
-							echo ' <a href="' . esc_url( $run_url ) . '" class="button button-small litespeed-btn-success">' . esc_html__( 'Run', 'litespeed-cache' ) . '</a>';
-						}
-						echo '<br />';
-					endforeach;
-					?>
-				</p>
-			</div>
-
-			<?php if ( $ox_service_hot ) : ?>
-				<button class="button button-secondary" disabled>
-					<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'OptimaX' ); ?>
-					- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ox_service_hot ) ); ?>
-				</button>
+			<?php if ( empty( $queue ) ) : ?>
+				<div class="litespeed-callout notice notice-info inline">
+					<h4><?php esc_html_e( 'The OptimaX queue is empty.', 'litespeed-cache' ); ?></h4>
+					<p><?php esc_html_e( 'Visit a page on the frontend to add it to the queue.', 'litespeed-cache' ); ?></p>
+				</div>
 			<?php else : ?>
-				<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
-					<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'OptimaX' ); ?>
-				</a>
-			<?php endif; ?>
+				<div class="litespeed-callout notice notice-warning inline">
+					<h4>
+						<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'OptimaX' ); ?> ( <?php echo esc_html( count( $queue ) ); ?> )
+						<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right" data-litespeed-cfm="<?php esc_attr_e( 'Are you sure you want to clear the OptimaX queue?', 'litespeed-cache' ); ?>"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
+					</h4>
+					<p>
+						<?php
+						$i = 0;
+						foreach ( $queue as $queue_key => $queue_val ) :
+							if ( $i++ > 20 ) :
+								echo '...';
+								break;
+							endif;
+							if ( ! is_array( $queue_val ) ) {
+								continue;
+							}
+							if ( ! empty( $queue_val['_status'] ) ) {
+								echo '<span class="litespeed-success">';
+							}
+							echo esc_html( isset( $queue_val['url'] ) ? $queue_val['url'] : '' );
+							if ( ! empty( $queue_val['_status'] ) ) {
+								echo '</span>';
+							}
+							$pos = strpos( $queue_key, ' ' );
+							if ( $pos ) {
+								echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
+							}
+							if ( ! empty( $queue_val['is_mobile'] ) ) {
+								echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
+							}
+							if ( ! empty( $queue_val['is_nextgen'] ) ) {
+								echo ' ' . wp_kses_post( $next_gen );
+							}
+							if ( $ox_service_hot ) {
+								echo ' <button class="button button-small" disabled>' . esc_html__( 'Run', 'litespeed-cache' ) . '</button>';
+							} else {
+								$run_url = Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_GEN_ITEM, false, null, array( 'q_k' => md5( $queue_key ) ) );
+								echo ' <a href="' . esc_url( $run_url ) . '" class="button button-small litespeed-btn-success">' . esc_html__( 'Run', 'litespeed-cache' ) . '</a>';
+							}
+							echo '<br />';
+						endforeach;
+						?>
+					</p>
+				</div>
 
-			<?php Doc::queue_issues(); ?>
+				<?php if ( $ox_service_hot ) : ?>
+					<button class="button button-secondary" disabled>
+						<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'OptimaX' ); ?>
+						- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ox_service_hot ) ); ?>
+					</button>
+				<?php else : ?>
+					<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
+						<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'OptimaX' ); ?>
+					</a>
+				<?php endif; ?>
+
+				<?php Doc::queue_issues(); ?>
+			<?php endif; ?>
 		<?php endif; ?>
 	</div>
 

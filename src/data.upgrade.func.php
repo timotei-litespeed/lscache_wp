@@ -199,3 +199,27 @@ function litespeed_update_7_9() {
 		$wpdb->query( "DROP TABLE IF EXISTS `{$tb}`" );
 	}
 }
+
+/**
+ * Document the OptimaX file type on the url_file table.
+ *
+ * The `type` column comment listed css=1,js=2,ccss=3,ucss=4 only. OptimaX has
+ * been writing type 5 rows since 8.0, so upgraded sites carried a comment that
+ * no longer described their own data. Fresh installs get the full list from
+ * src/data_structure/url_file.sql; this brings existing ones in line.
+ *
+ * Comment-only: the column definition itself is unchanged, and nothing in the
+ * plugin reads the comment — Data::$_url_file_types is the source of truth.
+ *
+ * @since 8.0
+ */
+function litespeed_update_8_0() {
+	global $wpdb;
+	Debug2::debug( '[Data] Update url_file type comment' );
+
+	$tb = $wpdb->prefix . 'litespeed_url_file';
+	if ( litespeed_table_exists( $tb ) ) {
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
+		$wpdb->query( "ALTER TABLE `{$tb}` MODIFY `type` tinyint(4) NOT NULL COMMENT 'css=1,js=2,ccss=3,ucss=4,optimax=5,optimax_js=6'" );
+	}
+}

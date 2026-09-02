@@ -85,6 +85,21 @@ $presets = array(
 			esc_html__( 'A QUIC.cloud connection is required to use this preset. Enables the maximum level of optimizations for improved page speed scores.', 'litespeed-cache' ),
 		),
 	),
+	'optimax' => array(
+		'title'  => esc_html__( 'OptimaX', 'litespeed-cache' ),
+		'body'   => array(
+			esc_html__( 'OptimaX', 'litespeed-cache' ),
+			esc_html__( 'OptimaX Cron', 'litespeed-cache' ),
+			esc_html__( 'Cache', 'litespeed-cache' ),
+			esc_html__( 'Browser Cache', 'litespeed-cache' ),
+			esc_html__( 'Next-Gen Image Format', 'litespeed-cache' ),
+			esc_html__( 'Add Missing Sizes', 'litespeed-cache' ),
+		),
+		'footer' => array(
+			esc_html__( 'The baseline OptimaX needs: caching on, so optimized pages can be stored and served, and next-gen images, so the images OptimaX returns are actually used.', 'litespeed-cache' ),
+			esc_html__( 'A QUIC.cloud connection is required to use this preset. Only these four settings are changed; everything else is left as you have it.', 'litespeed-cache' ),
+		),
+	),
 );
 ?>
 

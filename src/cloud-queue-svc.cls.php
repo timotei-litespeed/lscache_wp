@@ -309,6 +309,19 @@ abstract class Cloud_Queue_Svc extends Base {
 			// sent. Carry it through so callers can tell the two apart.
 			$status = isset( $json['status'] ) ? $json['status'] : '';
 			self::debug( 'Server requested try later: ' . $ttl . ' seconds [status] ' . $status );
+
+			if ( 'queued' === $status ) {
+				// Record that this row was handed over and is building, so the queue
+				// list can tell it apart from rows still waiting to be sent. Reload
+				// first to avoid clobbering concurrent writes.
+				$type         = $this->_svc_id();
+				$this->_queue = $this->load_queue( $type );
+				if ( isset( $this->_queue[ $queue_k ] ) ) {
+					$this->_queue[ $queue_k ]['_status'] = 'queued';
+					$this->save_queue( $type, $this->_queue );
+				}
+			}
+
 			return [
 				'try_later' => $ttl,
 				'status'    => $status,
@@ -368,8 +381,8 @@ abstract class Cloud_Queue_Svc extends Base {
 	 */
 	public function gen_item() {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$queue_k = ! empty( $_GET['q_k'] ) ? sanitize_text_field( wp_unslash( $_GET['q_k'] ) ) : '';
-		if ( ! $queue_k ) {
+		$hash = ! empty( $_GET['q_k'] ) ? sanitize_text_field( wp_unslash( $_GET['q_k'] ) ) : '';
+		if ( ! $hash ) {
 			self::debug( 'gen_item: no queue key specified' );
 			return;
 		}
@@ -377,8 +390,20 @@ abstract class Cloud_Queue_Svc extends Base {
 		$type         = $this->_svc_id();
 		$this->_queue = $this->load_queue( $type );
 
-		if ( ! isset( $this->_queue[ $queue_k ] ) ) {
-			self::debug( 'gen_item: queue item not found [k] ' . $queue_k );
+		// Match on a hash of the key, never the key itself. A queue key is
+		// "<vary> <url_tag>", so an empty vary leaves a leading space that
+		// sanitize_text_field() strips, and the raw key never survives the round
+		// trip — which silently broke Run for every guest-vary row.
+		$queue_k = '';
+		foreach ( array_keys( $this->_queue ) as $k ) {
+			if ( md5( $k ) === $hash ) {
+				$queue_k = $k;
+				break;
+			}
+		}
+
+		if ( '' === $queue_k ) {
+			self::debug( 'gen_item: queue item not found [hash] ' . $hash );
 			Admin_Display::error( __( 'The queue item no longer exists.', 'litespeed-cache' ) );
 			return;
 		}

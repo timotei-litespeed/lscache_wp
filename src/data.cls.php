@@ -30,6 +30,7 @@ class Data extends Root {
 		'7.0.1-b1'  => [ 'litespeed_update_7_0_1' ],
 		'7.7-b28'   => [ 'litespeed_update_7_7' ],
 		'7.9-b5'    => [ 'litespeed_update_7_9' ],
+		'8.0-b1'    => [ 'litespeed_update_8_0' ],
 	];
 
 	/**
@@ -52,6 +53,10 @@ class Data extends Root {
 		'ccss'    => 3,
 		'ucss'    => 4,
 		'optimax' => 5,
+		// OptimaX's JS bundle. Kept out of the shared 'js' type so a CSS/JS purge,
+		// which wipes the whole js folder, cannot delete a bundle the stored OptimaX
+		// HTML still points at.
+		'optimax_js' => 6,
 	];
 
 	/** Table: image optimization working queue. */
@@ -535,7 +540,7 @@ class Data extends Root {
 			$list = $wpdb->get_results( $q, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 			if ( $list ) {
 				foreach ( $list as $v ) {
-					$ext         = 'optimax' === $file_type ? 'html' : ( 'js' === $file_type ? 'js' : 'css' );
+					$ext         = 'optimax' === $file_type ? 'html' : ( in_array( $file_type, [ 'js', 'optimax_js' ], true ) ? 'js' : 'css' );
 					$file_to_del = trailingslashit( $path ) . $v['filename'] . '.' . $ext;
 					if ( file_exists( $file_to_del ) ) {
 						self::debug( 'Delete expired unused file: ' . $file_to_del );
