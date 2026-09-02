@@ -340,6 +340,8 @@ class Purge extends Base {
 
 		$this->cls( 'Optimax' )->rm_cache_folder( 'optimax' );
 		$this->cls( 'Data' )->url_file_clean( 'optimax' );
+		$this->cls( 'Data' )->url_file_clean( 'optimax_js' );
+		$this->cls( 'Data' )->url_file_clean( 'optimax_ucss' );
 		$this->clear_q( 'optimax', true );
 
 		if ( ! $silence ) {

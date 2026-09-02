@@ -22,6 +22,24 @@ class Optimax extends Cloud_Queue_Svc {
 	const LOG_TAG = '🚀';
 
 	/**
+	 * Registered image sizes the owner excluded from optimization.
+	 *
+	 * Null until first read — the empty array is a legitimate value.
+	 *
+	 * @var array|null
+	 */
+	private $_sizes_skipped = null;
+
+	/**
+	 * The optimized image sizes, in the shape the payload carries them.
+	 *
+	 * Null until first built — the empty array is a legitimate value.
+	 *
+	 * @var array|null
+	 */
+	private $_img_sizes = null;
+
+	/**
 	 * Whether this run may only collect finished builds.
 	 *
 	 * Carried into the request payload so the service returns a cached result or
@@ -73,6 +91,10 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return mixed
 	 */
 	public static function cron_pull() {
+		if ( ! static::cls()->conf( self::O_OPTIMAX ) ) {
+			return;
+		}
+
 		self::debug( 'OX CRON PULL started' );
 
 		// Raise it on the singleton that cron() will reuse, so _build_payload() sees it.
@@ -93,6 +115,13 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return mixed
 	 */
 	public static function cron_push() {
+		// The trigger is keyed on the cron switch alone, so a leftover queue would
+		// otherwise keep being sent after the feature itself was turned off — paying
+		// for builds that serve() then refuses to serve.
+		if ( ! static::cls()->conf( self::O_OPTIMAX ) ) {
+			return;
+		}
+
 		self::debug( 'OX CRON PUSH started' );
 
 		return static::cron();
@@ -170,6 +199,16 @@ class Optimax extends Cloud_Queue_Svc {
 			'is_nextgen' => ! empty( $v['is_nextgen'] ) ? $v['is_nextgen'] : '',
 		];
 
+		// The image sizes this site optimizes, so the service can give an `<img>` that
+		// lacks one a srcset naming files WordPress has already generated. Only the
+		// sizes are sent, never per-image data: every filename follows from the size
+		// box, the crop flag and the image's own dimensions, all of which the service
+		// already has.
+		$img_sizes = $this->_img_sizes();
+		if ( $img_sizes ) {
+			$data['img_sizes'] = $img_sizes;
+		}
+
 		// A collection run must not create work: the service answers with a cached
 		// result or try_later, and never queues a new build.
 		if ( $this->_pull_only ) {
@@ -214,6 +253,18 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		}
 
+		// 1b. Same for the used CSS. The service links it as an external stylesheet
+		// now instead of inlining it, so the delivered HTML carries a worker URL that
+		// is both swept a couple of days later and plain http — which an https site's
+		// browser blocks as mixed content long before the sweep. Pull it and repoint
+		// the HTML before it is stored, or the page ships with no styles at all.
+		if ( ! empty( $ox['css_url'] ) ) {
+			$local_css_url = $this->_save_css( $ox['css_url'], $queue_k, $v, $is_mobile, $is_nextgen );
+			if ( $local_css_url ) {
+				$ox['html'] = str_replace( $ox['css_url'], $local_css_url, $ox['html'] );
+			}
+		}
+
 		// 2. Save HTML.
 		$this->_save_con( $ox['html'], $queue_k, $is_mobile, $is_nextgen, $v );
 
@@ -232,12 +283,7 @@ class Optimax extends Cloud_Queue_Svc {
 			$this->_save_imgs( $ox['imgs'] );
 		}
 
-		// 6. Save viewport images as VPI's own record.
-		if ( ! empty( $ox['vpi'] ) ) {
-			$this->_save_vpi( $ox['vpi'], $v, $is_mobile );
-		}
-
-		// 7. Evict the cached copy of this page.
+		// 6. Evict the cached copy of this page.
 		//
 		// The tag purge in _save_con() only reaches a cached page that carried the
 		// OptiMax tag when it was stored, and that tag is only added on the queueing
@@ -245,7 +291,7 @@ class Optimax extends Cloud_Queue_Svc {
 		// from the page cache, so PHP never runs, serve() is never called, and the
 		// build just saved stays invisible. Purging by URL evicts the entry whatever
 		// tags it holds, so the next visitor regenerates the page and gets it.
-		$this->cls( 'Purge' )->purge_url( $v['url'], false, true );
+		$this->cls( 'Purge' )->purge_url( $v['url'], true, true );
 
 		return true;
 	}
@@ -258,8 +304,27 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param string $request_url Current request URL.
 	 * @return string The URL tag.
 	 */
+	/**
+	 * Whether this 404 should share one build with every other 404.
+	 *
+	 * On by default: a 404 is normally the same page whatever was requested, so
+	 * one build serves all of them and unbounded bot traffic cannot spend a build
+	 * per bad URL. Sites whose 404 is genuinely dynamic can opt out:
+	 *
+	 *     add_filter( 'litespeed_ox_404_one_page', '__return_false' );
+	 *
+	 * and then get a build per URL and vary, like any other page.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	private static function _is_shared_404() {
+		return is_404() && apply_filters( 'litespeed_ox_404_one_page', true );
+	}
+
 	public static function get_url_tag( $request_url ) {
-		if ( is_404() ) {
+		if ( self::_is_shared_404() ) {
 			return '404';
 		}
 
@@ -308,6 +373,14 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
+		// Logged-out pages only. With Cache Logged-in Users on, a logged-in view is
+		// cacheable and would otherwise be queued once per user vary — builds nobody
+		// else can reuse. Optimizing the public page is the whole point.
+		if ( Router::is_logged_in() ) {
+			self::debug( 'serve() bypassed: logged in' );
+			return false;
+		}
+
 		$request_url = $this->_build_request_url();
 
 		// Check URI exclusions
@@ -320,10 +393,11 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
 		$url_tag         = self::get_url_tag( $request_url );
-		$vary            = $this->cls( 'Vary' )->finalize_full_varies();
-		$filename        = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
+		// The shared tag alone still leaves one build per vary, so collapse that too.
+		$vary     = self::_is_shared_404() ? '' : $this->cls( 'Vary' )->finalize_full_varies();
+		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
 
-		if ( $filename && $this->_bundle_intact( $url_tag, $vary ) ) {
+		if ( $filename && $this->_assets_intact( $url_tag, $vary ) ) {
 			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.html';
 
 			if ( file_exists( $static_file ) ) {
@@ -350,17 +424,9 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
-		// VPI keeps its result as post meta, so the post this URL resolves to has
-		// to be captured here — the same derivation VPI itself uses, including the
-		// blog-home case. Recorded even when it is 0: OptiMax optimizes URLs that
-		// are not single posts, and _save_result() decides what to do with that.
-		$home_id = (int) get_option( 'page_for_posts' );
-		$post_id = ( $home_id > 0 && is_home() ) ? $home_id : (int) get_the_ID();
-
 		$queue_k                  = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
 		$this->_queue[ $queue_k ] = [
 			'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
-			'post_id'    => $post_id,
 			'user_agent' => substr( $ua, 0, 200 ),
 			'is_mobile'  => $this->_separate_mobile(),
 			'is_nextgen' => $this->cls( 'Media' )->webp_support(),
@@ -379,49 +445,36 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Store OptiMax's viewport images as a VPI record.
+	 * Whether every sidecar file this URL's stored HTML points at still exists.
 	 *
-	 * OptiMax runs VPI itself and has already baked the result into the HTML as
-	 * preload and priority hints, so this is not what makes the page fast — it
-	 * keeps the plugin's own VPI list in step, so the metabox shows the same
-	 * images and a later standalone VPI run does not start from nothing.
+	 * The HTML and its assets are separate files with separate lifetimes: a purge
+	 * can empty `wp-content/litespeed/optimax/`, and `Data::save_url()` deletes a
+	 * file once its mapping row has been expired long enough — which reaches a
+	 * file two URLs share, because the name is the md5 of the content and two
+	 * pages with identical CSS get one file and two rows. Either way the OptiMax
+	 * mapping can outlive the file it names, and the stored HTML then ships a
+	 * reference that 404s. Treating that as a miss costs one rebuild and keeps
+	 * the page working; serving it costs the visitor the asset.
 	 *
-	 * VPI stores per post, and OptiMax optimizes URLs that are not single posts
-	 * (archives, the shop, 404s). Those have no meta to write, so they are
-	 * skipped rather than guessed at.
+	 * The stylesheet is the more damaging of the two. OptiMax strips the page's
+	 * own `<link rel=stylesheet>` tags, so apart from the small inlined critical
+	 * CSS the used CSS is the page's only styling — a missing bundle mutes the
+	 * scripts, a missing stylesheet leaves the page unstyled below the fold.
 	 *
-	 * @since 8.0
+	 * A URL with no mapping for one of these types is intact for that type, not
+	 * broken, and the two ways that happens are both harmless:
 	 *
-	 * @param array $vpi       Viewport image basenames.
-	 * @param array $v         Queue item.
-	 * @param bool  $is_mobile Whether this build is the mobile variant.
-	 * @return void
-	 */
-	private function _save_vpi( $vpi, $v, $is_mobile ) {
-		$post_id = ! empty( $v['post_id'] ) ? (int) $v['post_id'] : 0;
-		if ( ! $post_id ) {
-			self::debug( 'VPI not saved: no post id for ' . ( isset( $v['url'] ) ? $v['url'] : '' ) );
-			return;
-		}
-
-		$name = $is_mobile ? VPI::POST_META_MOBILE : VPI::POST_META;
-		$this->cls( 'Metabox' )->save( $post_id, $name, array_map( 'urldecode', (array) $vpi ) );
-
-		self::debug( 'Saved vpi [count] ' . count( (array) $vpi ) . ' [post_id] ' . $post_id );
-	}
-
-	/**
-	 * Whether the combined JS bundle this URL's stored HTML points at still exists.
+	 * - the service never sent that asset — the used CSS arrives inlined in a
+	 *   `<style id="optimax_ucss">` block unless the external-stylesheet flag is
+	 *   on, and such HTML references no CSS file at all;
+	 * - `_save_css()`/`_save_js()` failed, so `save_url()` was never reached and
+	 *   the HTML still carries the service's own URL, which the browser can
+	 *   still fetch.
 	 *
-	 * The HTML and the bundle are separate files with separate lifetimes: a purge
-	 * can take `wp-content/litespeed/js/` while the OptiMax mapping survives, and
-	 * the stored HTML then ships a `<script>` whose src 404s — every delayed
-	 * script on the page silently never runs. Treating that as a miss costs one
-	 * rebuild and keeps the page working; serving it costs the page its JS.
-	 *
-	 * A URL with no bundle mapping never had one inlined (or `_save_js()` failed
-	 * and left the remote URL in place, which the browser can still fetch), so
-	 * that case is intact by definition.
+	 * Only `save_url()` writes these rows, and only after the fetch and the local
+	 * write have both succeeded, so a mapping means the HTML was repointed at
+	 * that local file. Mapping present + file gone is therefore the one state
+	 * worth refusing to serve, and it is exactly what this checks.
 	 *
 	 * @since 8.0
 	 *
@@ -429,20 +482,29 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param string $vary    Vary string.
 	 * @return bool
 	 */
-	private function _bundle_intact( $url_tag, $vary ) {
-		$js_filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'js' );
-		if ( ! $js_filename ) {
-			return true;
+	private function _assets_intact( $url_tag, $vary ) {
+		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
+
+		foreach ( [
+			'optimax_js'   => 'js',
+			'optimax_ucss' => 'css',
+		] as $file_type => $ext ) {
+			$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, $file_type );
+			if ( ! $filename ) {
+				continue;
+			}
+
+			$file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.' . $ext;
+			if ( file_exists( $file ) ) {
+				continue;
+			}
+
+			self::debug( 'serve() bypassed: ' . $file_type . ' missing ' . $file );
+
+			return false;
 		}
 
-		$js_file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'js' ) . $js_filename . '.js';
-		if ( file_exists( $js_file ) ) {
-			return true;
-		}
-
-		self::debug( 'serve() bypassed: js bundle missing ' . $js_file );
-
-		return false;
+		return true;
 	}
 
 	/**
@@ -519,6 +581,126 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Image sizes the owner has excluded, honouring the Image Optimization filter.
+	 *
+	 * `O_IMG_OPTM_SIZES_SKIPPED` is a skip list — the optimized set is every
+	 * registered size minus these — and Img_Optm reads it through a filter, so the
+	 * same line is reused verbatim here. Reading the option directly would honour a
+	 * site's filter in one module and ignore it in the other, and we would report
+	 * sizes whose next-gen copy is never built.
+	 *
+	 * @since 8.0
+	 *
+	 * @return array
+	 */
+	private function _get_sizes_skipped() {
+		if ( null === $this->_sizes_skipped ) {
+			$skipped              = apply_filters( 'litespeed_imgoptm_sizes_skipped', $this->conf( self::O_IMG_OPTM_SIZES_SKIPPED ) );
+			$this->_sizes_skipped = is_array( $skipped ) ? $skipped : [];
+		}
+
+		return $this->_sizes_skipped;
+	}
+
+	/**
+	 * The image sizes this site optimizes, in the shape the payload carries them.
+	 *
+	 * Every registered size minus the ones the owner skipped. Nothing is ever
+	 * generated: this only describes the boxes WordPress already resizes uploads
+	 * into, so the service can name the files that exist rather than invent any.
+	 *
+	 * `crop` is load-bearing and not an aside. WordPress names a sub-size after the
+	 * dimensions it actually produced, not after the box: an uncropped 300x300 box
+	 * on a 1200x800 image yields `hero-300x200.jpg`, while a cropped 150x150 box
+	 * yields exactly `hero-150x150.jpg`. Without the flag the service can neither
+	 * work out the filename nor keep cropped and proportional variants out of the
+	 * same srcset, where their differing aspect ratios would make the browser swap
+	 * to a differently-framed image at some viewport widths.
+	 *
+	 * Keys are short because the list rides on every single request: `n` name,
+	 * `w`/`h` the box, `c` the crop setting.
+	 *
+	 * @since 8.0
+	 *
+	 * @return array List of `[ 'n' => name, 'w' => width, 'h' => height, 'c' => crop ]`.
+	 */
+	private function _img_sizes() {
+		if ( null !== $this->_img_sizes ) {
+			return $this->_img_sizes;
+		}
+
+		$this->_img_sizes = [];
+
+		$skipped = $this->_get_sizes_skipped();
+
+		foreach ( $this->cls( 'Media' )->get_image_sizes() as $name => $size ) {
+			if ( in_array( $name, $skipped, true ) ) {
+				continue;
+			}
+
+			$width  = ! empty( $size['width'] ) ? (int) $size['width'] : 0;
+			$height = ! empty( $size['height'] ) ? (int) $size['height'] : 0;
+
+			// A size with no box at all resizes nothing and produces no file. It is also
+			// hidden from the settings screen by Utility::prepare_image_sizes_array(), so
+			// the owner never had the chance to skip it.
+			if ( ! $width && ! $height ) {
+				continue;
+			}
+
+			$this->_img_sizes[] = [
+				'n' => (string) $name,
+				'w' => $width,
+				'h' => $height,
+				'c' => $this->_crop_flag( isset( $size['crop'] ) ? $size['crop'] : false ),
+			];
+		}
+
+		self::debug( 'img_sizes ' . count( $this->_img_sizes ) . ' optimized size(s), ' . count( $skipped ) . ' skipped' );
+
+		return $this->_img_sizes;
+	}
+
+	/**
+	 * One registered size's crop setting, with its shape kept intact.
+	 *
+	 * WordPress stores three different things under `crop`, and the difference is
+	 * the whole point: `false` scales the image to fit, `true` crops it about the
+	 * centre, and an anchor pair such as `[ 'left', 'top' ]` crops it about that
+	 * corner. Flattening the pair to a bool would throw away the only record of
+	 * which part of the image survives the crop.
+	 *
+	 * Anything cropped but unreadable as an anchor is reported as a plain crop,
+	 * which is what core itself falls back to — `image_resize_dimensions()` swaps
+	 * any non-two-element crop for `[ 'center', 'center' ]` — so the reported value
+	 * keeps matching the file WordPress actually wrote.
+	 *
+	 * @since 8.0
+	 *
+	 * @param mixed $crop Raw `crop` value from the registered size.
+	 * @return array|bool Anchor pair, or true/false.
+	 */
+	private function _crop_flag( $crop ) {
+		// Covers false, 0, '' and the empty array, all of which WordPress reads as
+		// "scale to fit". The empty array matters: an array the consumer cannot read
+		// as an anchor is ambiguous, and "not cropped" has to be unambiguous.
+		if ( empty( $crop ) ) {
+			return false;
+		}
+
+		if ( ! is_array( $crop ) ) {
+			return true;
+		}
+
+		// array_values() is what guarantees a JSON list. An associative or sparse
+		// array would encode as `{"0":"left","1":"top"}`, which the consumer reads as
+		// an object rather than an anchor pair — and so as not cropped at all.
+		$anchor = array_values( $crop );
+
+		return 2 === count( $anchor ) && is_string( $anchor[0] ) && is_string( $anchor[1] ) ? $anchor : true;
 	}
 
 	/**
@@ -599,7 +781,7 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 
 		$filecon_md5     = md5( $con );
-		$filepath_prefix = $this->_build_filepath_prefix( 'js' );
+		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
 		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.js';
 
 		$ok = File::save( $static_file, $con, true );
@@ -612,11 +794,68 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 		self::debug( 'Saved js: ' . $static_file );
 
-		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'js', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
+		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'optimax_js', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
 
 		Purge::add( 'JS.' . md5( $queue_k ) );
 
 		return LITESPEED_STATIC_URL . $filepath_prefix . $filecon_md5 . '.js';
+	}
+
+	/**
+	 * Download the used CSS and store it as a local static file.
+	 *
+	 * The used CSS used to arrive inline; the service now links it from the worker's
+	 * artifact origin, which sweeps its files after a couple of days and speaks plain
+	 * http, so leaving that href in place loses the page's styles either immediately
+	 * (mixed content on an https site) or shortly after. Same fix as the JS bundle:
+	 * fetch the body once, keep it beside the stored HTML, hand back the local URL.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $css_url    Remote URL of the used CSS.
+	 * @param string $queue_k    Queue key.
+	 * @param array  $v          Queue item.
+	 * @param bool   $is_mobile  Whether this is the mobile variant.
+	 * @param string $is_nextgen Next-gen image format flag from the queue item.
+	 * @return string|false Public URL of the stored stylesheet, or false on failure.
+	 */
+	private function _save_css( $css_url, $queue_k, $v, $is_mobile, $is_nextgen ) {
+		$con = $this->_fetch_con( $css_url );
+		// An empty body is a failed fetch too. md5( '' ) is a stable filename, so every
+		// page reaching here would collide on one file and silently overwrite each
+		// other's stylesheet instead of failing.
+		if ( false === $con || '' === trim( (string) $con ) ) {
+			self::debug( '❌ Failed to fetch css_url [k] ' . $queue_k );
+			return false;
+		}
+
+		$filecon_md5     = md5( $con );
+		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
+		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.css';
+
+		$ok = File::save( $static_file, $con, true );
+		// `File::save` reports failure by return value; without checking it the debug
+		// line below claims a success that may not have happened, and the HTML is then
+		// rewritten to point at a stylesheet that is not there — an unstyled page, and
+		// worse than the remote href it replaced.
+		if ( false === $ok || ! file_exists( $static_file ) ) {
+			self::debug( '❌ Failed to save css [file] ' . $static_file . ' [err] ' . var_export( $ok, true ) );
+			return false;
+		}
+		self::debug( 'Saved css: ' . $static_file );
+
+		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'optimax_ucss', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
+
+		// `_save_css_con()` ends by evicting the pages that were cached while waiting
+		// on that CSS, addressing them by the tag the module which queued them added
+		// ( 'UCSS.'/'CCSS.' + md5( queue_k ) ). The page this stylesheet belongs to was
+		// queued by OptiMax, and the only tag serve() gives it is this one — 'UCSS.'
+		// would name the other module's queue key, and 'CSS.' exists nowhere in the
+		// plugin. _save_con() adds the same tag a moment later and Purge dedupes, so
+		// this only matters if the two steps ever drift apart.
+		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
+
+		return LITESPEED_STATIC_URL . $filepath_prefix . $filecon_md5 . '.css';
 	}
 
 	/**
@@ -626,13 +865,24 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return array|false `[ path, bound root, hook row ]`, or false.
 	 */
 	private function _image_target( $img ) {
-		$post_id = attachment_url_to_postid( $img['src'] );
+		// OptiMax reports `src` relative to the site root (`/wp-content/uploads/...`).
+		// Both resolvers below want an absolute URL: attachment_url_to_postid()
+		// returns 0 for a bare path, and is_internal_file() falls back to
+		// $_SERVER['DOCUMENT_ROOT'], which the cron request that saves the result
+		// may not have. Without this every image is skipped as having no WordPress
+		// target and nothing is ever downloaded.
+		$src = isset( $img['src'] ) ? (string) $img['src'] : '';
+		if ( '' !== $src && '/' === substr( $src, 0, 1 ) && '//' !== substr( $src, 0, 2 ) ) {
+			$src = home_url( $src );
+		}
+
+		$post_id = attachment_url_to_postid( $src );
 		if ( 0 < $post_id ) {
 			$uploads  = wp_upload_dir();
 			$base     = ! empty( $uploads['basedir'] ) ? trailingslashit( wp_normalize_path( $uploads['basedir'] ) ) : '';
 			$attached = get_attached_file( $post_id, true );
 			$attached = is_string( $attached ) ? wp_normalize_path( $attached ) : '';
-			$url_path = wp_parse_url( $img['src'], PHP_URL_PATH );
+			$url_path = wp_parse_url( $src, PHP_URL_PATH );
 			$filename = is_string( $url_path ) ? rawurldecode( basename( $url_path ) ) : '';
 			if ( $base && 0 === strpos( $attached, $base ) && $filename ) {
 				$dir   = dirname( substr( $attached, strlen( $base ) ) );
@@ -644,7 +894,7 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		}
 
-		$local = Utility::is_internal_file( $img['src'] );
+		$local = Utility::is_internal_file( $src );
 		$local = $local && ! empty( $local[0] ) ? Img::local_file( $local[0] ) : false;
 		return $local ? [ $local[0], $local[1], false ] : false;
 	}
