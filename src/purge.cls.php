@@ -1314,10 +1314,25 @@ class Purge extends Base {
 	 * Get purge tags related to a post.
 	 *
 	 * @since 1.0.0
+	 * @since 7.9.2 Skip non viewable post types.
 	 * @param int $post_id Post ID.
 	 * @return array<int,string>
 	 */
 	private function _get_purge_tags_by_post( $post_id ) {
+		// Avoid overriding global $post: use explicit post object.
+		$the_post  = get_post( $post_id );
+		$post_type = $the_post ? $the_post->post_type : '';
+
+		/**
+		 * A non viewable custom post type has no public URL, so writing one changed nothing a visitor can see. Purge its own tag only.
+		 * Built-in types are excluded: patterns, templates, template parts, global styles and nav are not viewable either, but they do
+		 * change how public pages render, and no other hook purges them.
+		 */
+		$post_type_obj = $post_type ? get_post_type_object( $post_type ) : null;
+		if ( $post_type_obj && ! $post_type_obj->_builtin && ! is_post_type_viewable( $post_type ) && apply_filters( 'litespeed_purge_post_skip_non_viewable', true, $post_id ) ) {
+			return [ Tag::TYPE_POST . $post_id ];
+		}
+
 		if ( $this->conf( self::O_PURGE_POST_ALL ) ) {
 			return [ '*' ];
 		}
@@ -1329,14 +1344,10 @@ class Purge extends Base {
 		// Post itself.
 		$purge_tags[] = Tag::TYPE_POST . $post_id;
 
-		$post_status = get_post_status( $post_id );
-		if ( function_exists( 'is_post_status_viewable' ) && is_post_status_viewable( $post_status ) ) {
+		// Must check the post, not only its status: `publish` is viewable on every post type, incl. ones whose permalink degrades to the home URL.
+		if ( function_exists( 'is_post_publicly_viewable' ) && is_post_publicly_viewable( $post_id ) ) {
 			$purge_tags[] = Tag::get_uri_tag( wp_make_link_relative( get_permalink( $post_id ) ) );
 		}
-
-		// Avoid overriding global $post: use explicit post object.
-		$the_post  = get_post( $post_id );
-		$post_type = $the_post ? $the_post->post_type : '';
 
 		// Widgets: recent posts.
 		global $wp_widget_factory;
