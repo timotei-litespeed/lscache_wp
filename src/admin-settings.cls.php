@@ -223,11 +223,10 @@ class Admin_Settings extends Base {
 					break;
 
 				case self::O_OBJECT_HOST: // Accepts an IP, a hostname, or an absolute UNIX socket path.
-					$data  = trim( (string) $data );
-					$first = substr( $data, 0, 1 );
+					$data = trim( (string) $data );
 
-					if ( '' === $data || '/' === $first ) {
-						// Empty means unset/use default; a leading slash is an absolute UNIX socket path.
+					if ( '' === $data || Object_Cache::socket_path( $data ) ) {
+						// Empty means unset/use default; otherwise an absolute UNIX socket path.
 						$valid = true;
 					} else {
 						// Validates both hostname and IP; values starting with ~ are rejected by filter_var.
@@ -245,6 +244,15 @@ class Admin_Settings extends Base {
 			}
 
 			$the_matrix[ $id ] = $data;
+		}
+
+		// A UNIX socket host ignores the port; save 0 so the stored value matches what is actually used.
+		if ( isset( $the_matrix[ self::O_OBJECT_HOST ], $the_matrix[ self::O_OBJECT_PORT ] )
+			&& Object_Cache::socket_path( $the_matrix[ self::O_OBJECT_HOST ] )
+			&& 0 !== (int) $the_matrix[ self::O_OBJECT_PORT ]
+		) {
+			$the_matrix[ self::O_OBJECT_PORT ] = 0;
+			Admin_Display::info( __( 'Object Cache: Host is a UNIX socket path, so Port was set to 0.', 'litespeed-cache' ) );
 		}
 
 		// Special handler for CDN/Crawler 2d list to drop empty rows.

@@ -138,6 +138,8 @@ class Activation extends Base {
 			File::rrmdir( LITESPEED_STATIC_DIR );
 		}
 
+		self::del_conf_data_file();
+
 		Cloud::version_check( 'uninstall' );
 	}
 
@@ -364,7 +366,7 @@ class Activation extends Base {
 	/**
 	 * Delete data conf file
 	 *
-	 * Removes the .litespeed_conf.dat file.
+	 * Removes the .litespeed_conf.dat file and the object cache deferred-flush marker.
 	 *
 	 * @since  4.1
 	 * @access private
@@ -377,8 +379,13 @@ class Activation extends Base {
 			WP_Filesystem();
 		}
 
-		if ( $wp_filesystem->exists( self::$data_file ) ) {
-			$wp_filesystem->delete( self::$data_file );
+		// Built here rather than from self::$data_file, which is only set by the constructor: uninstall
+		// calls this statically without instantiating the class.
+		foreach ( [ self::CONF_FILE, Object_Cache::FLUSH_MARKER_FILE ] as $file ) {
+			$file = LSCWP_CONTENT_DIR . '/' . $file;
+			if ( $wp_filesystem->exists( $file ) ) {
+				$wp_filesystem->delete( $file );
+			}
 		}
 	}
 
@@ -431,6 +438,10 @@ class Activation extends Base {
 		if ( $old_data !== $data ) {
 			defined( 'LSCWP_LOG' ) && Debug2::debug( '[Activation] Updating .litespeed_conf.dat' );
 			File::save( self::$data_file, $data );
+		} elseif ( defined( 'LITESPEED_OC_FAILURE' ) ) {
+			// Saved while the object cache was unreachable, so the cached options are stale and can't be
+			// purged from here. Bump the file so Object_Cache flushes on its next successful connection.
+			@touch( self::$data_file );
 		}
 	}
 

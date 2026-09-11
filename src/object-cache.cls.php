@@ -79,6 +79,14 @@ class Object_Cache extends Root {
 	const O_OBJECT_ADMIN = 'object-admin';
 
 	/**
+	 * Local file recording the conf data file state already flushed for.
+	 *
+	 * @since 7.9.2
+	 * @var string
+	 */
+	const FLUSH_MARKER_FILE = '.litespeed_oc_flush';
+
+	/**
 	 * DB index for Redis.
 	 *
 	 * @var string
@@ -299,6 +307,24 @@ class Object_Cache extends Root {
 	}
 
 	/**
+	 * Get the UNIX socket path a host value stands for, if any.
+	 *
+	 * Only an absolute path counts. Neither driver takes a scheme: phpredis adds unix:// itself and
+	 * Memcached hands the value to libmemcached's memcached_server_add_unix_socket(), so a prefixed
+	 * host is not a usable path and is refused on save rather than fixed up.
+	 *
+	 * @since 7.9.2
+	 *
+	 * @param string $host Host setting.
+	 * @return string Socket path, or '' if the host is not a socket.
+	 */
+	public static function socket_path( $host ) {
+		$host = trim( (string) $host );
+
+		return '/' === substr( $host, 0, 1 ) ? $host : '';
+	}
+
+	/**
 	 * Add debug.
 	 *
 	 * @since  6.3
@@ -454,6 +480,13 @@ class Object_Cache extends Root {
 			return false;
 		}
 
+		// A socket host ignores the port: with one, both drivers resolve the path as a TCP hostname and fail.
+		$socket = self::socket_path( $this->_cfg_host );
+		if ( $socket ) {
+			$this->_cfg_host = $socket;
+			$this->_cfg_port = 0;
+		}
+
 		$this->debug_oc( 'Init ' . $this->_oc_driver . ' connection to ' . $this->_cfg_host . ':' . $this->_cfg_port );
 
 		$failed = false;
@@ -532,6 +565,7 @@ class Object_Cache extends Root {
 				if ( $this->_validate_mem_server() ) {
 					// error_log( 'Object: _validate_mem_server' );
 					$this->debug_oc( 'Got persistent ' . $this->_oc_driver . ' connection' );
+					$this->_maybe_deferred_flush();
 					return true;
 				}
 
@@ -588,7 +622,59 @@ class Object_Cache extends Root {
 
 		$this->debug_oc( '✅ Connected to ' . $this->_oc_driver . ' server.' );
 
+		$this->_maybe_deferred_flush();
+
 		return true;
+	}
+
+	/**
+	 * Flush once if settings changed while the object cache was unreachable.
+	 *
+	 * A save made while OC is down updates the DB but cannot touch the cached copies, and options are
+	 * cached with no expiry, so the old values are served again once OC reconnects. Activation always
+	 * bumps the conf data file on such a save; the first successful connection afterwards flushes.
+	 *
+	 * @since 7.9.2
+	 * @access private
+	 *
+	 * @return void
+	 */
+	private function _maybe_deferred_flush() {
+		$conf = WP_CONTENT_DIR . '/' . self::CONF_FILE;
+		if ( ! file_exists( $conf ) ) {
+			return;
+		}
+
+		// The marker holds the conf mtime it was flushed for, and is local rather than a cache key:
+		// the flush would drop a record kept in the cache, and installs sharing one Redis DB or
+		// Memcached pool would keep flushing each other. Comparing the value rather than the marker's
+		// own mtime keeps a clock-skewed (future) conf file from flushing on every request.
+		$stamp  = (string) filemtime( $conf );
+		$marker = WP_CONTENT_DIR . '/' . self::FLUSH_MARKER_FILE;
+		if ( file_exists( $marker ) && $stamp === trim( (string) file_get_contents( $marker ) ) ) {
+			return;
+		}
+
+		// Mark before flushing, so a flush the server refuses (e.g. a Redis ACL without flushdb) is
+		// tried once instead of on every request. An unwritable marker means no flush at all.
+		if ( false === @file_put_contents( $marker, $stamp ) ) {
+			$this->debug_oc( 'Deferred flush skipped, cannot write ' . $marker );
+			return;
+		}
+
+		$this->debug_oc( 'Deferred flush after a settings change' );
+
+		// Not self::flush(): that resets the Memcached server list, which would leave the rest of this
+		// request with no server, and turns a Redis error into OC being disabled for the whole request.
+		try {
+			if ( 'Redis' === $this->_oc_driver ) {
+				$this->_conn->flushDb();
+			} else {
+				$this->_conn->flush();
+			}
+		} catch ( \RedisException $ex ) {
+			$this->debug_oc( 'Deferred flush failed: ' . $ex->getMessage() );
+		}
 	}
 
 	/**
