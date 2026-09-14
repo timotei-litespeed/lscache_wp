@@ -305,6 +305,21 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return string The URL tag.
 	 */
 	/**
+	 * Cache tag for every stored page an OptimaX build can replace.
+	 *
+	 * Built from the url_tag alone, not the vary: evicting a sibling vary costs one
+	 * re-render, whereas missing one leaves a stale page up until a Purge All.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity from get_url_tag().
+	 * @return string
+	 */
+	private static function _page_tag( $url_tag ) {
+		return 'OPTIMAX.' . md5( $url_tag );
+	}
+
+	/**
 	 * Whether this 404 should share one build with every other 404.
 	 *
 	 * On by default: a 404 is normally the same page whatever was requested, so
@@ -397,6 +412,14 @@ class Optimax extends Cloud_Queue_Svc {
 		$vary     = self::_is_shared_404() ? '' : $this->cls( 'Vary' )->finalize_full_varies();
 		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
 
+		// Tag every render OptimaX could replace, on both the hit and the queue path,
+		// so a finished build can evict it. Keyed on the page rather than going through
+		// Tag::get_uri_tag(), which (a) switches between a plain and an md5 format with
+		// LSCWP_LOG — decided per request, so a visitor and the cron that purges can
+		// disagree — and (b) urldecodes at render but not at purge. It also lets one
+		// purge reach every 404 sharing the '404' build, not just the URL on the row.
+		Tag::add( self::_page_tag( $url_tag ) );
+
 		if ( $filename && $this->_assets_intact( $url_tag, $vary ) ) {
 			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.html';
 
@@ -436,9 +459,6 @@ class Optimax extends Cloud_Queue_Svc {
 		];
 		$this->save_queue( 'optimax', $this->_queue );
 		self::debug( 'Added to queue [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] ' . $uid );
-
-		// Prepare cache tag for later purge
-		Tag::add( 'OPTIMAX.' . md5( $queue_k ) );
 		Core::comment( 'QUIC.cloud Optimax in queue' );
 
 		return false;
@@ -846,14 +866,10 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'optimax_ucss', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
 
-		// `_save_css_con()` ends by evicting the pages that were cached while waiting
-		// on that CSS, addressing them by the tag the module which queued them added
-		// ( 'UCSS.'/'CCSS.' + md5( queue_k ) ). The page this stylesheet belongs to was
-		// queued by OptiMax, and the only tag serve() gives it is this one — 'UCSS.'
-		// would name the other module's queue key, and 'CSS.' exists nowhere in the
-		// plugin. _save_con() adds the same tag a moment later and Purge dedupes, so
-		// this only matters if the two steps ever drift apart.
-		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
+		// Evict the pages this stylesheet belongs to, by the tag serve() gives every
+		// OptimaX render. _save_con() purges the same tag a moment later and Purge
+		// dedupes, so this only matters if the two steps ever drift apart.
+		Purge::add( self::_page_tag( $v['url_tag'] ), true );
 
 		return LITESPEED_STATIC_URL . $filepath_prefix . $filecon_md5 . '.css';
 	}
@@ -927,6 +943,6 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$this->cls( 'Data' )->save_url( $url_tag, $vary, 'optimax', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
 
-		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
+		Purge::add( self::_page_tag( $url_tag ), true );
 	}
 }

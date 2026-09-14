@@ -574,6 +574,17 @@ class Purge extends Base {
 	}
 
 	/**
+	 * Purge all OptimaX files, URL mappings and queue (public wrapper).
+	 *
+	 * @since 8.0
+	 * @param bool $silence If true, don't show admin notice.
+	 * @return void
+	 */
+	public static function purge_all_optimax( $silence = true ) {
+		self::cls()->_purge_all_optimax( $silence );
+	}
+
+	/**
 	 * Purge object cache (public wrapper).
 	 *
 	 * @since 3.4
