@@ -22,6 +22,12 @@ class Optimax extends Cloud_Queue_Svc {
 	const LOG_TAG = '🚀';
 
 	/**
+	 * Extensions of files the web server serves directly. A request for one only
+	 * reaches WordPress when the file is missing, and then renders the 404 page.
+	 */
+	const STATIC_FILE_EXTS = [ 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'ico', 'bmp', 'tif', 'tiff', 'css', 'js', 'mjs', 'map', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'mp4', 'webm', 'mp3', 'ogg', 'wav', 'pdf', 'zip' ];
+
+	/**
 	 * Registered image sizes the owner excluded from optimization.
 	 *
 	 * Null until first read — the empty array is a legitimate value.
@@ -313,6 +319,23 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
+	 * Whether this request's path names a static file rather than a page.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	private static function _is_static_file_request() {
+		// The raw path, not Utility::request_url(): that one appends a trailing slash
+		// under pretty permalinks, which hides the extension.
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+		$ext  = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+
+		return in_array( $ext, self::STATIC_FILE_EXTS, true );
+	}
+
+	/**
 	 * Whether this 404 should share one build with every other 404.
 	 *
 	 * On by default: a 404 is normally the same page whatever was requested, so
@@ -375,6 +398,14 @@ class Optimax extends Cloud_Queue_Svc {
 		// are all excluded here — they must never be queued, nor replaced by OX HTML.
 		if ( ! defined( 'LITESPEED_IS_HTML' ) ) {
 			self::debug( 'serve() bypassed: not an HTML document' );
+			return false;
+		}
+
+		// A missing image, stylesheet or script falls through to WordPress, which
+		// answers with its 404 page: an HTML document that would be queued under the
+		// file's URL. Nobody browses to that URL as a page, so it never goes to QC.
+		if ( self::_is_static_file_request() ) {
+			self::debug( 'serve() bypassed: static file URL' );
 			return false;
 		}
 
