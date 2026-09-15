@@ -71,6 +71,10 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return bool
 	 */
 	public static function need_pull() {
+		if ( ! self::nextgen_ready() ) {
+			return false;
+		}
+
 		$_instance = static::cls();
 
 		if ( ! $_instance->load_queue( 'optimax' ) ) {
@@ -92,6 +96,12 @@ class Optimax extends Cloud_Queue_Svc {
 	 */
 	public static function cron_pull() {
 		if ( ! static::cls()->conf( self::O_OPTIMAX ) ) {
+			return;
+		}
+
+		// Paused: queued items stay queued until Next-Gen is turned back on.
+		if ( ! self::nextgen_ready() ) {
+			self::debug( 'OX CRON PULL skipped: Next-Gen Image Format is OFF' );
 			return;
 		}
 
@@ -122,9 +132,91 @@ class Optimax extends Cloud_Queue_Svc {
 			return;
 		}
 
+		// Paused: queued items stay queued until Next-Gen is turned back on.
+		if ( ! self::nextgen_ready() ) {
+			self::debug( 'OX CRON PUSH skipped: Next-Gen Image Format is OFF' );
+			return;
+		}
+
 		self::debug( 'OX CRON PUSH started' );
 
 		return static::cron();
+	}
+
+	/**
+	 * Admin action handler: the queue's manual "Run" actions honour the pause too.
+	 *
+	 * "Run queue" and "Run item" reach the service through cron( true ) and
+	 * gen_item(), bypassing cron_push(). While paused nothing may be sent, so
+	 * those two actions show the paused message instead. Clearing the queue
+	 * still works.
+	 *
+	 * @since 8.0
+	 *
+	 * @return void
+	 */
+	public function handler() {
+		if ( in_array( Router::verify_type(), [ self::TYPE_GEN, self::TYPE_GEN_ITEM ], true ) && ! self::nextgen_ready() ) {
+			self::debug( 'Manual run skipped: Next-Gen Image Format is OFF' );
+			Admin_Display::note( esc_html( self::paused_msg() ) );
+			Admin::redirect();
+			return;
+		}
+
+		parent::handler();
+	}
+
+	/**
+	 * Whether the Next-Gen Image Format setting lets OptiMax run.
+	 *
+	 * OptiMax needs Next-Gen on, WebP (1) or AVIF (2): it tells the service which
+	 * page images already have their next-gen copy beside them, and the service
+	 * links those instead of converting them again. With the setting OFF (0)
+	 * nothing is served, queued or sent, and the page gets LSCWP's normal
+	 * optimizations. The single gate for serve(), the cron entry points and
+	 * need_pull().
+	 *
+	 * @since 8.0
+	 *
+	 * @param mixed $setting Optional `O_IMG_OPTM_WEBP` value; read from the settings when null.
+	 * @return bool
+	 */
+	public static function nextgen_ready( $setting = null ) {
+		if ( null === $setting ) {
+			$setting = static::cls()->conf( self::O_IMG_OPTM_WEBP );
+		}
+
+		return 0 !== (int) $setting;
+	}
+
+	/**
+	 * Whether OptiMax is switched on but paused by the Next-Gen gate.
+	 *
+	 * Drives the admin notice and the note on the OptiMax settings screen.
+	 *
+	 * @since 8.0
+	 *
+	 * @param mixed $optimax Optional `O_OPTIMAX` value; read from the settings when null.
+	 * @param mixed $setting Optional `O_IMG_OPTM_WEBP` value; read from the settings when null.
+	 * @return bool
+	 */
+	public static function is_paused( $optimax = null, $setting = null ) {
+		if ( null === $optimax ) {
+			$optimax = static::cls()->conf( self::O_OPTIMAX );
+		}
+
+		return (bool) $optimax && ! self::nextgen_ready( $setting );
+	}
+
+	/**
+	 * The translated "OptiMax is paused" message. Not escaped: callers escape it.
+	 *
+	 * @since 8.0
+	 *
+	 * @return string
+	 */
+	public static function paused_msg() {
+		return __( 'OptiMax is paused: it needs Next-Gen Image Format turned on (WebP or AVIF) in Image Optimization.', 'litespeed-cache' );
 	}
 
 	/**
@@ -313,6 +405,50 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
+	 * Whether this request is for a file rather than a page.
+	 *
+	 * Either of two signals is enough:
+	 *
+	 * - The browser says so. `Sec-Fetch-Dest` names what the response is for, and
+	 *   an image, stylesheet, script or font is not a page anyone views. `empty`
+	 *   is not taken as a file: prefetchers (`<link rel=prefetch>`, instant.page)
+	 *   fetch pages with it. Only browsers send the header, so it cannot be the
+	 *   whole test.
+	 * - The URL says so. A file the web server has never reaches WordPress, so a
+	 *   file URL that does is a 404. WordPress slugs never contain a dot
+	 *   (sanitize_title() turns it into a dash), so a page URL only carries an
+	 *   extension from the permalink structure itself (`/%postname%.html`) or from
+	 *   `index.php`. Any other extension on a 404 names a missing file.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	private static function _is_static_file_request() {
+		$dest = isset( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ? strtolower( sanitize_text_field( wp_unslash( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ) ) : '';
+		if ( '' !== $dest && ! in_array( $dest, [ 'document', 'iframe', 'frame', 'empty' ], true ) ) {
+			return true;
+		}
+
+		if ( ! is_404() ) {
+			return false;
+		}
+
+		// The raw path, not Utility::request_url(): that one appends a trailing slash
+		// under pretty permalinks, which hides the extension.
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+		$ext  = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		if ( '' === $ext ) {
+			return false;
+		}
+
+		$page_ext = strtolower( pathinfo( untrailingslashit( (string) get_option( 'permalink_structure' ) ), PATHINFO_EXTENSION ) );
+
+		return ! in_array( $ext, [ 'php', $page_ext ], true );
+	}
+
+	/**
 	 * Whether this 404 should share one build with every other 404.
 	 *
 	 * On by default: a 404 is normally the same page whatever was requested, so
@@ -370,11 +506,26 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
+		// Paused while Next-Gen Image Format is OFF: neither serve nor queue. The page
+		// then gets LSCWP's normal optimizations, exactly as with OptiMax off.
+		if ( ! self::nextgen_ready() ) {
+			self::debug( 'serve() bypassed: Next-Gen Image Format is OFF' );
+			return false;
+		}
+
 		// Only a full HTML document can be optimized. check_is_html() runs just before
 		// this in Core::send_headers_force(), so REST/AJAX JSON, feeds and ESI fragments
 		// are all excluded here — they must never be queued, nor replaced by OX HTML.
 		if ( ! defined( 'LITESPEED_IS_HTML' ) ) {
 			self::debug( 'serve() bypassed: not an HTML document' );
+			return false;
+		}
+
+		// A missing image, stylesheet or script falls through to WordPress, which
+		// answers with its 404 page: an HTML document that would be queued under the
+		// file's URL. Nobody browses to that URL as a page, so it never goes to QC.
+		if ( self::_is_static_file_request() ) {
+			self::debug( 'serve() bypassed: static file URL' );
 			return false;
 		}
 
@@ -436,6 +587,10 @@ class Optimax extends Cloud_Queue_Svc {
 		// No cached optimax, add to queue
 		$uid = get_current_user_id();
 		$ua  = $this->_get_ua();
+
+		if ( ! $this->queueable_request() ) {
+			return false;
+		}
 
 		$this->_queue = $this->load_queue( 'optimax' );
 

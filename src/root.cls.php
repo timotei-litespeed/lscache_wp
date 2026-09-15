@@ -158,6 +158,31 @@ abstract class Root {
 	}
 
 	/**
+	 * Whether the current request may queue its own URL for a QUIC.cloud service.
+	 *
+	 * A cron run is not a page view. `wp-cron.php` renders no page, and with
+	 * ALTERNATE_WP_CRON the visitor is redirected to `?doing_wp_cron=...`, a URL
+	 * nobody browses. Queueing either one spends a generation on a URL that is
+	 * never served, so every service skips it.
+	 *
+	 * Only enqueues of the current request's URL use this. Re-queueing rows that
+	 * already exist (e.g. `UCSS::add_to_q()` after a purge) is legitimate during
+	 * cron and must not be blocked.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	public function queueable_request() {
+		if (wp_doing_cron()) {
+			self::debug('Queue bypassed: doing cron');
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
 	 * Load current queues from data file
 	 *
 	 * @since  4.1

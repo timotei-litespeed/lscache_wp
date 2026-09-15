@@ -12,10 +12,7 @@ namespace LiteSpeed;
 
 defined( 'WPINC' ) || exit;
 
-$optimax_queue       = $this->load_queue( 'optimax' );
-$optimax_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_OPTIMAX );
-$closest_server      = Cloud::get_summary( 'server.' . Cloud::SVC_OPTIMAX );
-$next_gen            = '<code class="litespeed-success">' . $this->cls( 'Media' )->next_gen_image_title() . '</code>';
+$closest_server = Cloud::get_summary( 'server.' . Cloud::SVC_OPTIMAX );
 
 $this->form_action();
 ?>
@@ -43,55 +40,14 @@ $this->form_action();
 					<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_OPTIMAX ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label="<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>" data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class="litespeed-quic-icon"></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
 				<?php endif; ?>
 
-				<?php if ( ! empty( $optimax_queue ) ) : ?>
-					<div class="litespeed-callout notice notice-warning inline">
-						<h4>
-							<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'OptimaX' ); ?> ( <?php echo esc_html( count( $optimax_queue ) ); ?> )
-							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
-						</h4>
-						<p>
-							<?php
-							$i = 0;
-							foreach ( $optimax_queue as $queue_key => $queue_val ) :
-								if ( ! is_array( $queue_val ) || empty( $queue_val['url'] ) || ! is_string( $queue_val['url'] ) ) {
-									continue;
-								}
-								// Count only rows that render, so a malformed entry cannot eat a slot.
-								if ( $i++ > 20 ) :
-									echo '...';
-									break;
-								endif;
-								echo esc_html( $queue_val['url'] );
-								$pos = strpos( $queue_key, ' ' );
-								if ( $pos ) {
-									echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
-								}
-								if ( ! empty( $queue_val['is_mobile'] ) ) {
-									echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-								}
-								if ( ! empty( $queue_val['is_nextgen'] ) ) {
-									echo ' ' . wp_kses_post( $next_gen );
-								}
-								echo '<br />';
-							endforeach;
-							?>
-						</p>
+				<?php if ( Optimax::is_paused() ) : ?>
+					<div class="litespeed-danger litespeed-text-bold">
+						⚠️ <?php echo esc_html( Optimax::paused_msg() ); ?>
 					</div>
-					<?php if ( $optimax_service_hot ) : ?>
-						<button class="button button-secondary" disabled>
-							<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'OptimaX' ); ?>
-							- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $optimax_service_hot ) ); ?>
-						</button>
-					<?php else : ?>
-						<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
-							<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'OptimaX' ); ?>
-						</a>
-					<?php endif; ?>
-					<?php Doc::queue_issues(); ?>
+				<?php else : ?>
+					<font class="litespeed-warning">
+					⚠️ <?php printf( esc_html__( 'OptimaX requires the %1$s option to be turned on (WebP or AVIF).', 'litespeed-cache' ), esc_html__( 'Next-Gen Image Format', 'litespeed-cache' ) ); ?></font>
 				<?php endif; ?>
-
-				<font class="litespeed-warning">
-				⚠️ <?php printf( esc_html__( 'OptimaX requires the %1$s option to be enabled.', 'litespeed-cache' ), esc_html__( 'Next-Gen Image Format', 'litespeed-cache' ) ); ?></font>
 			</td>
 		</tr>
 
