@@ -46,13 +46,14 @@ $next_gen       = '<code class="litespeed-success">' . $this->cls( 'Media' )->ne
 						<?php
 						$i = 0;
 						foreach ( $queue as $queue_key => $queue_val ) :
+							if ( ! is_array( $queue_val ) || empty( $queue_val['url'] ) || ! is_string( $queue_val['url'] ) ) {
+								continue;
+							}
+							// Count only rows that render, so a malformed entry cannot eat a slot.
 							if ( $i++ > 20 ) :
 								echo '...';
 								break;
 							endif;
-							if ( ! is_array( $queue_val ) ) {
-								continue;
-							}
 							if ( ! empty( $queue_val['_status'] ) ) {
 								echo '<span class="litespeed-success">';
 							}

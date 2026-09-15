@@ -309,6 +309,7 @@ abstract class Cloud_Queue_Svc extends Base {
 			// sent. Carry it through so callers can tell the two apart.
 			$status = isset( $json['status'] ) ? $json['status'] : '';
 			self::debug( 'Server requested try later: ' . $ttl . ' seconds [status] ' . $status );
+			self::save_summary( [ $curr_key => 0 ], true );
 
 			if ( 'queued' === $status ) {
 				// Record that this row was handed over and is building, so the queue
@@ -479,7 +480,7 @@ abstract class Cloud_Queue_Svc extends Base {
 				break;
 
 			case static::TYPE_GEN_ITEM:
-            $this->gen_item();
+				$this->gen_item();
 				break;
 
 			default:
