@@ -544,7 +544,7 @@ class Activation extends Base {
 
 		// Remove the line `define('WP_CACHE', true/false);` first
 		if ( defined( 'WP_CACHE' ) ) {
-			$content = preg_replace( '/define\(\s*([\'"])WP_CACHE\1\s*,\s*\w+\s*\)\s*;/sU', '', $content );
+			$content = preg_replace( '/define\(\s*([\'"])WP_CACHE\1\s*,\s*\w+\s*\)\s*;[ \t]*\R?/', '', $content );
 		}
 
 		// Insert const
@@ -552,10 +552,8 @@ class Activation extends Base {
 			$content = preg_replace( '/^<\?php/', "<?php\ndefine( 'WP_CACHE', true );", $content );
 		}
 
-		$res = File::save( $conf_file, $content, false, false, false );
-
-		if ( true !== $res ) {
-			throw new \Exception( 'wp-config.php operation failed when changing `WP_CACHE` const: ' . wp_kses_post( $res ) );
+		if ( ! File::save_atomic( $conf_file, $content ) ) {
+			throw new \Exception( 'wp-config.php operation failed when changing `WP_CACHE` const: ' . wp_kses_post( $conf_file ) );
 		}
 
 		return true;
