@@ -901,7 +901,7 @@ class Admin_Display extends Base {
 	 * @param array      $instance   The widget instance's settings.
 	 * @return void
 	 */
-	public function show_widget_edit( $widget, $return_val, $instance ) {
+	public static function show_widget_edit( $widget, $return_val, $instance ) {
 		require LSCWP_DIR . 'tpl/esi_widget_edit.php';
 	}
 

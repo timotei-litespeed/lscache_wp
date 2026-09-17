@@ -202,6 +202,9 @@ class Core extends Root {
 			$this->cls( 'Admin' );
 		}
 
+		// Widgets are saved via AJAX (classic screen, Customizer) and REST (block editor), where Admin is not loaded.
+		add_action( 'widgets_init', [ $this, 'widget_esi_hooks' ] );
+
 		if ( defined( 'LITESPEED_DISABLE_ALL' ) && LITESPEED_DISABLE_ALL ) {
 			Debug2::debug( '[Core] Bypassed due to debug disable all setting' );
 			return;
@@ -241,6 +244,20 @@ class Core extends Root {
 
 		// Load 3rd party hooks
 		add_action( 'wp_loaded', [ $this, 'load_thirdparty' ], 2 );
+	}
+
+	/**
+	 * Register the widget ESI settings form and save hooks.
+	 *
+	 * @since 7.9.2
+	 */
+	public function widget_esi_hooks() {
+		if ( ! $this->cls( 'Router' )->esi_enabled() || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		add_action( 'in_widget_form', __NAMESPACE__ . '\Admin_Display::show_widget_edit', 100, 3 );
+		add_filter( 'widget_update_callback', __NAMESPACE__ . '\Admin_Settings::validate_widget_save', 10, 4 );
 	}
 
 	/**
