@@ -744,6 +744,13 @@ class ESI extends Root {
 		}
 
 		$name = get_class($widget);
+		// Block widget stores ESI settings in its block metadata
+		if (!isset($instance[Base::OPTION_NAME]) && $widget instanceof \WP_Widget_Block && isset($instance['content']) && false !== strpos($instance['content'], Base::OPTION_NAME)) {
+			$blocks = parse_blocks($instance['content']);
+			if (!empty($blocks[0]['attrs']['metadata'][Base::OPTION_NAME])) {
+				$instance[Base::OPTION_NAME] = $blocks[0]['attrs']['metadata'][Base::OPTION_NAME];
+			}
+		}
 		if (!isset($instance[Base::OPTION_NAME])) {
 			return $instance;
 		}

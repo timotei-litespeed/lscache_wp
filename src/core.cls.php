@@ -258,6 +258,10 @@ class Core extends Root {
 
 		add_action( 'in_widget_form', __NAMESPACE__ . '\Admin_Display::show_widget_edit', 100, 3 );
 		add_filter( 'widget_update_callback', __NAMESPACE__ . '\Admin_Settings::validate_widget_save', 10, 4 );
+
+		// Block widgets.
+		add_action( 'enqueue_block_editor_assets', __NAMESPACE__ . '\Admin_Display::enqueue_block_widget_esi' );
+		add_action( 'update_option_widget_block', __NAMESPACE__ . '\Purge::purge_all', 10, 0 );
 	}
 
 	/**

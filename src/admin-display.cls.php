@@ -906,6 +906,26 @@ class Admin_Display extends Base {
 	}
 
 	/**
+	 * Hooked to the enqueue_block_editor_assets action.
+	 * Adds the ESI settings panel to blocks in the block widget editors (Widgets screen and Customizer).
+	 *
+	 * @since 7.9.2
+	 *
+	 * @return void
+	 */
+	public static function enqueue_block_widget_esi() {
+		global $pagenow;
+
+		if ( 'widgets.php' !== $pagenow && 'customize.php' !== $pagenow ) {
+			return;
+		}
+
+		$deps = [ 'wp-blocks', 'wp-block-editor', 'wp-components', 'wp-compose', 'wp-data', 'wp-element', 'wp-hooks', 'wp-i18n' ];
+		wp_enqueue_script( Core::PLUGIN_NAME . '-esi-block-widget', LSWCP_PLUGIN_URL . 'assets/js/esi-block-widget.js', $deps, Core::VER, true );
+		wp_set_script_translations( Core::PLUGIN_NAME . '-esi-block-widget', 'litespeed-cache' );
+	}
+
+	/**
 	 * Outputs a notice when the plugin is installed via WHM.
 	 *
 	 * @since 1.0.12

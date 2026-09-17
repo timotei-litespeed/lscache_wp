@@ -268,6 +268,7 @@ Please don't report a suspected vulnerability in this support forum. Reporting d
 * **Cache** Bypassed cache for REST requests authenticated by HTTP credentials such as Application Passwords. (Ionut Platon #419630)
 
 = 7.9.2 - Coming soon 2026 =
+* **ESI** Added ESI settings for block widgets in the Widgets block editor and Customizer (WordPress 6.5+).
 * **ESI** Fixed widget ESI settings not saving from the Classic Widgets screen, the Customizer and the Legacy Widget block.
 * **VPI** Validated attribute names and escaped attribute values when rebuilding image markup.
 * **Debug** Restricted beta update packages to trusted sources and kept temporary update entries out of the shared update cache.
