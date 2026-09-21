@@ -1061,7 +1061,7 @@ class Optimize extends Base {
 			'',
 			$this->content
 		);
-		preg_match_all('#<link ([^>]+)/?>|<style([^>]*)>([^<]+)</style>(?:\r\n?|\n?)#isU', $content, $matches, PREG_SET_ORDER);
+		preg_match_all('#<link ([^>]+)/?>|<style([^>]*)>(.*)</style>(?:\r\n?|\n?)#isU', $content, $matches, PREG_SET_ORDER);
 
 		foreach ($matches as $match) {
 			// to avoid multiple replacement
