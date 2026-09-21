@@ -108,13 +108,8 @@ input[type='checkbox'].litespeed-tiny-toggle:checked:after {
 	border: 0 !important;
 }
 
-.block-editor__container input[type='checkbox'].litespeed-tiny-toggle:before {
-	top: 5px;
-	left: 7px;
-}
-
 .block-editor__container input[type='checkbox'].litespeed-tiny-toggle:checked:before {
-	left: 23px;
+	left: 19px;
 }
 
 /* =======================================
@@ -1152,9 +1147,9 @@ h3 .litespeed-learn-more {
 }
 
 body:not(.branch-7) .litespeed-wrap .button:not(.litespeed-btn-large) .dashicons {
-	position: relative;
-	top: -0.075em;
-	vertical-align: middle;
+	vertical-align: baseline;
+    top: 0.25em;
+    position: relative;
 }
 
 .litespeed-wrap .button:not(:first-child) {
