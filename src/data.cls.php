@@ -61,6 +61,9 @@ class Data extends Root {
 		// empties the ucss folder, and the stored OptimaX HTML links this stylesheet
 		// by name, so sharing the 'ucss' type would strip the page of its styles.
 		'optimax_ucss' => 7,
+		// The image files an OptimaX build saved beside their originals, as a JSON
+		// list the stored HTML depends on: serve() refuses the HTML once one is gone.
+		'optimax_imgs' => 8,
 	];
 
 	/** Table: image optimization working queue. */
@@ -544,7 +547,7 @@ class Data extends Root {
 			$list = $wpdb->get_results( $q, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 			if ( $list ) {
 				foreach ( $list as $v ) {
-					$ext         = 'optimax' === $file_type ? 'html' : ( in_array( $file_type, [ 'js', 'optimax_js' ], true ) ? 'js' : 'css' );
+					$ext         = 'optimax' === $file_type ? 'html' : ( 'optimax_imgs' === $file_type ? 'json' : ( in_array( $file_type, [ 'js', 'optimax_js' ], true ) ? 'js' : 'css' ) );
 					$file_to_del = trailingslashit( $path ) . $v['filename'] . '.' . $ext;
 					if ( file_exists( $file_to_del ) ) {
 						self::debug( 'Delete expired unused file: ' . $file_to_del );

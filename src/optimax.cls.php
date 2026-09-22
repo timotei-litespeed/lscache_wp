@@ -366,7 +366,44 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		}
 
-		if ( ! empty( $ox['imgs'] ) && ! $this->_save_imgs( $ox['imgs'] ) ) {
+		// 2. Images, before the HTML that names them. The service rewrites every image
+		// it converted to `<src>.<format>` before any file exists, so a link is only
+		// good once its variant is saved there. A failed fetch or digest check stores
+		// nothing (the previous build keeps serving); an image skipped for want of a
+		// URL or a WordPress target goes back to its original link instead, in the
+		// HTML and in both stylesheets, so the page never names a file that is not
+		// on disk.
+		$saved_imgs = [];
+		if ( ! empty( $ox['imgs'] ) ) {
+			$imgs = $this->_save_imgs( $ox['imgs'] );
+			if ( false === $imgs ) {
+				return false;
+			}
+			$saved_imgs = $imgs['saved'];
+			// The page links one format, the one this build was requested in.
+			$linked   = $is_nextgen ? [ $is_nextgen ] : [ 'webp', 'avif' ];
+			$restored = 0;
+			foreach ( $imgs['restore'] as $src => $formats ) {
+				$formats = array_values( array_intersect( $formats, $linked ) );
+				if ( ! $formats ) {
+					continue;
+				}
+				foreach ( [ 'html', 'ucss', 'ccss' ] as $field ) {
+					if ( ! empty( $ox[ $field ] ) ) {
+						$ox[ $field ] = self::restore_img_links( $ox[ $field ], (string) $src, $formats );
+					}
+				}
+				++$restored;
+			}
+			if ( $restored ) {
+				self::debug( 'Linked ' . $restored . ' unsaved image(s) back to their originals [k] ' . $queue_k );
+			}
+		}
+
+		// Checked by _assets_intact() before the stored HTML is served, like the JS
+		// and CSS sidecars. Written for every build, even one with no images, so a
+		// previous build's list never outlives the HTML it belonged to.
+		if ( ! $this->_save_imgs_list( $saved_imgs, $v, $is_mobile, $is_nextgen ) ) {
 			return false;
 		}
 
@@ -678,7 +715,113 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
+		// The images this build saved beside their originals. The HTML names each one
+		// at its predicted `<src>.<format>` path, so a file removed since (an Image
+		// Optimization reset, a media cleanup, a migration) would 404 on the page.
+		// Images the site had already optimized are not in the list: the build only
+		// links to them. No mapping means a build from before the list existed.
+		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax_imgs' );
+		if ( ! $filename ) {
+			return true;
+		}
+
+		$file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.json';
+		$list = file_exists( $file ) ? json_decode( (string) File::read( $file ), true ) : null;
+		if ( ! is_array( $list ) || ! isset( $list['imgs'] ) || ! is_array( $list['imgs'] ) ) {
+			self::debug( 'serve() bypassed: optimax_imgs missing ' . $file );
+			return false;
+		}
+
+		foreach ( $list['imgs'] as $img ) {
+			if ( ! is_string( $img ) || ! file_exists( $img ) ) {
+				self::debug( 'serve() bypassed: image missing ' . ( is_string( $img ) ? $img : '' ) );
+				return false;
+			}
+		}
+
 		return true;
+	}
+
+	/**
+	 * Record the image files a build saved, for _assets_intact().
+	 *
+	 * Kept as a sidecar beside the HTML and mapped through Data::save_url() like the
+	 * JS bundle and the used CSS. The page's URL and vary are part of the content, so
+	 * two pages never share one list: an expired mapping deletes its file, which
+	 * would otherwise turn every page sharing it into a miss.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array  $imgs       Local paths of the saved image files.
+	 * @param array  $v          Queue item.
+	 * @param bool   $is_mobile  Whether this is the mobile variant.
+	 * @param string $is_nextgen Next-gen image format flag from the queue item.
+	 * @return bool
+	 */
+	private function _save_imgs_list( $imgs, $v, $is_mobile, $is_nextgen ) {
+		$con = wp_json_encode(
+			[
+				'url_tag' => $v['url_tag'],
+				'vary'    => $v['vary'],
+				'imgs'    => array_values( array_unique( $imgs ) ),
+			]
+		);
+		if ( ! is_string( $con ) ) {
+			return false;
+		}
+
+		$filecon_md5     = md5( $con );
+		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
+		$static_file     = LITESPEED_STATIC_DIR . $filepath_prefix . $filecon_md5 . '.json';
+
+		$ok = File::save( $static_file, $con, true );
+		if ( false === $ok || ! file_exists( $static_file ) ) {
+			self::debug( '❌ Failed to save image list [file] ' . $static_file );
+			return false;
+		}
+
+		$this->cls( 'Data' )->save_url( $v['url_tag'], $v['vary'], 'optimax_imgs', $filecon_md5, dirname( $static_file ), $is_mobile, $is_nextgen );
+
+		return true;
+	}
+
+	/**
+	 * Put an image's links back on the original, in HTML or CSS.
+	 *
+	 * Undoes the service's rewrite (`rewriteImageLinks` in QC's apps/optimax),
+	 * which appends `.<format>` to the path of every reference to a converted
+	 * image. Matching the file name alone undoes it in every form the reference
+	 * can take — absolute, protocol-relative, root-relative or relative, query and
+	 * fragment kept, in `src`, `srcset`, lazy `data-*`, preloads and CSS `url()`.
+	 *
+	 * It can also reach a same-named file in another folder, and that is the safe
+	 * direction to err in: such an image loses its next-gen link and is served
+	 * from the original, which is on disk. A reference left pointing at a file
+	 * that was never saved is the damaging one, and this leaves none.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $text    HTML or CSS.
+	 * @param string $src     The image as the service reported it (`/wp-content/uploads/a.jpg`).
+	 * @param array  $formats Formats to undo (`webp`, `avif`).
+	 * @return string
+	 */
+	public static function restore_img_links( $text, $src, $formats ) {
+		$path = (string) wp_parse_url( $src, PHP_URL_PATH );
+		$name = false === strrpos( $path, '/' ) ? $path : substr( $path, strrpos( $path, '/' ) + 1 );
+		if ( '' === $name ) {
+			return $text;
+		}
+
+		// The reference may be encoded even when the service reported it decoded.
+		$forms = array_unique( [ $name, rawurldecode( $name ), rawurlencode( rawurldecode( $name ) ) ] );
+		foreach ( $formats as $format ) {
+			foreach ( $forms as $form ) {
+				$text = str_replace( $form . '.' . $format, $form, $text );
+			}
+		}
+
+		return $text;
 	}
 
 	/**
@@ -687,10 +830,16 @@ class Optimax extends Cloud_Queue_Svc {
 	 * Each image entry has src and any requested ori/webp/avif artifact.
 	 * Optimized images are saved beside their WordPress image targets.
 	 *
+	 * A failed fetch or digest check fails the whole result: nothing is stored and
+	 * the previous build keeps serving. An entry skipped for want of an artifact
+	 * URL or a WordPress target is reported under `restore` with the next-gen
+	 * formats it did not get, so the caller can put its links back on the original.
+	 *
 	 * @since 8.0
 	 *
 	 * @param array $imgs Array of image optimization data.
-	 * @return bool
+	 * @return array|false `[ 'saved' => local paths of the next-gen files written,
+	 *                     'restore' => [ src => formats not saved ] ]`, or false.
 	 */
 	private function _save_imgs( $imgs ) {
 		if ( ! is_array( $imgs ) ) {
@@ -709,10 +858,13 @@ class Optimax extends Cloud_Queue_Svc {
 			$types[] = 'ori';
 		}
 
+		$saved   = [];
+		$restore = [];
 		foreach ( $imgs as $img ) {
 			if ( ! is_array( $img ) ) {
 				return false;
 			}
+			$src = ! empty( $img['src'] ) && is_string( $img['src'] ) && 2048 >= strlen( $img['src'] ) ? $img['src'] : '';
 
 			$artifacts = [];
 			foreach ( $types as $type ) {
@@ -734,15 +886,20 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 
 			if ( empty( $artifacts ) ) {
+				if ( $src ) {
+					self::debug( 'Skip Optimax image entry without an artifact URL; linked back to the original.' );
+					$restore[ $src ] = [ 'webp', 'avif' ];
+				}
 				continue;
 			}
-			if ( empty( $img['src'] ) || ! is_string( $img['src'] ) || 2048 < strlen( $img['src'] ) ) {
+			if ( ! $src ) {
 				self::debug( 'Skip Optimax image entry without a usable local source.' );
 				continue;
 			}
 			$local = $this->_image_target( $img );
 			if ( ! $local ) {
-				self::debug( 'Skip Optimax image entry without a WordPress image target.' );
+				self::debug( 'Skip Optimax image entry without a WordPress image target; linked back to the original.' );
+				$restore[ $src ] = [ 'webp', 'avif' ];
 				continue;
 			}
 			list( $local_path, $local_root, $row ) = $local;
@@ -760,6 +917,14 @@ class Optimax extends Cloud_Queue_Svc {
 					return false;
 				}
 				$published[ $type ] = $target;
+				if ( 'ori' !== $type ) {
+					$saved[] = $target;
+				}
+			}
+			// A format the service sent no URL for has no file beside the original.
+			$unsaved = array_values( array_diff( [ 'webp', 'avif' ], array_keys( $published ) ) );
+			if ( $unsaved ) {
+				$restore[ $src ] = $unsaved;
 			}
 			if ( $row ) {
 				foreach ( $hooks as $type => $hook ) {
@@ -770,7 +935,10 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		}
 
-		return true;
+		return [
+			'saved'   => $saved,
+			'restore' => $restore,
+		];
 	}
 
 	/**
