@@ -1,8 +1,12 @@
 ["_version","8.0"]
 
+["guest",false]
+
 ["cache",true]
 
 ["cache-browser",true]
+
+["cache-mobile",true]
 
 ["img_optm-webp",true]
 
