@@ -69,7 +69,7 @@ class Error {
 						'<strong>QUIC.cloud</strong>'
 					) .
 					Doc::learn_more(
-						admin_url( 'admin.php?page=litespeed-general' ),
+						admin_url( 'admin.php?page=litespeed-general#online' ),
 						__( 'Click here to set.', 'litespeed-cache' ),
 						true,
 						false,
