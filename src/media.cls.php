@@ -965,7 +965,12 @@ class Media extends Root {
 			$attrs[ 'decoding' ]      = 'sync';
 			// create html with new attributes.
 			foreach ( $attrs as $k => $attr ) {
-				$new_html[] = $k . '="' . $attr . '"';
+				// Escape the value and drop anything whose name is not a plain attribute name.
+				if ( ! preg_match( '/^[a-zA-Z_:][-\w:.]*$/', (string) $k ) ) {
+					self::debug2( 'VPI preload dropped an attribute with an unusable name' );
+					continue;
+				}
+				$new_html[] = $k . '="' . esc_attr( $attr ) . '"';
 			}
 
 			if ( $new_html ) {
@@ -1146,7 +1151,9 @@ class Media extends Root {
 		$pathinfo = Utility::is_internal_file( $src );
 		if ( $pathinfo ) {
 			$src = $pathinfo[0];
-		} elseif ( apply_filters( 'litespeed_media_ignore_remote_missing_sizes', false ) ) {
+		} elseif ( apply_filters( 'litespeed_media_ignore_remote_missing_sizes', true ) ) {
+			// Measuring a remote image means getimagesize() fetching whatever URL the page carries, which turns any post author into a request forger
+			self::debug2( 'Skipped remote image dimension check for ' . $src );
 			return false;
 		}
 
