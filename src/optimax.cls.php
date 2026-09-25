@@ -317,7 +317,8 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param array  $ox      data_optimax payload.
 	 * @param string $queue_k Queue key.
 	 * @param array  $v       Queue item.
-	 * @return bool False when HTML is missing (abort), true otherwise.
+	 * @return bool False when nothing was stored (a malformed field, or an asset
+	 *              that could not be pulled or verified), true once the HTML is.
 	 */
 	protected function _save_result( $ox, $queue_k, $v ) {
 		if ( ! is_array( $ox ) || empty( $ox['html'] ) || ! is_string( $ox['html'] ) ) {
@@ -346,24 +347,32 @@ class Optimax extends Cloud_Queue_Svc {
 
 		// 1. Pull the optimized JS bundle first. The delivered HTML references it by
 		// its remote worker URL, and that artifact is swept a couple of days later, so
-		// the src must be repointed at the local copy before the HTML is stored.
+		// the src must be repointed at the local copy before the HTML is stored. A
+		// failed pull stores nothing, like a failed image: HTML still naming the
+		// worker URL would lose every combined script at the sweep, and
+		// _assets_intact() has no mapping to catch it by. The previous build keeps
+		// serving and the queue item is retried.
 		if ( ! empty( $ox['js_url'] ) ) {
-			$local_js_url = $this->_save_js( $ox['js_url'], $queue_k, $v, $is_mobile, $is_nextgen );
-			if ( $local_js_url ) {
-				$ox['html'] = str_replace( $ox['js_url'], $local_js_url, $ox['html'] );
+			$local_js_url = $this->_save_js( $ox['js_url'], self::_sidecar_sha256( $ox, 'js_sha256' ), $queue_k, $v, $is_mobile, $is_nextgen );
+			if ( ! $local_js_url ) {
+				self::debug( '❌ JS bundle not saved; result not stored [k] ' . $queue_k );
+				return false;
 			}
+			$ox['html'] = str_replace( $ox['js_url'], $local_js_url, $ox['html'] );
 		}
 
-		// 1b. Same for the used CSS. The service links it as an external stylesheet
-		// now instead of inlining it, so the delivered HTML carries a worker URL that
-		// is both swept a couple of days later and plain http — which an https site's
-		// browser blocks as mixed content long before the sweep. Pull it and repoint
-		// the HTML before it is stored, or the page ships with no styles at all.
+		// 1b. Same for the used CSS, when the service links it as an external
+		// stylesheet instead of inlining it. The page's own stylesheets are already
+		// stripped, so HTML still naming the worker URL would ship unstyled once the
+		// artifact is swept. Pull it and repoint the HTML before it is stored, or
+		// store nothing.
 		if ( ! empty( $ox['css_url'] ) ) {
-			$local_css_url = $this->_save_css( $ox['css_url'], $queue_k, $v, $is_mobile, $is_nextgen );
-			if ( $local_css_url ) {
-				$ox['html'] = str_replace( $ox['css_url'], $local_css_url, $ox['html'] );
+			$local_css_url = $this->_save_css( $ox['css_url'], self::_sidecar_sha256( $ox, 'css_sha256' ), $queue_k, $v, $is_mobile, $is_nextgen );
+			if ( ! $local_css_url ) {
+				self::debug( '❌ Used CSS not saved; result not stored [k] ' . $queue_k );
+				return false;
 			}
+			$ox['html'] = str_replace( $ox['css_url'], $local_css_url, $ox['html'] );
 		}
 
 		// 2. Images, before the HTML that names them. The service rewrites every image
@@ -673,14 +682,12 @@ class Optimax extends Cloud_Queue_Svc {
 	 * scripts, a missing stylesheet leaves the page unstyled below the fold.
 	 *
 	 * A URL with no mapping for one of these types is intact for that type, not
-	 * broken, and the two ways that happens are both harmless:
-	 *
-	 * - the service never sent that asset — the used CSS arrives inlined in a
-	 *   `<style id="optimax_ucss">` block unless the external-stylesheet flag is
-	 *   on, and such HTML references no CSS file at all;
-	 * - `_save_css()`/`_save_js()` failed, so `save_url()` was never reached and
-	 *   the HTML still carries the service's own URL, which the browser can
-	 *   still fetch.
+	 * broken: the service never sent that asset — the used CSS arrives inlined
+	 * in a `<style id="optimax_ucss">` block unless the external-stylesheet flag
+	 * is on, and such HTML references no CSS file at all. An asset that was sent
+	 * but could not be pulled or verified never gets this far: `_save_result()`
+	 * then stores nothing, so stored HTML never names the service's own URL,
+	 * which is swept a couple of days later.
 	 *
 	 * Only `save_url()` writes these rows, and only after the fetch and the local
 	 * write have both succeeded, so a mapping means the HTML was repointed at
@@ -1062,19 +1069,46 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Fetch the body of a remote asset returned by the OX service.
+	 * The digest the service sent for a JS or CSS sidecar, or null when it sent none.
 	 *
 	 * @since 8.0
 	 *
-	 * @param string $url Remote URL.
-	 * @return string|false Body on success, false on transport error or empty body.
+	 * @param array  $ox  data_optimax payload.
+	 * @param string $key `js_sha256` or `css_sha256`.
+	 * @return mixed
 	 */
-	private function _fetch_con( $url ) {
-		$response = wp_remote_get(
+	private static function _sidecar_sha256( $ox, $key ) {
+		return isset( $ox[ $key ] ) && '' !== $ox[ $key ] ? $ox[ $key ] : null;
+	}
+
+	/**
+	 * Fetch the body of a JS or CSS sidecar the OX service links.
+	 *
+	 * Held to the rules the images are: the bundle runs as the site's own script,
+	 * so it may only come from an https QUIC.cloud URL (Img::normalize_cloud_url),
+	 * over a verified TLS connection like every other QUIC.cloud request, without
+	 * redirects, within the same size bound, and matching the SHA-256 the service
+	 * sent for it (Img::matches_sum).
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url    Remote URL.
+	 * @param mixed  $sha256 Hex SHA-256 of the body, or null when the service sent none.
+	 * @return string|false Body on success, false when refused or not verified.
+	 */
+	private function _fetch_con( $url, $sha256 ) {
+		$url = Img::normalize_cloud_url( $url );
+		if ( ! $url ) {
+			self::debug( '❌ Refused sidecar URL: not an https QUIC.cloud artifact' );
+			return false;
+		}
+
+		$response = wp_safe_remote_get(
 			$url,
 			[
-				'timeout'   => 60,
-				'sslverify' => false,
+				'timeout'             => 60,
+				'redirection'         => 0,
+				'limit_response_size' => File::REMOTE_MAX_BYTES + 1,
 			]
 		);
 
@@ -1083,9 +1117,23 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
+		$code = (int) wp_remote_retrieve_response_code( $response );
 		$body = wp_remote_retrieve_body( $response );
-		if ( ! $body ) {
-			self::debug( 'Empty response: ' . $url );
+		if ( 200 !== $code || ! $body || File::REMOTE_MAX_BYTES < strlen( $body ) ) {
+			self::debug( 'Unusable response [code] ' . $code . ' [bytes] ' . strlen( (string) $body ) . ' [url] ' . $url );
+			return false;
+		}
+
+		// TODO(qcos-afhm): refuse a sidecar without a digest once every Worker sends
+		// `js_sha256`/`css_sha256`. Until then a result from an older Worker carries
+		// none, and is accepted on the URL policy alone.
+		if ( null === $sha256 ) {
+			self::debug( 'Sidecar has no digest; accepted on URL policy [url] ' . $url );
+			return $body;
+		}
+
+		if ( ! Img::matches_sum( $body, $sha256, 'sha256' ) ) {
+			self::debug( '❌ Sidecar digest mismatch [url] ' . $url );
 			return false;
 		}
 
@@ -1101,14 +1149,15 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @since 8.0
 	 *
 	 * @param string $js_url     Remote URL of the optimized JS.
+	 * @param mixed  $sha256     Hex SHA-256 of the bundle, or null when the service sent none.
 	 * @param string $queue_k    Queue key.
 	 * @param array  $v          Queue item.
 	 * @param bool   $is_mobile  Whether this is the mobile variant.
 	 * @param string $is_nextgen Next-gen image format flag from the queue item.
 	 * @return string|false Public URL of the stored bundle, or false on failure.
 	 */
-	private function _save_js( $js_url, $queue_k, $v, $is_mobile, $is_nextgen ) {
-		$con = $this->_fetch_con( $js_url );
+	private function _save_js( $js_url, $sha256, $queue_k, $v, $is_mobile, $is_nextgen ) {
+		$con = $this->_fetch_con( $js_url, $sha256 );
 		// An empty body is a failed fetch too. md5( '' ) is a stable filename, so every
 		// page reaching here would collide on one file and silently overwrite each
 		// other's bundle instead of failing.
@@ -1141,23 +1190,24 @@ class Optimax extends Cloud_Queue_Svc {
 	/**
 	 * Download the used CSS and store it as a local static file.
 	 *
-	 * The used CSS used to arrive inline; the service now links it from the worker's
-	 * artifact origin, which sweeps its files after a couple of days and speaks plain
-	 * http, so leaving that href in place loses the page's styles either immediately
-	 * (mixed content on an https site) or shortly after. Same fix as the JS bundle:
-	 * fetch the body once, keep it beside the stored HTML, hand back the local URL.
+	 * The used CSS used to arrive inline; with the external-stylesheet flag on, the
+	 * service links it from the worker's artifact origin instead, which sweeps its
+	 * files after a couple of days, so leaving that href in place loses the page's
+	 * styles shortly after. Same fix as the JS bundle: fetch the body once, keep it
+	 * beside the stored HTML, hand back the local URL.
 	 *
 	 * @since 8.0
 	 *
 	 * @param string $css_url    Remote URL of the used CSS.
+	 * @param mixed  $sha256     Hex SHA-256 of the stylesheet, or null when the service sent none.
 	 * @param string $queue_k    Queue key.
 	 * @param array  $v          Queue item.
 	 * @param bool   $is_mobile  Whether this is the mobile variant.
 	 * @param string $is_nextgen Next-gen image format flag from the queue item.
 	 * @return string|false Public URL of the stored stylesheet, or false on failure.
 	 */
-	private function _save_css( $css_url, $queue_k, $v, $is_mobile, $is_nextgen ) {
-		$con = $this->_fetch_con( $css_url );
+	private function _save_css( $css_url, $sha256, $queue_k, $v, $is_mobile, $is_nextgen ) {
+		$con = $this->_fetch_con( $css_url, $sha256 );
 		// An empty body is a failed fetch too. md5( '' ) is a stable filename, so every
 		// page reaching here would collide on one file and silently overwrite each
 		// other's stylesheet instead of failing.
