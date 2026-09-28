@@ -307,7 +307,14 @@ class Media extends Root {
 		// <link rel="preload" as="image" href="xx">
 		if ( $this->_vpi_preload_list ) {
 			foreach ( $this->_vpi_preload_list as $v ) {
-				$content .= '<link rel="preload" fetchpriority="high" as="image" href="' . esc_url( Str::trim_quotes( $v ) ) . '">';
+				// A responsive image is preloaded by its srcset, so the browser fetches the candidate the <img> picks.
+				// Its src is one fixed size: on a small screen that file downloads first, then the smaller one the srcset selects.
+				// No href then: a browser without imagesrcset support skips the preload instead of fetching a size the page may not use.
+				if ( $v['srcset'] ) {
+					$content .= '<link rel="preload" fetchpriority="high" as="image" imagesrcset="' . esc_attr( $v['srcset'] ) . '"' . ( $v['sizes'] ? ' imagesizes="' . esc_attr( $v['sizes'] ) . '"' : '' ) . '>';
+					continue;
+				}
+				$content .= '<link rel="preload" fetchpriority="high" as="image" href="' . esc_url( Str::trim_quotes( $v['src'] ) ) . '">';
 			}
 		}
 		return $content;
@@ -956,7 +963,12 @@ class Media extends Root {
 
 			self::debug2( 'VPI preload found and matched: ' . $attrs['src'] );
 
-			$this->_vpi_preload_list[] = $attrs['src'];
+			$this->_vpi_preload_list[] = [
+				'src'    => $attrs['src'],
+				'srcset' => ! empty( $attrs['srcset'] ) ? $attrs['srcset'] : '',
+				// WP adds `auto` only for lazy-loaded images; a preload has no layout to measure, so drop it.
+				'sizes'  => ! empty( $attrs['sizes'] ) ? trim( preg_replace( '/^\s*auto\s*(,|$)/i', '', $attrs['sizes'] ) ) : '',
+			];
 
 			// Add attributes fetchpriority="high" and decode="sync"
 			// after WP 6.3.0 use: wp_img_tag_add_loading_optimization_attrs().
