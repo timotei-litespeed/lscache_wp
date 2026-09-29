@@ -283,6 +283,7 @@ Please don't report a suspected vulnerability in this support forum. Reporting d
 * **Cache** Prevented authenticated responses from being cached under an incorrect visitor context.
 * **Crawler** Hardened the role simulation hash check and removed the unused flash hash path. (#866256)
 * **Debug** Kept cache vary values and URL tags hashed when debug logging is enabled, and removed cookie values from page comments.
+* **Image Optimize** Served a WebP/AVIF file in place of its original only when it is smaller, and stopped pulling next-gen files that are not smaller than the original. (DispatchOneTPGG #1049)
 
 = 7.9.1 - Sep 1 2026 =
 * **Core** Aligned the runtime PHP and WordPress guards with the published minimum requirements.

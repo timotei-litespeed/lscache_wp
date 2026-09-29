@@ -1449,6 +1449,11 @@ class Media extends Root {
 		if ( $ori_check ) {
 			// check if has webp/avif file.
 			$has_next = apply_filters( 'litespeed_media_check_webp', Utility::is_internal_file( $url, $this->_sys_format ), $url );
+			// A next-gen file is only worth serving when it is smaller: a flat-colour PNG logo often converts larger (#1049).
+			if ( $has_next && ! self::_next_gen_is_smaller( $ori_check, $has_next ) ) {
+				self::debug2( '-' . $this->_sys_format . ' file is not smaller than the original, bypassed' );
+				return false;
+			}
 			if ( $has_next ) {
 				$url .= '.' . $this->_sys_format;
 			} else {
@@ -1463,6 +1468,36 @@ class Media extends Root {
 		self::debug2( '- replaced to: ' . $url );
 
 		return $url;
+	}
+
+	/**
+	 * Whether a next-gen file is worth serving in place of its original.
+	 *
+	 * Both arguments are what Utility::is_internal_file() returns, `[ path, size ]`, so the sizes cost no extra I/O.
+	 * A size that is not known (a filter returned something else, or the original reports none) keeps the old
+	 * behaviour and serves the next-gen file; an empty next-gen file is never served.
+	 *
+	 * @since 7.9.2
+	 *
+	 * @param mixed $ori_check Original file check, `[ path, size ]` when unfiltered.
+	 * @param mixed $has_next  Next-gen file check, `[ path, size ]` when unfiltered.
+	 * @return bool
+	 */
+	private static function _next_gen_is_smaller( $ori_check, $has_next ) {
+		if ( ! is_array( $has_next ) || ! isset( $has_next[1] ) ) {
+			return true;
+		}
+
+		$next_size = (int) $has_next[1];
+		if ( 0 === $next_size ) {
+			return false;
+		}
+
+		if ( ! is_array( $ori_check ) || empty( $ori_check[1] ) ) {
+			return true;
+		}
+
+		return $next_size < (int) $ori_check[1];
 	}
 
 	/**
