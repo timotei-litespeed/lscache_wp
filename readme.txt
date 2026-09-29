@@ -266,6 +266,7 @@ Please don't report a suspected vulnerability in this support forum. Reporting d
 * 🌱**OptiMax** OptiMax to maximize the page score.
 
 = 7.9.2 - Coming soon 2026 =
+* **Image Optimize** Served a WebP/AVIF file in place of its original only when it is smaller, and stopped pulling next-gen files that are not smaller than the original. (DispatchOneTPGG #1049)
 * **Image Optimize** Fixed thumbnails skipped for images in the uploads root. (AsFLY-902 PR#1059)
 * **Cloud** Retry credit sync after one hour when credit is exhausted.
 * **Page Optimize** Protected HTML boundaries during resource rewriting, insertion and minification. Hardened delayed-script globals, preserved pages on parsing errors, and corrected Deferred ordering. Removed JS Delayed Includes and its public filter; global Delayed mode remains available. Improved Instant Click CDN compatibility.
