@@ -335,6 +335,9 @@ trait Img_Optm_Pull {
 			return 'stop';
 		}
 
+		// A next-gen file larger than the original it stands in for makes every page that uses it heavier (#1049).
+		$dropped = $this->_drop_larger_next_gen( $staged, $local_file );
+
 		foreach ( $staged as $type => $file ) {
 			$target = 'ori' === $type ? $local_file : $local_file . '.' . $type;
 			$saved  = Img::publish( $file, $target, $root, 'ori' === $type && ! $rm_backup );
@@ -361,7 +364,7 @@ trait Img_Optm_Pull {
 			'avif' => 'litespeed_img_pull_avif',
 		];
 		foreach ( $hooks as $type => $hook ) {
-			if ( empty( $server_info[ $type ] ) ) {
+			if ( empty( $server_info[ $type ] ) || ! empty( $dropped[ $type ] ) ) {
 				continue;
 			}
 			$target = 'ori' === $type ? $local_file : $local_file . '.' . $type;
@@ -370,6 +373,50 @@ trait Img_Optm_Pull {
 		}
 
 		return 'done';
+	}
+
+	/**
+	 * Discard staged next-gen files that are not smaller than the original they stand in for.
+	 *
+	 * The original a visitor falls back to is the optimized one when it was pulled in the same row, else the file
+	 * already on disk. A dropped file is deleted and removed from `$staged`, so it is neither published nor
+	 * announced through its pull hook; the row still completes with whatever else it pulled.
+	 *
+	 * @since 7.9.2
+	 *
+	 * @param array  $staged     Staged paths by type, passed by reference.
+	 * @param string $local_file Path of the original image.
+	 * @return array Types dropped, as `[ type => true ]`.
+	 */
+	private function _drop_larger_next_gen( &$staged, $local_file ) {
+		if ( ! empty( $staged['ori'] ) ) {
+			$ori_size = (int) filesize( $staged['ori'] );
+		} elseif ( is_file( $local_file ) ) {
+			$ori_size = (int) filesize( $local_file );
+		} else {
+			return [];
+		}
+		if ( ! $ori_size ) {
+			return [];
+		}
+
+		$dropped = [];
+		foreach ( [ 'webp', 'avif' ] as $type ) {
+			if ( empty( $staged[ $type ] ) ) {
+				continue;
+			}
+			$size = (int) filesize( $staged[ $type ] );
+			if ( $size && $size < $ori_size ) {
+				continue;
+			}
+
+			self::debug( 'Not publishing ' . $type . ', not smaller than its original [size] ' . $size . ' [original] ' . $ori_size . ' [file] ' . $local_file );
+			wp_delete_file( $staged[ $type ] );
+			unset( $staged[ $type ] );
+			$dropped[ $type ] = true;
+		}
+
+		return $dropped;
 	}
 
 	/**
