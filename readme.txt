@@ -266,6 +266,12 @@ Please don't report a suspected vulnerability in this support forum. Reporting d
 * 🌱**OptiMax** OptiMax to maximize the page score.
 
 = 7.9.2 - Coming soon 2026 =
+* **Object Cache** Namespaced cache keys by installation identity to reduce collisions on shared cache backends.
+* **Image Optimize** Kept the scan cursor unchanged when cleanup finds no unfinished images.
+* **Database Optimize** Limited table optimization and its count to the current site's tables, and safely quoted table names for InnoDB conversion.
+* **Task** Kept asynchronous request tokens out of debug logs and compared them with constant-time checks.
+* **Debug** Removed the default trusted loopback IP for new installations.
+* **CLI** Required HTTPS for remote option imports and removed their temporary files after use.
 * **Purge** Queued page-cache invalidation before marking a plugin upgrade complete and preserved it for the next request.
 * **CDN** Kept the saved Cloudflare zone when an API lookup fails and cleared it when a successful lookup returns no active zones. (nathaningram)
 * **Cache** Added a rewrite guard for REST requests with HTTP credentials and made authenticated REST responses hard no-cache, including under Force Public. (Ionut Platon #419630)
@@ -279,7 +285,7 @@ Please don't report a suspected vulnerability in this support forum. Reporting d
 * **Conf** Moved runtime configuration to a PHP-protected file and updated Guest Mode and Object Cache to read it.
 * **Object Cache** Automatically purged object cache when switching between QUIC.cloud development and live environments.
 * **Conf** Validated settings written to .htaccess to prevent directive injection.
-* **Presets** Prevented path traversal in presets and excluded sensitive settings from automatic preset backups.
+* **Presets** Prevented path traversal, isolated automatic backups by site in guarded PHP files, excluded sensitive settings from new backups, and added a reminder to manually remove the legacy backup directory.
 * **Cache** Prevented authenticated responses from being cached under an incorrect visitor context.
 * **Crawler** Hardened the role simulation hash check and removed the unused flash hash path. (#866256)
 * **Debug** Kept cache vary values and URL tags hashed when debug logging is enabled, and removed cookie values from page comments.
