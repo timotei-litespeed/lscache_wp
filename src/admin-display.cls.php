@@ -371,9 +371,6 @@ class Admin_Display extends Base {
 		);
 
 		foreach ( $this->_pages as $slug => $meta ) {
-			if ( 'litespeed-optimax' === $slug && !defined( 'LITESPEED_OX' ) ) {
-				continue;
-			}
 			if ( ! empty( $meta['scope'] ) && $meta['scope'] !== $scope ) {
 				continue;
 			}
