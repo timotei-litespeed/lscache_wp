@@ -64,12 +64,15 @@ $next_gen       = '<code class="litespeed-success">' . $this->cls( 'Media' )->ne
 							// Vary group: the mobile and next-gen parts show as icons, whatever else
 							// the vary carries follows as text in the same style, so two rows for
 							// one URL stay tellable apart.
-							$vary_rest = isset( $queue_val['vary'] ) ? (string) $queue_val['vary'] : '';
-							$vary_rest = str_replace( [ 'ismobile', 'webp', 'avif' ], '', $vary_rest );
-							$vary_rest = trim( preg_replace( '/\++/', ' ', $vary_rest ) );
+							$vary_group = isset( $queue_val['vary'] ) ? (string) $queue_val['vary'] : '';
+							$vary_rest  = str_replace( [ 'ismobile', 'webp', 'avif' ], '', $vary_group );
+							$vary_rest  = trim( preg_replace( '/\++/', ' ', $vary_rest ) );
 
-							$has_mobile  = ! empty( $queue_val['is_mobile'] );
-							$has_nextgen = ! empty( $queue_val['is_nextgen'] );
+							$has_mobile = ! empty( $queue_val['is_mobile'] );
+							// Next-gen from the vary, not `is_nextgen`: the vary is the cache key, so it decides who gets
+							// this build. `is_nextgen` can say WebP for a client LiteSpeed filed under no-WebP (a Lighthouse
+							// pre-fetch without image/webp in Accept), and that row would look like its WebP twin.
+							$has_nextgen = (bool) array_intersect( [ 'webp', 'avif' ], explode( '+', $vary_group ) );
 
 							// Nothing to describe means no empty parenthetical.
 							if ( $has_mobile || $has_nextgen || '' !== $vary_rest ) {
