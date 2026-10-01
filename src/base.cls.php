@@ -289,7 +289,6 @@ class Base extends Root {
 	// -------------------------------------------------- ##
 	const O_OPTIMAX      = 'optimax';
 	const O_OPTIMAX_CRON = 'optimax-cron';
-	const O_OPTIMAX_EXC  = 'optimax-exc';
 
 	const NETWORK_O_USE_PRIMARY = 'use_primary_settings';
 
@@ -571,7 +570,6 @@ class Base extends Root {
 
 		self::O_OPTIMAX => false,
 		self::O_OPTIMAX_CRON => false,
-		self::O_OPTIMAX_EXC => [],
 
 		self::DEBUG_TMP_DISABLE => 0,
 	];
@@ -936,7 +934,6 @@ class Base extends Root {
 	protected function _conf_filter( $id ) {
 		$filters = [
 			self::O_MEDIA_LAZY_EXC => 'uri',
-			self::O_OPTIMAX_EXC => 'uri',
 			self::O_DEBUG_INC => 'relative',
 			self::O_DEBUG_EXC => 'relative',
 			self::O_MEDIA_LAZY_URI_EXC => 'relative',

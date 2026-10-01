@@ -36,17 +36,14 @@ $this->form_action();
 					<?php esc_html_e( 'Turn on OptimaX.', 'litespeed-cache' ); ?>
 				</div>
 
-				<?php if ( $closest_server ) : ?>
-					<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_OPTIMAX ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label="<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>" data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class="litespeed-quic-icon"></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
-				<?php endif; ?>
-
 				<?php if ( Optimax::is_paused() ) : ?>
 					<div class="litespeed-danger litespeed-text-bold">
 						⚠️ <?php echo esc_html( Optimax::paused_msg() ); ?>
 					</div>
-				<?php else : ?>
-					<font class="litespeed-warning">
-					⚠️ <?php printf( esc_html__( 'OptimaX requires the %1$s option to be turned on (WebP or AVIF).', 'litespeed-cache' ), esc_html__( 'Next-Gen Image Format', 'litespeed-cache' ) ); ?></font>
+				<?php endif; ?>
+				
+				<?php if ( $closest_server ) : ?>
+					<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_OPTIMAX ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label="<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>" data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class="litespeed-quic-icon"></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
 				<?php endif; ?>
 			</td>
 		</tr>
@@ -60,25 +57,7 @@ $this->form_action();
 				<?php $this->build_switch( $option_id ); ?>
 				<div class="litespeed-desc">
 					<?php esc_html_e( 'Automatically process the OptimaX queue via cron job, one URL per run. When off, run the queue manually from the OptimaX Summary tab.', 'litespeed-cache' ); ?>
-				</div>
-			</td>
-		</tr>
-
-		<tr>
-			<th>
-				<?php $option_id = Base::O_OPTIMAX_EXC; ?>
-				<?php $this->title( $option_id ); ?>
-			</th>
-			<td>
-				<?php $this->build_textarea( $option_id ); ?>
-				<div class="litespeed-desc">
-					<?php esc_html_e( 'Listed URLs will not be optimized by OptimaX.', 'litespeed-cache' ); ?>
-					<?php Doc::full_or_partial_url(); ?>
-					<?php Doc::one_per_line(); ?>
-					<br /><font class="litespeed-success">
-						<?php esc_html_e( 'API', 'litespeed-cache' ); ?>:
-						<?php printf( esc_html__( 'Filter %s is supported.', 'litespeed-cache' ), '<code>litespeed_optimax_exc</code>' ); ?>
-					</font>
+					<?php Task::cron_off_notice(); ?>
 				</div>
 			</td>
 		</tr>

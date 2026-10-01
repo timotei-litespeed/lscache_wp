@@ -53,18 +53,17 @@ class Data extends Root {
 		'ccss'    => 3,
 		'ucss'    => 4,
 		'optimax' => 5,
-		// OptimaX's JS bundle. Kept out of the shared 'js' type so a CSS/JS purge,
-		// which wipes the whole js folder, cannot delete a bundle the stored OptimaX
-		// HTML still points at.
 		'optimax_js' => 6,
-		// OptimaX's used CSS. Same reasoning as the JS bundle above: a UCSS purge
-		// empties the ucss folder, and the stored OptimaX HTML links this stylesheet
-		// by name, so sharing the 'ucss' type would strip the page of its styles.
 		'optimax_ucss' => 7,
-		// The image files an OptimaX build saved beside their originals, as a JSON
-		// list the stored HTML depends on: serve() refuses the HTML once one is gone.
 		'optimax_imgs' => 8,
 	];
+
+	/**
+	 * Per-table answer of url_has_ox_col(), so a request asks the database once.
+	 *
+	 * @var array<string,bool>
+	 */
+	private $_url_ox_col = [];
 
 	/** Table: image optimization working queue. */
 	const TB_IMG_OPTMING = 'litespeed_img_optming';
@@ -488,19 +487,73 @@ class Data extends Root {
 		}
 
 		$type        = $this->_url_file_types[ $file_type ];
-		$tb_url      = $this->tb( 'url' );
 		$tb_url_file = $this->tb( 'url_file' );
 
 		// Delete all of this type.
 		$q = "DELETE FROM `$tb_url_file` WHERE `type` = %d";
 		$wpdb->query( $wpdb->prepare( $q, $type ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 
-		// Prune orphaned rows in URL table.
+		$this->url_prune_orphans();
+	}
+
+	/**
+	 * Delete URL rows that no file row references.
+	 *
+	 * A page in the OptimaX list has no file rows until it is built, and none
+	 * again after Purge All OptimaX; it is not an orphan and must survive.
+	 *
+	 * @since 8.0
+	 *
+	 * @return void
+	 */
+	public function url_prune_orphans() {
+		global $wpdb;
+
+		$tb_url      = $this->tb( 'url' );
+		$tb_url_file = $this->tb( 'url_file' );
+		$keep_listed = $this->url_has_ox_col() ? ' AND d.`ox` = 0' : '';
+
 		$sql = "DELETE d
 				FROM `{$tb_url}` AS d
 				LEFT JOIN `{$tb_url_file}` AS f ON d.`id` = f.`url_id`
-				WHERE f.`url_id` IS NULL";
+				WHERE f.`url_id` IS NULL{$keep_listed}";
 		$wpdb->query( $sql ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/**
+	 * Whether this blog's URL table has the OptimaX page-list column.
+	 *
+	 * Missing until the blog runs its 8.0 upgrade (or the OptimaX admin page adds
+	 * it); queries naming `ox` would fail until then, so callers check first.
+	 *
+	 * @since 8.0
+	 *
+	 * @param bool $refresh Ask the database again instead of using this request's answer.
+	 * @return bool
+	 */
+	public function url_has_ox_col( $refresh = false ) {
+		global $wpdb;
+
+		$tb_url = $this->tb( 'url' );
+		if ( $refresh || ! isset( $this->_url_ox_col[ $tb_url ] ) ) {
+			$save_state                   = $wpdb->suppress_errors( true );
+			$this->_url_ox_col[ $tb_url ] = (bool) $wpdb->get_var( "SHOW COLUMNS FROM `$tb_url` LIKE 'ox'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->suppress_errors( $save_state );
+		}
+
+		return $this->_url_ox_col[ $tb_url ];
+	}
+
+	/**
+	 * The `url_file.type` id of a file type, or 0 when unknown.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $file_type A key of $_url_file_types, e.g. 'optimax'.
+	 * @return int
+	 */
+	public function file_type_id( $file_type ) {
+		return isset( $this->_url_file_types[ $file_type ] ) ? (int) $this->_url_file_types[ $file_type ] : 0;
 	}
 
 	/**

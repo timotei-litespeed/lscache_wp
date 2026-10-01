@@ -21,6 +21,12 @@ class Optimax extends Cloud_Queue_Svc {
 
 	const LOG_TAG = '🚀';
 
+	const TYPE_PAGE_ADD    = 'page_add';
+	const TYPE_PAGE_DEL    = 'page_del';
+	const TYPE_VER_RUN     = 'ver_run';
+	const TYPE_VER_QUEUE   = 'ver_queue';
+	const TYPE_VER_DEQUEUE = 'ver_dequeue';
+
 	/**
 	 * Registered image sizes the owner excluded from optimization.
 	 *
@@ -144,7 +150,7 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Admin action handler: the queue's manual "Run" actions honour the pause too.
+	 * Admin action handler: page-list and version actions; the queue's manual "Run" actions honour the pause too.
 	 *
 	 * "Run queue" and "Run item" reach the service through cron( true ) and
 	 * gen_item(), bypassing cron_push(). While paused nothing may be sent, so
@@ -156,12 +162,95 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return void
 	 */
 	public function handler() {
-		if ( in_array( Router::verify_type(), [ self::TYPE_GEN, self::TYPE_GEN_ITEM ], true ) && ! self::nextgen_ready() ) {
+		$type  = Router::verify_type();
+		$pages = $this->cls( 'Optimax_Pages' );
+		// Back to the bare page: the default redirect keeps every query arg, so one action's
+		// `q_k`/`fid`/`id` would ride along into the next action's links.
+		$back = admin_url( 'admin.php?page=litespeed-optimax' );
+
+		// phpcs:disable WordPress.Security.NonceVerification -- Router::verify_action() checked the nonce.
+		switch ( $type ) {
+			case self::TYPE_PAGE_ADD:
+				// Not sanitize_text_field(): it strips `%XX`, the escapes of a non-ASCII slug. add() validates it.
+				$input = isset( $_POST['ox_page'] ) && is_string( $_POST['ox_page'] ) ? trim( wp_unslash( $_POST['ox_page'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				$res   = $pages->add( $input );
+				if ( true === $res ) {
+					Admin_Display::success( sprintf( __( 'Added to OptimaX pages: %s', 'litespeed-cache' ), esc_html( $input ) ) );
+				} elseif ( 'exists' === $res ) {
+					Admin_Display::note( __( 'This page is already in OptimaX pages.', 'litespeed-cache' ) );
+				} elseif ( 'limit' === $res ) {
+					Admin_Display::error( sprintf( __( 'Your QUIC.cloud plan allows %d OptimaX pages.', 'litespeed-cache' ), Optimax_Pages::max_links() ) );
+				} elseif ( 'not_ready' === $res ) {
+					Admin_Display::error( __( 'The OptimaX page list is not ready yet. Reload this page to finish the database update.', 'litespeed-cache' ) );
+				} else {
+					Admin_Display::error( sprintf( __( 'Not a page on this site: %s', 'litespeed-cache' ), esc_html( $input ) ) );
+				}
+				Admin::redirect( $back );
+				return;
+
+			case self::TYPE_PAGE_DEL:
+				if ( $pages->remove( ! empty( $_GET['id'] ) ? absint( $_GET['id'] ) : 0 ) ) {
+					Admin_Display::success( __( 'Removed the page and its OptimaX builds.', 'litespeed-cache' ) );
+				}
+				Admin::redirect( $back );
+				return;
+
+			case self::TYPE_VER_QUEUE:
+				$pages->queue_version( ! empty( $_GET['fid'] ) ? absint( $_GET['fid'] ) : 0 );
+				Admin::redirect( $back );
+				return;
+
+			case self::TYPE_VER_DEQUEUE:
+				$pages->dequeue( ! empty( $_GET['q_k'] ) ? sanitize_key( wp_unslash( $_GET['q_k'] ) ) : '' );
+				Admin::redirect( $back );
+				return;
+
+			case self::TYPE_CLEAR_Q:
+				$kept = $pages->clear_waiting();
+				if ( $kept ) {
+					/* translators: %d: number of pages QUIC.cloud is still optimizing */
+					Admin_Display::success( sprintf( _n( 'OptimaX queue cleared. %d page QUIC.cloud is already optimizing was kept.', 'OptimaX queue cleared. %d pages QUIC.cloud is already optimizing were kept.', $kept, 'litespeed-cache' ), $kept ) );
+				} else {
+					Admin_Display::success( __( 'OptimaX queue cleared.', 'litespeed-cache' ) );
+				}
+				Admin::redirect( $back );
+				return;
+		}
+
+		if ( in_array( $type, [ self::TYPE_GEN, self::TYPE_GEN_ITEM, self::TYPE_VER_RUN ], true ) && ! self::nextgen_ready() ) {
 			self::debug( 'Manual run skipped: Next-Gen Image Format is OFF' );
 			Admin_Display::note( esc_html( self::paused_msg() ) );
-			Admin::redirect();
+			Admin::redirect( $back );
 			return;
 		}
+
+		if ( self::TYPE_GEN === $type ) {
+			// One request per click, behind the cron's own throttles (the try-later wait, a
+			// request still in flight): a manual run never loads QUIC.cloud more than the cron.
+			$wait = (int) self::get_summary( $this->_next_run_after_key() ) - time();
+			if ( $wait > 0 ) {
+				/* translators: %s: time until the queue continues */
+				Admin_Display::note( sprintf( __( 'QUIC.cloud is still optimizing a page. The OptimaX queue continues in %s.', 'litespeed-cache' ), Utility::readable_time( $wait, 0, true ) ) );
+			} else {
+				static::cron();
+			}
+			Admin::redirect( $back );
+			return;
+		}
+
+		if ( self::TYPE_VER_RUN === $type ) {
+			// A version not in the queue is queued from its build row first; gen_item() then sends it by hash.
+			if ( empty( $_GET['q_k'] ) && ! empty( $_GET['fid'] ) ) {
+				$queue_k = $pages->queue_version( absint( $_GET['fid'] ) );
+				if ( $queue_k ) {
+					$_GET['q_k'] = md5( $queue_k );
+				}
+			}
+			$this->gen_item();
+			Admin::redirect( $back );
+			return;
+		}
+		// phpcs:enable WordPress.Security.NonceVerification
 
 		parent::handler();
 	}
@@ -265,7 +354,7 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return bool
 	 */
 	protected function _valid_queue_item( $queue_k, $v ) {
-		foreach ( [ 'url', 'user_agent', 'url_tag', 'vary' ] as $key ) {
+		foreach ( [ 'url', 'url_tag', 'vary' ] as $key ) {
 			if ( ! is_array( $v ) || ! isset( $v[ $key ] ) || ! is_string( $v[ $key ] ) ) {
 				return false;
 			}
@@ -286,7 +375,6 @@ class Optimax extends Cloud_Queue_Svc {
 		$data = [
 			'url'        => $v['url'],
 			'queue_k'    => $queue_k,
-			'user_agent' => $v['user_agent'],
 			'is_mobile'  => ! empty( $v['is_mobile'] ) ? 1 : 0,
 			'is_nextgen' => ! empty( $v['is_nextgen'] ) ? $v['is_nextgen'] : '',
 			'optm_ori'   => $this->conf( self::O_IMG_OPTM_ORI ) ? 1 : 0,
@@ -312,6 +400,42 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
+	 * Store a result for a page that is still listed.
+	 *
+	 * Removed from the list while QC was building it: the result is dropped, and
+	 * returning true clears the queue row without a failure notice. Storing purges
+	 * the page (its OptimaX tag and URL); that is not a content change, so the
+	 * change listeners are off until it is done. Once stored, the page's builds
+	 * past their grace period are deleted.
+	 *
+	 * @param array  $ox      data_optimax payload.
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool
+	 */
+	protected function _save_result( $ox, $queue_k, $v ) {
+		$pages = $this->cls( 'Optimax_Pages' );
+		$page  = ! empty( $v['url_tag'] ) && $pages->ready() ? $pages->get( $v['url_tag'] ) : null;
+		if ( ! empty( $v['url_tag'] ) && $pages->ready() && ! $page ) {
+			self::debug( 'Page no longer in OptimaX list; result discarded [k] ' . $queue_k );
+			return true;
+		}
+
+		$pages->ignore_purges( true );
+		try {
+			$stored = $this->_store_result( $ox, $queue_k, $v );
+		} finally {
+			$pages->ignore_purges( false );
+		}
+
+		if ( $stored && $page ) {
+			$pages->clean_expired( (int) $page['id'] );
+		}
+
+		return $stored;
+	}
+
+	/**
 	 * Fan out the nested optimization payload to four save targets.
 	 *
 	 * @param array  $ox      data_optimax payload.
@@ -320,7 +444,7 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return bool False when nothing was stored (a malformed field, or an asset
 	 *              that could not be pulled or verified), true once the HTML is.
 	 */
-	protected function _save_result( $ox, $queue_k, $v ) {
+	private function _store_result( $ox, $queue_k, $v ) {
 		if ( ! is_array( $ox ) || empty( $ox['html'] ) || ! is_string( $ox['html'] ) ) {
 			self::debug( '❌ No HTML in data_optimax.' );
 			return false;
@@ -428,14 +552,6 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Generate URL tag for Optimax.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $request_url Current request URL.
-	 * @return string The URL tag.
-	 */
-	/**
 	 * Cache tag for every stored page an OptimaX build can replace.
 	 *
 	 * Built from the url_tag alone, not the vary: evicting a sibling vary costs one
@@ -446,7 +562,7 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param string $url_tag Page identity from get_url_tag().
 	 * @return string
 	 */
-	private static function _page_tag( $url_tag ) {
+	public static function page_tag( $url_tag ) {
 		return 'OPTIMAX.' . md5( $url_tag );
 	}
 
@@ -495,45 +611,20 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Whether this 404 should share one build with every other 404.
-	 *
-	 * On by default: a 404 is normally the same page whatever was requested, so
-	 * one build serves all of them and unbounded bot traffic cannot spend a build
-	 * per bad URL. Sites whose 404 is genuinely dynamic can opt out:
-	 *
-	 *     add_filter( 'litespeed_ox_404_one_page', '__return_false' );
-	 *
-	 * and then get a build per URL and vary, like any other page.
+	 * The page identity builds are stored under.
 	 *
 	 * @since 8.0
 	 *
-	 * @return bool
+	 * @param string $request_url Current request URL.
+	 * @return string
 	 */
-	private static function _is_shared_404() {
-		return is_404() && apply_filters( 'litespeed_ox_404_one_page', true );
-	}
-
 	public static function get_url_tag( $request_url ) {
-		if ( self::_is_shared_404() ) {
-			return '404';
-		}
-
+		// Dev's filter keys builds by page type; the OptimaX page list cannot track those.
 		if ( apply_filters( 'litespeed_optimax_per_pagetype', false ) ) {
 			return Utility::page_type();
 		}
 
 		return $request_url;
-	}
-
-	/**
-	 * Get User Agent.
-	 *
-	 * @since 8.0
-	 *
-	 * @return string The user agent string.
-	 */
-	private function _get_ua() {
-		return ! empty( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
 	}
 
 	/**
@@ -592,27 +683,44 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$request_url = Utility::request_url();
 
-		// Check URI exclusions
-		$exc = apply_filters( 'litespeed_optimax_exc', $this->conf( self::O_OPTIMAX_EXC ) );
-		$hit = $exc ? Utility::str_hit_array( $request_url, $exc ) : false;
-		if ( $hit ) {
-			self::debug( 'serve() bypassed due to URI Exclude: ' . $hit );
+		// With pretty permalinks the request URL leaves the query out, so `/?s=term` or
+		// `/?add-to-cart=1` would read as the listed `/`. Only args LSCache drops too
+		// (Drop Query String) leave it the same page.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( $_GET && get_option( 'permalink_structure' ) && Optimax_Pages::has_other_query( array_keys( $_GET ), (array) $this->conf( self::O_CACHE_DROP_QS ) ) ) {
+			self::debug( 'serve() bypassed: query string' );
 			return false;
 		}
 
+		// Opt-in: only pages in the OptimaX list are served from, or queued for, OptimaX.
+		$pages = $this->cls( 'Optimax_Pages' );
+		$page  = $pages->get( $request_url );
+		if ( ! $page ) {
+			self::debug( 'serve() bypassed: not in OptimaX list' );
+			return false;
+		}
+
+		// A listed page whose post is gone renders the 404 page, which is not what was listed.
+		if ( is_404() ) {
+			self::debug( 'serve() bypassed: listed page is a 404' );
+			return false;
+		}
+
+		// Its cache tags are final only in Core::send_headers(); record them there.
+		$pages->record_tags_for( (int) $page['id'], (string) $page['cache_tags'] );
+
+		// Keyed by the listed URL: a visitor may spell its escapes another way.
 		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
-		$url_tag         = self::get_url_tag( $request_url );
-		// The shared tag alone still leaves one build per vary, so collapse that too.
-		$vary     = self::_is_shared_404() ? '' : $this->cls( 'Vary' )->finalize_full_varies();
-		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
+		$url_tag         = self::get_url_tag( $page['url'] );
+		$vary            = $this->cls( 'Vary' )->finalize_full_varies();
+		$filename        = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
 
 		// Tag every render OptimaX could replace, on both the hit and the queue path,
 		// so a finished build can evict it. Keyed on the page rather than going through
 		// Tag::get_uri_tag(), which (a) switches between a plain and an md5 format with
 		// LSCWP_LOG — decided per request, so a visitor and the cron that purges can
-		// disagree — and (b) urldecodes at render but not at purge. It also lets one
-		// purge reach every 404 sharing the '404' build, not just the URL on the row.
-		Tag::add( self::_page_tag( $url_tag ) );
+		// disagree — and (b) urldecodes at render but not at purge.
+		Tag::add( self::page_tag( $url_tag ) );
 
 		if ( $filename && $this->_assets_intact( $url_tag, $vary ) ) {
 			$static_file = LITESPEED_STATIC_DIR . $filepath_prefix . $filename . '.html';
@@ -632,7 +740,6 @@ class Optimax extends Cloud_Queue_Svc {
 
 		// No cached optimax, add to queue
 		$uid = get_current_user_id();
-		$ua  = $this->_get_ua();
 
 		if ( ! $this->queueable_request() ) {
 			return false;
@@ -647,7 +754,6 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 		$this->_queue[ $queue_k ] = [
 			'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
-			'user_agent' => substr( $ua, 0, 200 ),
 			'is_mobile'  => $this->_separate_mobile(),
 			'is_nextgen' => $this->cls( 'Media' )->webp_support(),
 			'uid'        => $uid,
@@ -1236,7 +1342,7 @@ class Optimax extends Cloud_Queue_Svc {
 		// Evict the pages this stylesheet belongs to, by the tag serve() gives every
 		// OptimaX render. _save_con() purges the same tag a moment later and Purge
 		// dedupes, so this only matters if the two steps ever drift apart.
-		Purge::add( self::_page_tag( $v['url_tag'] ), true );
+		Purge::add( self::page_tag( $v['url_tag'] ), true );
 
 		return LITESPEED_STATIC_URL . $filepath_prefix . $filecon_md5 . '.css';
 	}
@@ -1319,7 +1425,7 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 
 		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
-		Purge::add( self::_page_tag( $url_tag ), true );
+		Purge::add( self::page_tag( $url_tag ), true );
 
 		// Evict the cached copy of this page.
 		//

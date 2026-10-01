@@ -673,6 +673,9 @@ class Purge extends Base {
 			$tags = [ $tags ];
 		}
 
+		// The raw tags, before the blog prefix: OptimaX matches them against the tags its pages were cached with.
+		do_action( 'litespeed_purge_tags_added', $tags );
+
 		$tags = $this->_prepend_bid( $tags );
 
 		if ( ! array_diff( $tags, $purge2 ? $this->_pub_purge2 : $this->_pub_purge ) ) {

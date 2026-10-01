@@ -285,7 +285,6 @@ class Lang extends Base {
 
 			self::O_OPTIMAX               => __( 'OptimaX', 'litespeed-cache' ),
 			self::O_OPTIMAX_CRON          => __( 'OptimaX Cron', 'litespeed-cache' ),
-			self::O_OPTIMAX_EXC           => __( 'Exclude URL', 'litespeed-cache' ),
 		];
 
 		if ( array_key_exists( $id, $_lang_list ) ) {

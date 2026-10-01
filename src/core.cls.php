@@ -237,6 +237,9 @@ class Core extends Root {
 
 		$this->cls( 'Tag' )->init();
 
+		// OptimaX page list: change listeners and tag recording.
+		$this->cls( 'Optimax_Pages' )->init();
+
 		// Load hooks that may be related to users
 		add_action( 'init', [ $this, 'after_user_init' ], 5 );
 
@@ -584,6 +587,9 @@ class Core extends Root {
 		if ( ! $tag_header && Control::is_cacheable() ) {
 			Control::set_nocache( 'empty tag header' );
 		}
+
+		// The page's final cache tags (OptimaX stores them for its listed pages).
+		do_action( 'litespeed_tags_finalized', Tag::output_tags() );
 
 		// `Purge` output needs to be after `tag` output as Admin QS may need to send `tag` header
 		$purge_header = Purge::output();
