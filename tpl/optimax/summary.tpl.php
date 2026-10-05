@@ -58,6 +58,20 @@ $page_label = function ( $url ) use ( $home ) {
 
 		<h3 class="litespeed-title-short"><?php esc_html_e( 'OptimaX Pages', 'litespeed-cache' ); ?></h3>
 
+		<div class="litespeed-callout notice notice-warning inline">
+			<h4><?php esc_html_e( 'OptimaX can make mistakes', 'litespeed-cache' ); ?></h4>
+			<p>
+				<?php
+				printf(
+					/* translators: 1: link to the support forum, 2: link to submit a ticket */
+					esc_html__( 'Please test each page after OptimaX runs on it. If you find errors, contact us on the %1$s or %2$s.', 'litespeed-cache' ),
+					'<a href="https://wordpress.org/support/plugin/litespeed-cache/" rel="noopener noreferrer" target="_blank">' . esc_html__( 'support forum', 'litespeed-cache' ) . '</a>',
+					'<a href="https://store.litespeedtech.com/store/submitticket.php" rel="noopener noreferrer" target="_blank">' . esc_html__( 'submit a ticket', 'litespeed-cache' ) . '</a>'
+				);
+				?>
+			</p>
+		</div>
+
 		<?php if ( ! $ox_on ) : ?>
 			<div class="litespeed-callout notice notice-error inline">
 				<h4><?php esc_html_e( 'OptimaX is disabled', 'litespeed-cache' ); ?></h4>
