@@ -403,10 +403,8 @@ class Optimax extends Cloud_Queue_Svc {
 	 * Store a result for a page that is still listed.
 	 *
 	 * Removed from the list while QC was building it: the result is dropped, and
-	 * returning true clears the queue row without a failure notice. Storing purges
-	 * the page (its OptimaX tag and URL); that is not a content change, so the
-	 * change listeners are off until it is done. Once stored, the page's builds
-	 * past their grace period are deleted.
+	 * returning true clears the queue row without a failure notice. Once stored,
+	 * the page's builds past their grace period are deleted.
 	 *
 	 * @param array  $ox      data_optimax payload.
 	 * @param string $queue_k Queue key.
@@ -421,12 +419,7 @@ class Optimax extends Cloud_Queue_Svc {
 			return true;
 		}
 
-		$pages->ignore_purges( true );
-		try {
-			$stored = $this->_store_result( $ox, $queue_k, $v );
-		} finally {
-			$pages->ignore_purges( false );
-		}
+		$stored = $this->_store_result( $ox, $queue_k, $v );
 
 		if ( $stored && $page ) {
 			$pages->clean_expired( (int) $page['id'] );
@@ -635,9 +628,10 @@ class Optimax extends Cloud_Queue_Svc {
 	 *
 	 * @since 8.0
 	 *
+	 * @param string $buffer The page WordPress rendered for this request.
 	 * @return string|false The optimized HTML content, or false if not available.
 	 */
-	public function serve() {
+	public function serve( $buffer = '' ) {
 		// Check if ox is enabled
 		if ( ! $this->conf( self::O_OPTIMAX ) ) {
 			return false;
@@ -706,9 +700,6 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
-		// Its cache tags are final only in Core::send_headers(); record them there.
-		$pages->record_tags_for( (int) $page['id'], (string) $page['cache_tags'] );
-
 		// Keyed by the listed URL: a visitor may spell its escapes another way.
 		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
 		$url_tag         = self::get_url_tag( $page['url'] );
@@ -728,6 +719,13 @@ class Optimax extends Cloud_Queue_Svc {
 			if ( file_exists( $static_file ) ) {
 				$html = File::read( $static_file );
 				if ( $html ) {
+					$html = $this->_sync( $html, $buffer, $url_tag, $vary );
+					if ( false === $html ) {
+						// The design changed: the page waits for the owner to run OptimaX again.
+						$pages->expire( (int) $page['id'] );
+						Core::comment( 'Optimax needs refresh: design changed' );
+						return false;
+					}
 					self::debug( 'serve() hit: ' . $filepath_prefix . $filename . '.html' );
 					Core::comment( 'Optimax served ✅' );
 					return $html;
@@ -736,6 +734,12 @@ class Optimax extends Cloud_Queue_Svc {
 			} else {
 				self::debug( 'serve() file missing: ' . $static_file );
 			}
+		}
+
+		// Its builds expired on a design change: only the owner's run rebuilds it.
+		if ( $pages->needs_refresh( (int) $page['id'], $vary ) ) {
+			self::debug( 'serve() bypassed: needs refresh' );
+			return false;
 		}
 
 		// No cached optimax, add to queue
@@ -768,6 +772,139 @@ class Optimax extends Cloud_Queue_Svc {
 		Core::comment( 'QUIC.cloud Optimax in queue' );
 
 		return false;
+	}
+
+	/**
+	 * Bring a build in step with this render of its page.
+	 *
+	 * Compares this render with the fingerprint of the render the build matches.
+	 * Same design and content: the build as is. Same design, other content (text,
+	 * links, images, meta descriptions): the build with that content written in,
+	 * stored as the version's build, so the next render finds nothing to do. No
+	 * fingerprint yet (the build's first serve): this render becomes it.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $html    Stored OptimaX HTML.
+	 * @param string $buffer  This render.
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return string|false The HTML to serve, or false when the design changed or a change cannot be placed.
+	 */
+	private function _sync( $html, $buffer, $url_tag, $vary ) {
+		$now = '' !== (string) $buffer ? Optimax_Sync::fingerprint( $buffer ) : null;
+		if ( ! $now ) {
+			self::debug( 'sync skipped: render not readable' );
+			return $html;
+		}
+
+		$pages = $this->cls( 'Optimax_Pages' );
+		$old   = $pages->load_fingerprint( $url_tag, $vary );
+		if ( ! $old ) {
+			$pages->save_fingerprint( $url_tag, $vary, $now, 0 );
+			self::debug( 'sync: fingerprint recorded' );
+			return $html;
+		}
+
+		if ( $old['design'] !== $now['design'] ) {
+			foreach ( $now['lines'] as $i => $hash ) {
+				if ( ! isset( $old['lines'][ $i ] ) || $old['lines'][ $i ] !== $hash ) {
+					self::debug( 'sync: design changed at line ' . $i . ': ' . substr( $now['skel'][ $i ], 0, 300 ) );
+					return false;
+				}
+			}
+			self::debug( 'sync: design changed: ' . ( count( $old['lines'] ) - count( $now['lines'] ) ) . ' line(s) removed at the end' );
+			return false;
+		}
+
+		if ( $old['items'] === $now['items'] ) {
+			return $html;
+		}
+
+		$patched = Optimax_Sync::patch(
+			$html,
+			$old['items'],
+			$now['items'],
+			function ( $tag ) {
+				return $this->_nextgen_img( $tag );
+			}
+		);
+		if ( false === $patched ) {
+			self::debug( 'sync: a content change could not be placed in the OptimaX HTML' );
+			return false;
+		}
+		// Only per-render values differed (an image's id): nothing to store.
+		if ( $patched === $html ) {
+			return $html;
+		}
+
+		$patches = (int) $old['patches'] + 1;
+		if ( $this->_save_patch( $patched, $url_tag, $vary ) ) {
+			$pages->save_fingerprint( $url_tag, $vary, $now, $patches );
+			self::debug( 'sync: content updated [patches] ' . $patches );
+		}
+
+		return $patched;
+	}
+
+	/**
+	 * An `<img>` of this render as a patched build links it: next-gen where the file exists.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $tag `<img>` tag.
+	 * @return string
+	 */
+	private function _nextgen_img( $tag ) {
+		$media = $this->cls( 'Media' );
+		$attrs = Optimax_Sync::attrs( $tag );
+
+		foreach ( Optimax_Sync::IMG_URL_ATTRS as $name ) {
+			if ( ! empty( $attrs[ $name ] ) && 0 !== strpos( $attrs[ $name ], 'data:' ) ) {
+				$new = Optimax_Sync::set_attr( $tag, $name, $media->webp_url( $attrs[ $name ] ) );
+				$tag = false === $new ? $tag : $new;
+			}
+		}
+		foreach ( [ 'srcset', 'data-srcset' ] as $name ) {
+			if ( empty( $attrs[ $name ] ) ) {
+				continue;
+			}
+			$srcs = [];
+			foreach ( explode( ',', $attrs[ $name ] ) as $src ) {
+				$parts  = preg_split( '~\s+~', trim( $src ), 2 );
+				$srcs[] = $media->webp_url( $parts[0] ) . ( isset( $parts[1] ) ? ' ' . $parts[1] : '' );
+			}
+			$new = Optimax_Sync::set_attr( $tag, $name, implode( ', ', $srcs ) );
+			$tag = false === $new ? $tag : $new;
+		}
+
+		return $tag;
+	}
+
+	/**
+	 * Store a patched build as its version's build.
+	 *
+	 * No purge: this request serves it, and is cached with it.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $html    Patched OptimaX HTML.
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return bool
+	 */
+	private function _save_patch( $html, $url_tag, $vary ) {
+		$filecon_md5 = md5( $html );
+		$static_file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . $filecon_md5 . '.html';
+		if ( ! File::save_atomic( $static_file, $html ) ) {
+			self::debug( '❌ Failed to save patched build [file] ' . $static_file );
+			return false;
+		}
+
+		$groups = Optimax_Pages::version_groups( $vary );
+		$this->cls( 'Data' )->save_url( $url_tag, $vary, 'optimax', $filecon_md5, dirname( $static_file ), $groups['mobile'], $groups['nextgen'] );
+
+		return true;
 	}
 
 	/**
@@ -1423,6 +1560,9 @@ class Optimax extends Cloud_Queue_Svc {
 		if ( $filecon_md5 !== $data->load_url_file( $url_tag, $vary, 'optimax' ) ) {
 			return false;
 		}
+
+		// The new build matches the page QC rendered; its first serve records that render.
+		$this->cls( 'Optimax_Pages' )->drop_fingerprint( $url_tag, $vary );
 
 		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
 		Purge::add( self::page_tag( $url_tag ), true );

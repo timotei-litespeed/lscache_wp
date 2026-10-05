@@ -22,36 +22,10 @@ class Optimax_Pages extends Root {
 
 	const LOG_TAG = '🚀';
 
-	/**
-	 * Width of `litespeed_url.cache_tags`.
-	 */
-	const TAGS_MAX = 1000;
-
 	const STATUS_WORKING = 'working';
 	const STATUS_QUEUED  = 'queued';
 	const STATUS_IN_USE  = 'in_use';
 	const STATUS_REFRESH = 'refresh';
-
-	/**
-	 * The listed page this render serves: `id` and its stored `tags`, or null.
-	 *
-	 * @var array|null
-	 */
-	private $_record = null;
-
-	/**
-	 * The page's final cache tags, once Core::send_headers() has built them.
-	 *
-	 * @var array|null
-	 */
-	private $_final_tags = null;
-
-	/**
-	 * Set while OptimaX stores a build: its own purges are not content changes.
-	 *
-	 * @var bool
-	 */
-	private $_ignore_purges = false;
 
 	/**
 	 * Normalize a page the owner typed into the URL serve() computes for it.
@@ -178,64 +152,6 @@ class Optimax_Pages extends Root {
 		}
 
 		return false;
-	}
-
-	/**
-	 * A page's cache tags, as stored in `cache_tags`: `,tag1,tag2,`.
-	 *
-	 * Comma-wrapped so one tag is matched exactly with `LIKE '%,tag,%'`. Left out:
-	 * '' (the blog's main tag) and 'guest', purged only by site-wide purges that
-	 * must not expire builds, and `OPTIMAX.*`, our own. Cut at a tag boundary to
-	 * fit the column; a page losing tags that way still expires through the
-	 * direct triggers.
-	 *
-	 * @since 8.0
-	 *
-	 * @param array $tags Raw tags, without the blog prefix.
-	 * @return string
-	 */
-	public static function tags_to_column( $tags ) {
-		$col = '';
-		foreach ( array_unique( array_map( 'strval', (array) $tags ) ) as $tag ) {
-			if ( '' === $tag || 'guest' === $tag || 0 === strpos( $tag, 'OPTIMAX.' ) || false !== strpos( $tag, ',' ) ) {
-				continue;
-			}
-			$next = ( '' === $col ? ',' : $col ) . $tag . ',';
-			if ( strlen( $next ) > self::TAGS_MAX ) {
-				break;
-			}
-			$col = $next;
-		}
-
-		return $col;
-	}
-
-	/**
-	 * The purged tags worth matching against stored pages.
-	 *
-	 * A site-wide purge — '*' (Purge All) or '' (the blog's main tag) — returns
-	 * nothing: Purge All must not expire OptimaX builds.
-	 *
-	 * @since 8.0
-	 *
-	 * @param array $tags Raw purge tags, before the blog prefix.
-	 * @return array
-	 */
-	public static function purge_tags_to_match( $tags ) {
-		$tags = array_map( 'strval', (array) $tags );
-		if ( in_array( '*', $tags, true ) || in_array( '', $tags, true ) ) {
-			return [];
-		}
-
-		$match = [];
-		foreach ( $tags as $tag ) {
-			if ( 'guest' === $tag || 0 === strpos( $tag, 'OPTIMAX.' ) || false !== strpos( $tag, ',' ) ) {
-				continue;
-			}
-			$match[ $tag ] = true;
-		}
-
-		return array_keys( $match );
 	}
 
 	/**
@@ -471,8 +387,9 @@ class Optimax_Pages extends Root {
 		if ( $id ) {
 			$q = "UPDATE `$tb` SET ox = 1 WHERE id = %d";
 			$wpdb->query( $wpdb->prepare( $q, $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-			// A build made before the page was listed may be stale.
-			$this->expire( $id );
+			// A build made before the page was listed may be stale. Deleted, not expired:
+			// an expired build waits for a manual run, and a new page builds on its first visit.
+			$this->_delete_builds( $wpdb->prepare( 'url_id = %d', $id ) );
 		} else {
 			$q = "INSERT INTO `$tb` SET url = %s, ox = 1";
 			$wpdb->query( $wpdb->prepare( $q, $url ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
@@ -512,7 +429,6 @@ class Optimax_Pages extends Root {
 			return false;
 		}
 
-		// Unlist first: the purges below reach the change listeners, which then find nothing to expire.
 		$q = "UPDATE `$tb_url` SET ox = 0, cache_tags = '' WHERE id = %d";
 		$wpdb->query( $wpdb->prepare( $q, (int) $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 
@@ -537,12 +453,12 @@ class Optimax_Pages extends Root {
 	}
 
 	/**
-	 * Stop serving a page's builds until they are rebuilt.
+	 * Stop serving a page's builds until they are rebuilt: the page needs a refresh.
 	 *
 	 * Uses the expiry Data::save_url() gives a replaced build, so load_url_file()
-	 * stops returning them at once, the next visitor of each version queues a
-	 * rebuild, and clean_expired() deletes them once that is stored and their
-	 * grace period is over.
+	 * stops returning them at once. Visitors get the page without OptimaX, and
+	 * serve() queues no rebuild (needs_refresh()): the owner runs it. clean_expired()
+	 * deletes them once the rebuild is stored and their grace period is over.
 	 *
 	 * @since 8.0
 	 *
@@ -554,7 +470,7 @@ class Optimax_Pages extends Root {
 
 		$data  = Data::cls();
 		$tb    = $data->tb( 'url_file' );
-		$types = implode( ',', array_map( [ $data, 'file_type_id' ], [ 'optimax', 'optimax_js', 'optimax_ucss', 'optimax_imgs' ] ) );
+		$types = implode( ',', array_map( [ $data, 'file_type_id' ], [ 'optimax', 'optimax_js', 'optimax_ucss', 'optimax_imgs', 'optimax_src' ] ) );
 		$until = time() + 86400 * apply_filters( 'litespeed_url_file_expired_days', 20 );
 
 		$q = "UPDATE `$tb` SET expired = %d WHERE url_id = %d AND type IN ($types) AND expired = 0";
@@ -605,6 +521,7 @@ class Optimax_Pages extends Root {
 			'optimax_js'   => 'js',
 			'optimax_ucss' => 'css',
 			'optimax_imgs' => 'json',
+			'optimax_src'  => 'json',
 		];
 		$ext_by_type = [];
 		foreach ( $exts as $name => $ext ) {
@@ -636,7 +553,8 @@ class Optimax_Pages extends Root {
 	 * @since 8.0
 	 *
 	 * @param array $page A row from get()/all().
-	 * @return array List of `vary`, `groups`, `status`, `q_k` (md5 of the queue key, '' if not queued), `file_id` (a build row id, 0 if none).
+	 * @return array List of `vary`, `groups`, `status`, `q_k` (md5 of the queue key, '' if not queued), `file_id` (a build row id, 0 if none),
+	 *               `patches` (times its live build had its text updated).
 	 */
 	public function versions( $page ) {
 		global $wpdb;
@@ -692,12 +610,14 @@ class Optimax_Pages extends Root {
 
 		$out = [];
 		foreach ( $versions as $ver ) {
+			$fp    = $ver['live'] ? $this->load_fingerprint( $page['url'], $ver['vary'] ) : null;
 			$out[] = [
 				'vary'    => $ver['vary'],
 				'groups'  => $ver['groups'],
 				'status'  => self::version_status( $ver['queue_status'], $ver['live'], $ver['expired'] ),
 				'q_k'     => $ver['q_k'],
 				'file_id' => $ver['file_id'],
+				'patches' => $fp ? (int) $fp['patches'] : 0,
 			];
 		}
 		return $out;
@@ -799,203 +719,196 @@ class Optimax_Pages extends Root {
 		return count( $queue );
 	}
 
+
 	/**
-	 * Register the listeners.
-	 *
-	 * The change listeners run while OptimaX is off too: its builds stay, and a
-	 * page changed meanwhile must not be served stale once it is back on.
+	 * Register the notice for pages that need a refresh.
 	 *
 	 * @since 8.0
 	 *
 	 * @return void
 	 */
 	public function init() {
-		add_action( 'litespeed_purge_tags_added', [ $this, 'on_purge_tags' ] );
-		add_action( 'litespeed_purged_post', [ $this, 'on_purged_post' ] );
-		add_action( 'litespeed_purged_link', [ $this, 'on_purged_link' ] );
-
-		if ( $this->conf( Base::O_OPTIMAX ) ) {
-			add_action( 'litespeed_tags_finalized', [ $this, 'on_tags_finalized' ] );
+		if ( is_admin() ) {
+			add_action( 'admin_notices', [ $this, 'refresh_notice' ] );
 		}
 	}
 
 	/**
-	 * Remember that this render is a listed page, so its final tags get stored.
+	 * Tell the owner which listed pages wait for a manual run after a design change.
 	 *
 	 * @since 8.0
 	 *
-	 * @param int    $id      Page row id.
-	 * @param string $current Its stored `cache_tags`.
 	 * @return void
 	 */
-	public function record_tags_for( $id, $current ) {
-		$this->_record = [
-			'id'   => (int) $id,
-			'tags' => (string) $current,
-		];
-		$this->_store_tags();
+	public function refresh_notice() {
+		if ( ! $this->conf( Base::O_OPTIMAX ) || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$urls = $this->refresh_urls();
+		if ( ! $urls ) {
+			return;
+		}
+
+		$msg = sprintf(
+			/* translators: %d: number of pages */
+			_n(
+				'OptimaX: the design of %d page changed. Visitors get the page without OptimaX until you run it again.',
+				'OptimaX: the design of %d pages changed. Visitors get the pages without OptimaX until you run them again.',
+				count( $urls ),
+				'litespeed-cache'
+			),
+			count( $urls )
+		);
+		$link = '<a href="' . esc_url( admin_url( 'admin.php?page=litespeed-optimax' ) ) . '">' . esc_html__( 'Open OptimaX', 'litespeed-cache' ) . '</a>';
+
+		echo '<div class="notice notice-warning"><p>' . esc_html( $msg ) . ' ' . $link . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	/**
-	 * Keep the page's final cache tags, to store once serve() says the page is listed.
-	 *
-	 * Core::send_headers() usually runs from the footer hook, before the output
-	 * buffer reaches serve(), so either call can come first; the second stores.
+	 * Listed pages with a version that needs a refresh and is not queued.
 	 *
 	 * @since 8.0
 	 *
-	 * @param array $tags Tag::output_tags() after Tag::output().
-	 * @return void
+	 * @return array Page URLs.
 	 */
-	public function on_tags_finalized( $tags ) {
-		$this->_final_tags = (array) $tags;
-		$this->_store_tags();
-	}
-
-	/**
-	 * Store the listed page's final cache tags, when both are known and they changed.
-	 *
-	 * @since 8.0
-	 *
-	 * @return void
-	 */
-	private function _store_tags() {
+	public function refresh_urls() {
 		global $wpdb;
 
-		if ( ! $this->_record || null === $this->_final_tags || ! Control::is_cacheable() ) {
-			return;
+		if ( ! $this->ready() ) {
+			return [];
 		}
 
-		$col = self::tags_to_column( $this->_final_tags );
-		if ( $col !== $this->_record['tags'] ) {
-			$tb = Data::cls()->tb( 'url' );
-			$q  = "UPDATE `$tb` SET cache_tags = %s WHERE id = %d AND ox = 1";
-			$wpdb->query( $wpdb->prepare( $q, $col, $this->_record['id'] ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-			self::debug( 'Recorded cache tags [url_id] ' . $this->_record['id'] );
+		$data    = Data::cls();
+		$tb_url  = $data->tb( 'url' );
+		$tb_file = $data->tb( 'url_file' );
+		$q       = "SELECT DISTINCT u.url, f.vary FROM `$tb_file` f JOIN `$tb_url` u ON u.id = f.url_id AND u.ox = 1
+			WHERE f.type = %d AND f.expired > 0
+			AND NOT EXISTS ( SELECT 1 FROM `$tb_file` l WHERE l.url_id = f.url_id AND l.vary = f.vary AND l.type = f.type AND l.expired = 0 )";
+		$rows    = $wpdb->get_results( $wpdb->prepare( $q, $data->file_type_id( 'optimax' ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+		if ( ! $rows ) {
+			return [];
 		}
-		$this->_record = null;
+
+		$queued = [];
+		foreach ( $this->load_queue( 'optimax' ) as $v ) {
+			if ( is_array( $v ) && isset( $v['url_tag'], $v['vary'] ) ) {
+				$queued[ self::vary_key( $v['vary'] ) . ' ' . $v['url_tag'] ] = true;
+			}
+		}
+
+		$urls = [];
+		foreach ( $rows as $r ) {
+			if ( ! isset( $queued[ $r['vary'] . ' ' . $r['url'] ] ) ) {
+				$urls[ $r['url'] ] = true;
+			}
+		}
+
+		return array_keys( $urls );
 	}
 
 	/**
-	 * Turn the change listeners off while OptimaX stores a build.
+	 * Whether this version of a page waits for a manual run: it has builds, all expired.
+	 *
+	 * A version never built has no rows and is queued on its first visit as before.
 	 *
 	 * @since 8.0
 	 *
-	 * @param bool $on Ignore purges.
-	 * @return void
+	 * @param int    $url_id Page row id.
+	 * @param string $vary   Raw vary.
+	 * @return bool
 	 */
-	public function ignore_purges( $on ) {
-		$this->_ignore_purges = (bool) $on;
-	}
-
-	/**
-	 * Expire every listed page cached with one of the purged tags.
-	 *
-	 * @since 8.0
-	 *
-	 * @param array $tags Raw purge tags.
-	 * @return void
-	 */
-	public function on_purge_tags( $tags ) {
+	public function needs_refresh( $url_id, $vary ) {
 		global $wpdb;
 
-		if ( $this->_ignore_purges || ! $this->ready() ) {
-			return;
+		$tb   = Data::cls()->tb( 'url_file' );
+		$q    = "SELECT MIN(expired) FROM `$tb` WHERE url_id = %d AND vary = %s AND type = %d";
+		$min  = $wpdb->get_var( $wpdb->prepare( $q, (int) $url_id, self::vary_key( $vary ), Data::cls()->file_type_id( 'optimax' ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+
+		// No rows: never built. A row with expired = 0: live.
+		return null !== $min && (int) $min > 0;
+	}
+
+	/**
+	 * The fingerprint stored beside a version's live build.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Vary, raw or stored.
+	 * @return array|null `design`, `lines`, `items`, `patches`; null when there is none.
+	 */
+	public function load_fingerprint( $url_tag, $vary ) {
+		$filename = Data::cls()->load_url_file( $url_tag, $vary, 'optimax_src' );
+		if ( ! $filename ) {
+			return null;
 		}
-		$match = self::purge_tags_to_match( (array) $tags );
-		if ( ! $match ) {
-			return;
+
+		$file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . $filename . '.json';
+		$fp   = file_exists( $file ) ? json_decode( (string) File::read( $file ), true ) : null;
+		if ( ! is_array( $fp ) || ! isset( $fp['design'], $fp['lines'], $fp['items'] ) || ! is_array( $fp['lines'] ) || ! is_array( $fp['items'] ) ) {
+			return null;
 		}
+
+		return $fp + [ 'patches' => 0 ];
+	}
+
+	/**
+	 * Store the fingerprint of the render a version's live build matches.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @param array  $fp      Optimax_Sync::fingerprint().
+	 * @param int    $patches Times the build had its text updated.
+	 * @return bool
+	 */
+	public function save_fingerprint( $url_tag, $vary, $fp, $patches ) {
+		// The page's URL and vary are part of the content, so two versions never share a file.
+		$con = wp_json_encode(
+			[
+				'url_tag' => $url_tag,
+				'vary'    => $vary,
+				'design'  => $fp['design'],
+				'lines'   => $fp['lines'],
+				'items'   => $fp['items'],
+				'patches' => (int) $patches,
+			]
+		);
+		if ( ! is_string( $con ) ) {
+			return false;
+		}
+
+		$filecon_md5 = md5( $con );
+		$static_file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . $filecon_md5 . '.json';
+		$ok          = File::save( $static_file, $con, true );
+		if ( false === $ok || ! file_exists( $static_file ) ) {
+			self::debug( '❌ Failed to save fingerprint [file] ' . $static_file );
+			return false;
+		}
+
+		$groups = self::version_groups( $vary );
+		Data::cls()->save_url( $url_tag, $vary, 'optimax_src', $filecon_md5, dirname( $static_file ), $groups['mobile'], $groups['nextgen'] );
+
+		return true;
+	}
+
+	/**
+	 * Drop a version's fingerprint: a new build matches a render not seen yet.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return void
+	 */
+	public function drop_fingerprint( $url_tag, $vary ) {
+		global $wpdb;
 
 		$tb = Data::cls()->tb( 'url' );
-		foreach ( array_chunk( $match, 50 ) as $chunk ) {
-			$where = [];
-			$args  = [];
-			foreach ( $chunk as $tag ) {
-				$where[] = 'cache_tags LIKE %s';
-				$args[]  = '%,' . $wpdb->esc_like( $tag ) . ',%';
-			}
-			$q   = "SELECT id FROM `$tb` WHERE ox = 1 AND (" . implode( ' OR ', $where ) . ')';
-			$ids = $wpdb->get_col( $wpdb->prepare( $q, $args ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-			foreach ( (array) $ids as $id ) {
-				$this->expire( (int) $id );
-			}
-		}
-	}
-
-	/**
-	 * A post was purged: expire its page if listed.
-	 *
-	 * With "Purge All" in the post purge rules, a post change purges only '*',
-	 * which on_purge_tags() ignores so a manual Purge All never rebuilds. Here it
-	 * is a content change, so every listed page is stale. Drafts are skipped:
-	 * saving one changes no public page, and its permalink is `/?p=123`, which
-	 * pretty permalinks would read as the front page.
-	 *
-	 * @since 8.0
-	 *
-	 * @param int $pid Post id.
-	 * @return void
-	 */
-	public function on_purged_post( $pid ) {
-		$status = get_post_status( $pid );
-		if ( $this->conf( Base::O_PURGE_POST_ALL ) && in_array( $status, [ 'publish', 'trash', 'private' ], true ) ) {
-			$this->_expire_all();
-			return;
-		}
-		if ( 'publish' !== $status ) {
-			return;
-		}
-		$this->_expire_url( get_permalink( $pid ) );
-	}
-
-	/**
-	 * Expire every listed page.
-	 *
-	 * @since 8.0
-	 *
-	 * @return void
-	 */
-	private function _expire_all() {
-		if ( $this->_ignore_purges ) {
-			return;
-		}
-		foreach ( $this->all() as $page ) {
-			$this->expire( (int) $page['id'] );
-		}
-	}
-
-	/**
-	 * A URL was purged: expire its page if listed.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $url Purged URL, full or relative.
-	 * @return void
-	 */
-	public function on_purged_link( $url ) {
-		// With pretty permalinks a query string is another URL WordPress serves the same page at; it is not this page.
-		if ( false !== strpos( (string) $url, '?' ) && get_option( 'permalink_structure' ) ) {
-			return;
-		}
-		$this->_expire_url( $url );
-	}
-
-	/**
-	 * Expire the listed page at this URL.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string|false $url Full or relative URL.
-	 * @return void
-	 */
-	private function _expire_url( $url ) {
-		if ( $this->_ignore_purges || ! $url ) {
-			return;
-		}
-		$page = $this->get( (string) self::page_url( $url ) );
-		if ( $page ) {
-			$this->expire( (int) $page['id'] );
+		$id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM `$tb` WHERE url = %s", $url_tag ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( $id ) {
+			$this->_delete_builds( $wpdb->prepare( 'url_id = %d AND vary = %s AND type = %d', $id, self::vary_key( $vary ), Data::cls()->file_type_id( 'optimax_src' ) ) );
 		}
 	}
 }

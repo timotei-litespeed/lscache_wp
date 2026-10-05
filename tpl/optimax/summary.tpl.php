@@ -153,7 +153,19 @@ $page_label = function ( $url ) use ( $home ) {
 									<?php endif; ?>
 								</td>
 								<td><?php echo esc_html( $parts ? implode( ' · ', $parts ) : '—' ); ?></td>
-								<td><?php echo esc_html( isset( $status_labels[ $ver['status'] ] ) ? $status_labels[ $ver['status'] ] : '—' ); ?></td>
+								<td>
+									<?php echo esc_html( isset( $status_labels[ $ver['status'] ] ) ? $status_labels[ $ver['status'] ] : '—' ); ?>
+									<?php if ( Optimax_Pages::STATUS_IN_USE === $ver['status'] && $ver['patches'] ) : ?>
+										<br /><span class="litespeed-desc">
+											<?php
+											/* translators: %d: number of times */
+											echo esc_html( sprintf( _n( 'Text updated %d time', 'Text updated %d times', $ver['patches'], 'litespeed-cache' ), $ver['patches'] ) );
+											?>
+										</span>
+									<?php elseif ( Optimax_Pages::STATUS_REFRESH === $ver['status'] ) : ?>
+										<br /><span class="litespeed-desc"><?php esc_html_e( 'Design changed. Visitors get the page without OptimaX until you run it.', 'litespeed-cache' ); ?></span>
+									<?php endif; ?>
+								</td>
 								<td>
 									<?php if ( Optimax_Pages::STATUS_WORKING === $ver['status'] ) : ?>
 										—

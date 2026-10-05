@@ -56,6 +56,7 @@ class Data extends Root {
 		'optimax_js' => 6,
 		'optimax_ucss' => 7,
 		'optimax_imgs' => 8,
+		'optimax_src' => 9,
 	];
 
 	/**
@@ -638,7 +639,7 @@ class Data extends Root {
 			$list = $wpdb->get_results( $q, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 			if ( $list ) {
 				foreach ( $list as $v ) {
-					$ext         = 'optimax' === $file_type ? 'html' : ( 'optimax_imgs' === $file_type ? 'json' : ( in_array( $file_type, [ 'js', 'optimax_js' ], true ) ? 'js' : 'css' ) );
+					$ext         = 'optimax' === $file_type ? 'html' : ( in_array( $file_type, [ 'optimax_imgs', 'optimax_src' ], true ) ? 'json' : ( in_array( $file_type, [ 'js', 'optimax_js' ], true ) ? 'js' : 'css' ) );
 					$file_to_del = trailingslashit( $path ) . $v['filename'] . '.' . $ext;
 					if ( file_exists( $file_to_del ) ) {
 						self::debug( 'Delete expired unused file: ' . $file_to_del );

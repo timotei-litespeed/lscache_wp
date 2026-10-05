@@ -66,6 +66,7 @@ $litespeed_php_files = array(
 	'src/object-cache.cls.php',
 	'src/optimax.cls.php',
 	'src/optimax-pages.cls.php',
+	'src/optimax-sync.cls.php',
 	'src/optimize.cls.php',
 	'src/optimizer.cls.php',
 	'src/placeholder.cls.php',

@@ -361,6 +361,7 @@ class Purge extends Base {
 		$this->cls( 'Data' )->url_file_clean( 'optimax_js' );
 		$this->cls( 'Data' )->url_file_clean( 'optimax_ucss' );
 		$this->cls( 'Data' )->url_file_clean( 'optimax_imgs' );
+		$this->cls( 'Data' )->url_file_clean( 'optimax_src' );
 		$this->clear_q( 'optimax', true );
 
 		if ( ! $silence ) {
@@ -672,9 +673,6 @@ class Purge extends Base {
 		if ( ! is_array( $tags ) ) {
 			$tags = [ $tags ];
 		}
-
-		// The raw tags, before the blog prefix: OptimaX matches them against the tags its pages were cached with.
-		do_action( 'litespeed_purge_tags_added', $tags );
 
 		$tags = $this->_prepend_bid( $tags );
 
