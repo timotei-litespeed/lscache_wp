@@ -830,7 +830,7 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		);
 		if ( false === $patched ) {
-			self::debug( 'sync: a content change could not be placed in the OptimaX HTML' );
+			self::debug( 'sync: a content change could not be placed in the OptimaX HTML: ' . Optimax_Sync::$why );
 			return false;
 		}
 		// Only per-render values differed (an image's id): nothing to store.

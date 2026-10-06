@@ -879,7 +879,7 @@ class Optimax_Pages extends Root {
 
 		$file = LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . $filename . '.json';
 		$fp   = file_exists( $file ) ? json_decode( (string) File::read( $file ), true ) : null;
-		if ( ! is_array( $fp ) || ! isset( $fp['design'], $fp['lines'], $fp['items'] ) || ! is_array( $fp['lines'] ) || ! is_array( $fp['items'] ) ) {
+		if ( ! is_array( $fp ) || ! isset( $fp['v'] ) || Optimax_Sync::VERSION !== (int) $fp['v'] || ! isset( $fp['design'], $fp['lines'], $fp['items'] ) || ! is_array( $fp['lines'] ) || ! is_array( $fp['items'] ) ) {
 			return null;
 		}
 
@@ -901,6 +901,7 @@ class Optimax_Pages extends Root {
 		// The page's URL and vary are part of the content, so two versions never share a file.
 		$con = wp_json_encode(
 			[
+				'v'       => Optimax_Sync::VERSION,
 				'url_tag' => $url_tag,
 				'vary'    => $vary,
 				'design'  => $fp['design'],

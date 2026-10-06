@@ -14,7 +14,8 @@ defined( 'WPINC' ) || exit();
  * Fingerprint of a rendered page, and the text patch of a build.
  *
  * A fingerprint splits a page into its design (tags, their attributes, stylesheets
- * and scripts) and its content (text, link targets, images, meta descriptions).
+ * and scripts) and its content (text, link targets, images, meta descriptions,
+ * data-* and inline style values).
  * Two renders with the same design differ only in content, which patch() writes
  * into the stored OptimaX HTML instead of building the page again.
  *
@@ -28,6 +29,19 @@ class Optimax_Sync {
 	const TYPE_HREF = 'h';
 	const TYPE_IMG  = 'i';
 	const TYPE_META = 'm';
+	const TYPE_ATTR = 'd';
+
+	/**
+	 * Fingerprint format. A stored fingerprint of another format is recorded again, never compared.
+	 */
+	const VERSION = 3;
+
+	/**
+	 * Why the last patch() could not place a change, for the debug log.
+	 *
+	 * @var string
+	 */
+	public static $why = '';
 
 	/**
 	 * One token: a comment, a declaration, a raw-text element with its content, or a tag.
@@ -111,6 +125,12 @@ class Optimax_Sync {
 				$skip[]  = 'content';
 				$items[] = [ self::TYPE_META, $attrs['content'], self::meta_key( $attrs ) ];
 			}
+			// data-* and style values are content: page builders rewrite them without changing the page.
+			foreach ( $attrs as $attr => $val ) {
+				if ( self::is_content_attr( $attr ) ) {
+					$items[] = [ self::TYPE_ATTR, $val, $attr ];
+				}
+			}
 
 			$line = $name . self::design_attrs( $attrs, $skip );
 			if ( isset( $tok['inner'] ) ) {
@@ -158,6 +178,7 @@ class Optimax_Sync {
 	 * @return string|false Patched HTML, or false when a change cannot be placed.
 	 */
 	public static function patch( $html, $old, $new, $img_tag ) {
+		self::$why = '';
 		if ( count( $old ) !== count( $new ) ) {
 			return false;
 		}
@@ -191,10 +212,17 @@ class Optimax_Sync {
 			$attrs = self::attrs( $tok['raw'] );
 			if ( 'img' === $tok['name'] ) {
 				$found[ self::TYPE_IMG ][ self::img_key( $attrs ) ][] = $tok;
-			} elseif ( 'a' === $tok['name'] && isset( $attrs['href'] ) && ! self::is_anchor( $attrs['href'] ) ) {
+				continue;
+			}
+			if ( 'a' === $tok['name'] && isset( $attrs['href'] ) && ! self::is_anchor( $attrs['href'] ) ) {
 				$found[ self::TYPE_HREF ][ $attrs['href'] ][] = $tok;
 			} elseif ( 'meta' === $tok['name'] && isset( $attrs['content'] ) && self::meta_key( $attrs ) ) {
 				$found[ self::TYPE_META ][ self::meta_key( $attrs ) ][] = $tok;
+			}
+			foreach ( $attrs as $attr => $val ) {
+				if ( self::is_content_attr( $attr ) ) {
+					$found[ self::TYPE_ATTR ][ self::locate_key( [ self::TYPE_ATTR, $val, $attr ] ) ][] = $tok;
+				}
 			}
 		}
 
@@ -224,25 +252,32 @@ class Optimax_Sync {
 				if ( self::TYPE_META === $type ) {
 					continue;
 				}
+				self::$why = $type . ' ' . substr( $key, 0, 120 ) . ': ' . count( $cands ) . ' in OptimaX HTML, ' . $seen[ $type ][ $key ] . ' in the page';
 				return false;
 			}
 			$tok = $cands[ $nth[ $i ] ];
 
+			// A tag may take several attribute edits; text and images replace it whole.
+			$edited = isset( $edits[ $tok['offset'] ] );
+			$base   = $edited ? $edits[ $tok['offset'] ][1] : $tok['raw'];
 			switch ( $type ) {
 				case self::TYPE_TEXT:
 					preg_match( '~^(\s*).*?(\s*)$~s', $tok['raw'], $m );
-					$repl = $m[1] . self::esc_text( $new[ $i ][1] ) . $m[2];
+					$repl = $edited ? false : $m[1] . self::esc_text( $new[ $i ][1] ) . $m[2];
 					break;
 				case self::TYPE_HREF:
-					$repl = self::set_attr( $tok['raw'], 'href', $new[ $i ][1] );
+					$repl = self::set_attr( $base, 'href', $new[ $i ][1] );
 					break;
 				case self::TYPE_META:
-					$repl = self::set_attr( $tok['raw'], 'content', $new[ $i ][1] );
+					$repl = self::set_attr( $base, 'content', $new[ $i ][1] );
+					break;
+				case self::TYPE_ATTR:
+					$repl = self::set_attr( $base, $item[2], $new[ $i ][1] );
 					break;
 				default:
-					$repl = call_user_func( $img_tag, $new[ $i ][1] );
+					$repl = $edited ? false : call_user_func( $img_tag, $new[ $i ][1] );
 			}
-			if ( ! is_string( $repl ) || isset( $edits[ $tok['offset'] ] ) ) {
+			if ( ! is_string( $repl ) ) {
 				return false;
 			}
 			$edits[ $tok['offset'] ] = [ strlen( $tok['raw'] ), $repl ];
@@ -437,6 +472,8 @@ class Optimax_Sync {
 	/**
 	 * The design part of a tag's attributes.
 	 *
+	 * A data-* or style value is content (an item), so only its name is design.
+	 *
 	 * @since 8.0
 	 *
 	 * @param array $attrs attrs().
@@ -450,7 +487,7 @@ class Optimax_Sync {
 				continue;
 			}
 			$out .= ' ' . $name;
-			if ( 'value' !== $name && false === strpos( $name, 'nonce' ) && ! in_array( $name, self::ID_ATTRS, true ) ) {
+			if ( 'value' !== $name && false === strpos( $name, 'nonce' ) && ! in_array( $name, self::ID_ATTRS, true ) && ! self::is_content_attr( $name ) ) {
 				$out .= '=' . self::mask( $val );
 			}
 		}
@@ -482,10 +519,26 @@ class Optimax_Sync {
 	}
 
 	/**
+	 * Whether an attribute value is content: data-* (widget configuration) or an inline style.
+	 *
+	 * Page builders rewrite both on a save without changing the page: Elementor re-saves
+	 * every widget's settings, and Woodmart renders a grid's gap variables only once its
+	 * element cache is rebuilt. Nonces are neither design nor content.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $name Lowercased attribute name.
+	 * @return bool
+	 */
+	private static function is_content_attr( $name ) {
+		return ( 0 === strpos( $name, 'data-' ) || 'style' === $name ) && false === strpos( $name, 'nonce' );
+	}
+
+	/**
 	 * Whether two items hold the same content.
 	 *
-	 * An image is compared as its design reads its attributes: an `<img>` numbered per
-	 * render is the same image.
+	 * Per-render values do not count: an `<img>` or a data-* value that differs only
+	 * in its element ids or `uniqid()` tokens is the same.
 	 *
 	 * @since 8.0
 	 *
@@ -497,10 +550,32 @@ class Optimax_Sync {
 		if ( $a === $b ) {
 			return true;
 		}
-		if ( self::TYPE_IMG !== $a[0] || self::TYPE_IMG !== $b[0] ) {
+		if ( $a[0] !== $b[0] ) {
 			return false;
 		}
-		return self::design_attrs( self::attrs( $a[1] ), [] ) === self::design_attrs( self::attrs( $b[1] ), [] );
+		if ( self::TYPE_ATTR === $a[0] ) {
+			return $a[2] === $b[2] && self::attr_norm( $a[2], $a[1] ) === self::attr_norm( $b[2], $b[1] );
+		}
+		if ( self::TYPE_IMG === $a[0] ) {
+			return self::img_sig( $a[1] ) === self::img_sig( $b[1] );
+		}
+		return false;
+	}
+
+	/**
+	 * An `<img>` as compared: every attribute, without per-render values.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $tag `<img>` tag.
+	 * @return string
+	 */
+	private static function img_sig( $tag ) {
+		$out = '';
+		foreach ( self::attrs( $tag ) as $name => $val ) {
+			$out .= ' ' . $name . ( in_array( $name, self::ID_ATTRS, true ) ? '' : '=' . self::mask( $val ) );
+		}
+		return $out;
 	}
 
 	/**
@@ -512,6 +587,27 @@ class Optimax_Sync {
 	 * @return string
 	 */
 	private static function locate_key( $item ) {
+		if ( self::TYPE_ATTR === $item[0] ) {
+			return $item[2] . '=' . self::attr_norm( $item[2], $item[1] );
+		}
 		return isset( $item[2] ) ? $item[2] : $item[1];
+	}
+
+	/**
+	 * An attribute value as compared: `uniqid()` tokens masked, an inline style as
+	 * OptimaX's minifier writes it (no whitespace around `:` and `;`, no last `;`).
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $name Attribute name.
+	 * @param string $val  Decoded value.
+	 * @return string
+	 */
+	private static function attr_norm( $name, $val ) {
+		$val = self::mask( $val );
+		if ( 'style' === $name ) {
+			$val = rtrim( preg_replace( '~\s*([:;])\s*~', '$1', trim( $val ) ), ';' );
+		}
+		return $val;
 	}
 }
