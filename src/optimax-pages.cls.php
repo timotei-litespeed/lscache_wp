@@ -252,9 +252,43 @@ class Optimax_Pages extends Root {
 			}
 		}
 
+		$this->_respell_home();
 		$this->add( '/' );
 
 		return true;
+	}
+
+	/**
+	 * Keep one homepage row across a permalink switch.
+	 *
+	 * page_url( '/' ) is `https://site/` with pretty permalinks and `https://site`
+	 * without, so after a switch add( '/' ) would list the homepage again under the
+	 * new spelling. The old row is renamed, keeping its builds; when a row with the
+	 * new spelling already exists, the old one is removed instead.
+	 *
+	 * @since 8.0
+	 *
+	 * @return void
+	 */
+	private function _respell_home() {
+		global $wpdb;
+
+		$home  = self::page_url( '/' );
+		$other = '/' === substr( $home, -1 ) ? untrailingslashit( $home ) : trailingslashit( $home );
+		$stale = $this->get( $other );
+		if ( ! $stale ) {
+			return;
+		}
+
+		$tb = Data::cls()->tb( 'url' );
+		if ( $wpdb->get_var( $wpdb->prepare( "SELECT id FROM `$tb` WHERE url = %s", $home ) ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$this->remove( (int) $stale['id'] );
+			self::debug( 'Removed the homepage row of the previous permalink setting: ' . $other );
+			return;
+		}
+
+		$wpdb->query( $wpdb->prepare( "UPDATE `$tb` SET url = %s WHERE id = %d", $home, (int) $stale['id'] ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		self::debug( 'Homepage row renamed after a permalink switch: ' . $other . ' => ' . $home );
 	}
 
 	/**
