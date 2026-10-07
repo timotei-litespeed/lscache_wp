@@ -34,7 +34,7 @@ class Optimax_Sync {
 	/**
 	 * Fingerprint format. A stored fingerprint of another format is recorded again, never compared.
 	 */
-	const VERSION = 3;
+	const VERSION = 6;
 
 	/**
 	 * Why the last patch() could not place a change, for the debug log.
@@ -84,6 +84,19 @@ class Optimax_Sync {
 		$tokens = self::tokenize( $html );
 		if ( null === $tokens ) {
 			return null;
+		}
+
+		// The classes the page uses: a `<style>` rule naming another class styles nothing here.
+		$classes = [];
+		foreach ( $tokens as $tok ) {
+			if ( 'tag' === $tok['kind'] && false !== stripos( $tok['raw'], 'class' ) ) {
+				$attrs = self::attrs( $tok['raw'] );
+				if ( isset( $attrs['class'] ) ) {
+					foreach ( preg_split( '~\s+~', $attrs['class'], -1, PREG_SPLIT_NO_EMPTY ) as $class ) {
+						$classes[ $class ] = true;
+					}
+				}
+			}
 		}
 
 		$skel  = [];
@@ -141,7 +154,7 @@ class Optimax_Sync {
 						$items[] = [ self::TYPE_TEXT, $text ];
 					}
 				} elseif ( 'style' === $name ) {
-					$line .= ' ' . md5( self::mask( $tok['inner'] ) );
+					$line .= ' ' . md5( self::mask( self::used_css( $tok['inner'], $classes ) ) );
 				}
 			}
 			$skel[] = $line;
@@ -434,7 +447,9 @@ class Optimax_Sync {
 	/**
 	 * The URL an image is found by: its first real or lazy URL that is not inline data.
 	 *
-	 * Without the `.webp`/`.avif` OptimaX appends, or the render already carried.
+	 * Without the `.webp`/`.avif` OptimaX appends, or the render already carried, and
+	 * without its query: a `?ver=` cache-buster (LiteSpeed's cached avatars) changes
+	 * while the image stays where it is.
 	 *
 	 * @since 8.0
 	 *
@@ -446,7 +461,7 @@ class Optimax_Sync {
 			if ( empty( $attrs[ $name ] ) || 0 === strpos( $attrs[ $name ], 'data:' ) ) {
 				continue;
 			}
-			return preg_replace( '~\.(webp|avif)(?=[?#]|$)~i', '', trim( $attrs[ $name ] ) );
+			return preg_replace( '~\.(webp|avif)$~i', '', preg_replace( '~[?#].*$~s', '', trim( $attrs[ $name ] ) ) );
 		}
 
 		return '';
@@ -504,6 +519,107 @@ class Optimax_Sync {
 	 */
 	private static function mask( $val ) {
 		return preg_replace( '~(?<![0-9a-f])[0-9a-f]{13}(?![0-9a-f])~i', '#', $val );
+	}
+
+	/**
+	 * The part of a `<style>` block that styles this page, comments and whitespace left out.
+	 *
+	 * A rule whose every selector names a class no element has styles nothing, and
+	 * generators put such rules in the page: Tailwind (Atomic Wind) emits a rule for
+	 * every word in the page text that is also a class name, so a text edit changes
+	 * the CSS. At-rules (`@media`, `@supports`, `@layer`, `@container`) keep only
+	 * their used rules; other at-rules (`@font-face`, `@keyframes`) are kept whole.
+	 * Nested rules (CSS nesting) are filtered the same way.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $css     CSS.
+	 * @param array  $classes Classes the page uses, as keys.
+	 * @return string
+	 */
+	private static function used_css( $css, $classes ) {
+		$css = preg_replace( '~/\*.*?\*/~s', '', (string) $css );
+		$len = strlen( $css );
+		$out = '';
+		$pos = 0;
+		while ( $pos < $len ) {
+			$open = strpos( $css, '{', $pos );
+			if ( false === $open ) {
+				$out .= self::squeeze_css( substr( $css, $pos ) );
+				break;
+			}
+
+			$depth = 0;
+			for ( $end = $open; $end < $len; $end++ ) {
+				if ( '{' === $css[ $end ] ) {
+					++$depth;
+				} elseif ( '}' === $css[ $end ] && 0 === --$depth ) {
+					break;
+				}
+			}
+
+			// Declarations before a nested rule belong to the enclosing rule.
+			$prelude = substr( $css, $pos, $open - $pos );
+			$cut     = strrpos( $prelude, ';' );
+			if ( false !== $cut ) {
+				$out    .= self::squeeze_css( substr( $prelude, 0, $cut + 1 ) );
+				$prelude = substr( $prelude, $cut + 1 );
+			}
+			$prelude = trim( $prelude );
+			$body    = substr( $css, $open + 1, max( 0, $end - $open - 1 ) );
+
+			if ( '@' === substr( $prelude, 0, 1 ) ) {
+				$inner = preg_match( '~^@(media|supports|layer|container|scope)\b~i', $prelude ) ? self::used_css( $body, $classes ) : self::squeeze_css( $body );
+				if ( '' !== $inner ) {
+					$out .= self::squeeze_css( $prelude ) . '{' . rtrim( $inner, ';' ) . '}';
+				}
+			} elseif ( self::selector_used( $prelude, $classes ) ) {
+				$out .= self::squeeze_css( $prelude ) . '{' . rtrim( self::used_css( $body, $classes ), ';' ) . '}';
+			}
+			$pos = $end + 1;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Whether one of a rule's selectors names only classes the page uses.
+	 *
+	 * Ids are not checked: themes number them per render.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $prelude Selector list.
+	 * @param array  $classes Classes the page uses, as keys.
+	 * @return bool
+	 */
+	private static function selector_used( $prelude, $classes ) {
+		foreach ( explode( ',', $prelude ) as $selector ) {
+			preg_match_all( '~\.((?:\\\\.|[\w-])+)~', $selector, $m );
+			$used = true;
+			foreach ( $m[1] as $class ) {
+				if ( ! isset( $classes[ stripslashes( $class ) ] ) ) {
+					$used = false;
+					break;
+				}
+			}
+			if ( $used ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * CSS with whitespace collapsed: minified and unminified copies compare equal.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $css CSS.
+	 * @return string
+	 */
+	private static function squeeze_css( $css ) {
+		return trim( preg_replace( [ '~\s+~', '~\s*([{}:;,>])\s*~', '~;}~' ], [ ' ', '$1', '}' ], $css ) );
 	}
 
 	/**

@@ -720,12 +720,20 @@ class Optimax extends Cloud_Queue_Svc {
 				$html = File::read( $static_file );
 				if ( $html ) {
 					$html = $this->_sync( $html, $buffer, $url_tag, $vary );
+					if ( null === $html ) {
+						// The page changed in this render; the next one confirms it or not.
+						Core::comment( 'Optimax checking a page change' );
+						return false;
+					}
 					if ( false === $html ) {
 						// The design changed: the page waits for the owner to run OptimaX again.
 						$pages->expire( (int) $page['id'] );
-						Core::comment( 'Optimax needs refresh: design changed' );
+						// Its other versions are still cached with their OptimaX HTML; drop them too.
+						Purge::add( self::page_tag( $url_tag ) );
+						Core::comment( 'Optimax needs refresh: page changed' );
 						return false;
 					}
+					$this->_maybe_rebuild( $request_url, $url_tag, $vary );
 					self::debug( 'serve() hit: ' . $filepath_prefix . $filename . '.html' );
 					Core::comment( 'Optimax served ✅' );
 					return $html;
@@ -743,8 +751,25 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 
 		// No cached optimax, add to queue
-		$uid = get_current_user_id();
+		if ( $this->_enqueue( $request_url, $url_tag, $vary ) ) {
+			Core::comment( 'QUIC.cloud Optimax in queue' );
+		}
 
+		return false;
+	}
+
+	/**
+	 * Queue this request's version of a page for a build.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $request_url Request URL.
+	 * @param string $url_tag     Page identity.
+	 * @param string $vary        Raw vary.
+	 * @param bool   $keep        Leave an existing queue row as it is (a rebuild; the row may already be with QUIC.cloud).
+	 * @return bool Whether the version is queued.
+	 */
+	private function _enqueue( $request_url, $url_tag, $vary, $keep = false ) {
 		if ( ! $this->queueable_request() ) {
 			return false;
 		}
@@ -752,6 +777,9 @@ class Optimax extends Cloud_Queue_Svc {
 		$this->_queue = $this->load_queue( 'optimax' );
 
 		$queue_k = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
+		if ( $keep && isset( $this->_queue[ $queue_k ] ) ) {
+			return true;
+		}
 		if ( ! isset( $this->_queue[ $queue_k ] ) && count( $this->_queue ) >= $this->_max_queue_size() ) {
 			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
 			return false;
@@ -760,7 +788,7 @@ class Optimax extends Cloud_Queue_Svc {
 			'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
 			'is_mobile'  => $this->_separate_mobile(),
 			'is_nextgen' => $this->cls( 'Media' )->webp_support(),
-			'uid'        => $uid,
+			'uid'        => get_current_user_id(),
 			'vary'       => $vary,
 			'url_tag'    => $url_tag,
 		];
@@ -769,9 +797,36 @@ class Optimax extends Cloud_Queue_Svc {
 
 		// Prepare cache tag for later purge
 		Tag::add( 'OPTIMAX.' . md5( $queue_k ) );
-		Core::comment( 'QUIC.cloud Optimax in queue' );
 
-		return false;
+		return true;
+	}
+
+	/**
+	 * Queue a rebuild of a build older than the Rebuild Interval. It keeps being served meanwhile.
+	 *
+	 * Its age is counted from its first serve (the fingerprint's `built`), which patches keep.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $request_url Request URL.
+	 * @param string $url_tag     Page identity.
+	 * @param string $vary        Raw vary.
+	 * @return void
+	 */
+	private function _maybe_rebuild( $request_url, $url_tag, $vary ) {
+		$ttl = (int) $this->conf( self::O_OPTIMAX_TTL );
+		if ( $ttl <= 0 ) {
+			return;
+		}
+
+		$fp = $this->cls( 'Optimax_Pages' )->load_fingerprint( $url_tag, $vary );
+		if ( ! $fp || empty( $fp['built'] ) || time() - (int) $fp['built'] < $ttl ) {
+			return;
+		}
+
+		if ( $this->_enqueue( $request_url, $url_tag, $vary, true ) ) {
+			self::debug( 'Rebuild queued: build older than ' . $ttl . 's' );
+		}
 	}
 
 	/**
@@ -789,7 +844,7 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param string $buffer  This render.
 	 * @param string $url_tag Page identity.
 	 * @param string $vary    Raw vary.
-	 * @return string|false The HTML to serve, or false when the design changed or a change cannot be placed.
+	 * @return string|false|null The HTML to serve; false when a change (design, or content that cannot be placed) is confirmed; null while a first sighting waits for the next render (_confirm()).
 	 */
 	private function _sync( $html, $buffer, $url_tag, $vary ) {
 		$now = '' !== (string) $buffer ? Optimax_Sync::fingerprint( $buffer ) : null;
@@ -807,14 +862,21 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 
 		if ( $old['design'] !== $now['design'] ) {
+			$where = ( count( $old['lines'] ) - count( $now['lines'] ) ) . ' line(s) removed at the end';
 			foreach ( $now['lines'] as $i => $hash ) {
 				if ( ! isset( $old['lines'][ $i ] ) || $old['lines'][ $i ] !== $hash ) {
-					self::debug( 'sync: design changed at line ' . $i . ': ' . substr( $now['skel'][ $i ], 0, 300 ) );
-					return false;
+					$where = 'at line ' . $i . ': ' . substr( $now['skel'][ $i ], 0, 300 );
+					break;
 				}
 			}
-			self::debug( 'sync: design changed: ' . ( count( $old['lines'] ) - count( $now['lines'] ) ) . ' line(s) removed at the end' );
-			return false;
+			self::debug( 'sync: design changed ' . $where );
+			return $this->_confirm( $old, $now['design'], $url_tag, $vary );
+		}
+
+		if ( ! empty( $old['pending'] ) ) {
+			$old['pending'] = '';
+			$pages->save_fingerprint( $url_tag, $vary, $old, (int) $old['patches'], (int) $old['built'] );
+			self::debug( 'sync: the changed render was a one-off; the build stays' );
 		}
 
 		if ( $old['items'] === $now['items'] ) {
@@ -831,7 +893,7 @@ class Optimax extends Cloud_Queue_Svc {
 		);
 		if ( false === $patched ) {
 			self::debug( 'sync: a content change could not be placed in the OptimaX HTML: ' . Optimax_Sync::$why );
-			return false;
+			return $this->_confirm( $old, 'unplaced:' . $now['design'], $url_tag, $vary );
 		}
 		// Only per-render values differed (an image's id): nothing to store.
 		if ( $patched === $html ) {
@@ -840,11 +902,46 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$patches = (int) $old['patches'] + 1;
 		if ( $this->_save_patch( $patched, $url_tag, $vary ) ) {
-			$pages->save_fingerprint( $url_tag, $vary, $now, $patches );
+			$pages->save_fingerprint( $url_tag, $vary, $now, $patches, empty( $old['built'] ) ? 0 : (int) $old['built'] );
 			self::debug( 'sync: content updated [patches] ' . $patches );
 		}
 
 		return $patched;
+	}
+
+	/**
+	 * Whether a page change is confirmed: the render before this one saw it too.
+	 *
+	 * Some plugins render the page differently once, right after a save, while their
+	 * own caches rebuild (Elementor's element cache, Neve's font list), then go back.
+	 * So the first render showing a change is served without OptimaX, cached for a
+	 * minute only, and the change is remembered. A second render showing it confirms
+	 * it; one matching the build again clears it (_sync()).
+	 *
+	 * @since 8.0
+	 *
+	 * @param array  $old     Stored fingerprint.
+	 * @param string $sig     The change seen: the new design, or an unplaceable content change in it.
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return false|null False when confirmed (the page needs a refresh), null while waiting.
+	 */
+	private function _confirm( $old, $sig, $url_tag, $vary ) {
+		if ( isset( $old['pending'] ) && $old['pending'] === $sig ) {
+			self::debug( 'sync: change confirmed by a second render' );
+			return false;
+		}
+
+		$old['pending'] = $sig;
+		$this->cls( 'Optimax_Pages' )->save_fingerprint( $url_tag, $vary, $old, (int) $old['patches'], (int) $old['built'] );
+		Control::set_custom_ttl( 60, 'OptimaX: confirm a page change' );
+		// The cache-control header usually went out from the footer hook already; send it again with the short TTL.
+		if ( defined( 'LITESPEED_DID_send_headers' ) && ! headers_sent() ) {
+			header( $this->cls( 'Control' )->output() );
+		}
+		self::debug( 'sync: waiting for a second render to confirm the change' );
+
+		return null;
 	}
 
 	/**

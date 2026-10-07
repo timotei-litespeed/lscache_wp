@@ -34,6 +34,14 @@ $this->form_action();
 				<?php $this->build_switch( $option_id ); ?>
 				<div class="litespeed-desc">
 					<?php esc_html_e( 'Turn on OptimaX.', 'litespeed-cache' ); ?>
+					<br />
+					<?php
+					printf(
+						/* translators: %s: link to the Presets page */
+						esc_html__( 'We recommend applying the OptimaX preset in %s: it turns on the settings OptimaX needs.', 'litespeed-cache' ),
+						'<a href="' . esc_url( admin_url( 'admin.php?page=litespeed-presets' ) ) . '">' . esc_html__( 'Presets', 'litespeed-cache' ) . '</a>'
+					);
+					?>
 				</div>
 
 				<?php if ( Optimax::is_paused() ) : ?>
@@ -58,6 +66,21 @@ $this->form_action();
 				<div class="litespeed-desc">
 					<?php esc_html_e( 'Automatically process the OptimaX queue via cron job, one URL per run. When off, run the queue manually from the OptimaX Summary tab.', 'litespeed-cache' ); ?>
 					<?php Task::cron_off_notice(); ?>
+				</div>
+			</td>
+		</tr>
+
+		<tr>
+			<th>
+				<?php $option_id = Base::O_OPTIMAX_TTL; ?>
+				<?php $this->title( $option_id ); ?>
+			</th>
+			<td>
+				<?php $this->build_input( $option_id ); ?> <?php $this->readable_seconds(); ?>
+				<div class="litespeed-desc">
+					<?php esc_html_e( 'Specify how long, in seconds, an OptimaX build is used before it is rebuilt, to pick up theme and plugin updates its own checks do not catch. Pages keep being served while they are rebuilt. Every rebuild uses a QUIC.cloud request.', 'litespeed-cache' ); ?>
+					<?php esc_html_e( 'Set to 0 to never rebuild on a schedule.', 'litespeed-cache' ); ?>
+					<?php $this->_validate_ttl( $option_id, 86400, false, true ); ?>
 				</div>
 			</td>
 		</tr>

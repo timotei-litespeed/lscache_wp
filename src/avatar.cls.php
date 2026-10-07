@@ -144,7 +144,9 @@ class Avatar extends Base {
 
 		if ( $mtime && time() - (int) $mtime <= $this->_conf_cache_ttl ) {
 			self::debug2( '[Avatar] cache file exists [url] ' . $url );
-			return $this->_rewrite( $url, $mtime );
+			// Versioned by content, not mtime: a refresh that downloads the same image keeps the URL.
+			$ver = md5_file( $realpath );
+			return $this->_rewrite( $url, $ver ? substr( $ver, 0, 10 ) : $mtime );
 		}
 
 		// Only handle gravatar or known remote avatar providers; keep generic check for "gravatar.com".
@@ -197,8 +199,8 @@ class Avatar extends Base {
 	 * Build final local URL for cached avatar.
 	 *
 	 * @since 3.0
-	 * @param string   $url  Original URL.
-	 * @param int|null $time Optional filemtime for cache busting.
+	 * @param string          $url  Original URL.
+	 * @param int|string|null $time Optional cache-busting version (content hash, or filemtime).
 	 * @return string Local URL.
 	 */
 	private function _rewrite( $url, $time = null ) {

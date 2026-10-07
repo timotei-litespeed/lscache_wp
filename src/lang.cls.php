@@ -285,6 +285,7 @@ class Lang extends Base {
 
 			self::O_OPTIMAX               => __( 'OptimaX', 'litespeed-cache' ),
 			self::O_OPTIMAX_CRON          => __( 'OptimaX Cron', 'litespeed-cache' ),
+			self::O_OPTIMAX_TTL           => __( 'OptimaX Rebuild Interval', 'litespeed-cache' ),
 		];
 
 		if ( array_key_exists( $id, $_lang_list ) ) {

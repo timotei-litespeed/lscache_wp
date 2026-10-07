@@ -33,7 +33,7 @@ $nextgen_on     = (bool) $this->conf( Base::O_IMG_OPTM_WEBP );
 $nextgen_title  = $this->cls( 'Media' )->next_gen_image_title();
 $status_labels  = [
 	Optimax_Pages::STATUS_WORKING => __( 'Working on it', 'litespeed-cache' ),
-	Optimax_Pages::STATUS_QUEUED  => __( 'In queue', 'litespeed-cache' ),
+	Optimax_Pages::STATUS_QUEUED  => __( 'In local queue', 'litespeed-cache' ),
 	Optimax_Pages::STATUS_IN_USE  => __( 'In Use', 'litespeed-cache' ),
 	Optimax_Pages::STATUS_REFRESH => __( 'Needs refresh', 'litespeed-cache' ),
 ];
@@ -163,7 +163,7 @@ $page_label = function ( $url ) use ( $home ) {
 											?>
 										</span>
 									<?php elseif ( Optimax_Pages::STATUS_REFRESH === $ver['status'] ) : ?>
-										<br /><span class="litespeed-desc"><?php esc_html_e( 'Design changed. Visitors get the page without OptimaX until you run it.', 'litespeed-cache' ); ?></span>
+										<br /><span class="litespeed-desc"><?php esc_html_e( 'The page changed in a way OptimaX cannot update by itself. Visitors get the page without OptimaX until you run it.', 'litespeed-cache' ); ?></span>
 									<?php endif; ?>
 								</td>
 								<td>

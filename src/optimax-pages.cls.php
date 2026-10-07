@@ -198,7 +198,7 @@ class Optimax_Pages extends Root {
 	}
 
 	/**
-	 * A version's status. Precedence: Working on it > In queue > In Use > Needs refresh.
+	 * A version's status. Precedence: Working on it > In local queue > In Use > Needs refresh.
 	 *
 	 * @since 8.0
 	 *
@@ -786,8 +786,8 @@ class Optimax_Pages extends Root {
 		$msg = sprintf(
 			/* translators: %d: number of pages */
 			_n(
-				'OptimaX: the design of %d page changed. Visitors get the page without OptimaX until you run it again.',
-				'OptimaX: the design of %d pages changed. Visitors get the pages without OptimaX until you run them again.',
+				'OptimaX: %d page changed in a way OptimaX cannot update by itself. Visitors get it without OptimaX until you run it again.',
+				'OptimaX: %d pages changed in a way OptimaX cannot update by itself. Visitors get them without OptimaX until you run them again.',
 				count( $urls ),
 				'litespeed-cache'
 			),
@@ -883,7 +883,11 @@ class Optimax_Pages extends Root {
 			return null;
 		}
 
-		return $fp + [ 'patches' => 0 ];
+		return $fp + [
+			'patches' => 0,
+			'built'   => 0,
+			'pending' => '',
+		];
 	}
 
 	/**
@@ -895,9 +899,10 @@ class Optimax_Pages extends Root {
 	 * @param string $vary    Raw vary.
 	 * @param array  $fp      Optimax_Sync::fingerprint().
 	 * @param int    $patches Times the build had its text updated.
+	 * @param int    $built   When the build was first served (0: now). Patches keep it, so the Rebuild Interval counts from the build.
 	 * @return bool
 	 */
-	public function save_fingerprint( $url_tag, $vary, $fp, $patches ) {
+	public function save_fingerprint( $url_tag, $vary, $fp, $patches, $built = 0 ) {
 		// The page's URL and vary are part of the content, so two versions never share a file.
 		$con = wp_json_encode(
 			[
@@ -908,6 +913,8 @@ class Optimax_Pages extends Root {
 				'lines'   => $fp['lines'],
 				'items'   => $fp['items'],
 				'patches' => (int) $patches,
+				'built'   => $built ? (int) $built : time(),
+				'pending' => empty( $fp['pending'] ) ? '' : (string) $fp['pending'],
 			]
 		);
 		if ( ! is_string( $con ) ) {
