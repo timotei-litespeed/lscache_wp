@@ -282,11 +282,15 @@ $can_page_load_time      = defined( 'LITESPEED_SERVER_TYPE' ) && 'NONE' !== LITE
 							<?php if ( 'page_optm' === $svc && ! empty( $usage['sub_svc'] ) ) : ?>
 								<p class="litespeed-dashboard-stats-total">
 									<?php
+									// OptimaX uses Page Optimization credit; '-' until QUIC.cloud reports its usage.
+									if ( $optimax_on && ! isset( $usage['sub_svc'][ Cloud::SVC_OPTIMAX ] ) ) {
+										$usage['sub_svc'][ Cloud::SVC_OPTIMAX ] = '-';
+									}
 									$i = 0;
 									foreach ( $usage['sub_svc'] as $sub_svc => $sub_usage ) :
 										?>
 										<span class="<?php echo $i++ > 0 ? 'litespeed-left10' : ''; ?>">
-											<?php echo esc_html( strtoupper( $sub_svc ) ); ?>: <strong><?php echo (int) $sub_usage; ?></strong>
+											<?php echo esc_html( Cloud::SVC_OPTIMAX === $sub_svc ? 'OX' : strtoupper( $sub_svc ) ); ?>: <strong><?php echo '-' === $sub_usage ? '-' : (int) $sub_usage; ?></strong>
 										</span>
 									<?php endforeach; ?>
 								</p>
