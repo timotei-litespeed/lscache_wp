@@ -39,6 +39,10 @@ $ccss_count              = count( $this->load_queue( 'ccss' ) );
 $ucss_count              = count( $this->load_queue( 'ucss' ) );
 $placeholder_queue_count = count( $this->load_queue( 'lqip' ) );
 $vpi_queue_count         = count( $this->load_queue( 'vpi' ) );
+// OptimaX, shown where its menu is (LITESPEED_OX).
+$optimax_on              = defined( 'LITESPEED_OX' );
+$optimax_summary         = $optimax_on ? Optimax::get_summary() : [];
+$optimax_queue_count     = $optimax_on ? count( $this->load_queue( 'optimax' ) ) : 0;
 $can_page_load_time      = defined( 'LITESPEED_SERVER_TYPE' ) && 'NONE' !== LITESPEED_SERVER_TYPE;
 
 ?>
@@ -793,6 +797,54 @@ $can_page_load_time      = defined( 'LITESPEED_SERVER_TYPE' ) && 'NONE' !== LITE
 							</div>
 						<?php endif; ?>
 					</div>
+
+					<?php if ( $optimax_on ) : ?>
+						<div class="postbox litespeed-postbox litespeed-postbox-optimax">
+							<div class="inside">
+								<h3 class="litespeed-title">
+									OptimaX
+									<a href="<?php echo esc_url( admin_url( 'admin.php?page=litespeed-optimax' ) ); ?>" class="litespeed-title-right-icon"><?php esc_html_e( 'More', 'litespeed-cache' ); ?></a>
+								</h3>
+								<?php if ( ! empty( $optimax_summary['last_request_optimax'] ) ) : ?>
+									<p>
+										<?php
+										printf(
+											esc_html__( 'Last generated: %s', 'litespeed-cache' ),
+											'<code>' . esc_html( Utility::readable_time( $optimax_summary['last_request_optimax'] ) ) . '</code>'
+										);
+										?>
+									</p>
+									<?php if ( ! empty( $optimax_summary['last_took_ms_optimax'] ) || ! empty( $optimax_summary['last_spent_optimax'] ) ) : ?>
+										<p>
+											<?php
+											printf(
+												esc_html__( 'Time to execute previous request: %s', 'litespeed-cache' ),
+												'<code>' . esc_html( ! empty( $optimax_summary['last_took_ms_optimax'] ) ? number_format( $optimax_summary['last_took_ms_optimax'] / 1000, 2 ) : $optimax_summary['last_spent_optimax'] ) . 's</code>'
+											);
+											?>
+										</p>
+									<?php endif; ?>
+								<?php endif; ?>
+								<p>
+									<?php esc_html_e( 'Requests in queue', 'litespeed-cache' ); ?>: <code><?php echo ! empty( $optimax_queue_count ) ? esc_html( $optimax_queue_count ) : '-'; ?></code>
+									<a href="<?php echo ! empty( $optimax_queue_count ) ? esc_url( Utility::build_url( Router::ACTION_OPTIMAX, Optimax::TYPE_GEN ) ) : 'javascript:;'; ?>"
+										class="button button-secondary button-small <?php echo empty( $optimax_queue_count ) ? 'disabled' : ''; ?>">
+										<?php esc_html_e( 'Force cron', 'litespeed-cache' ); ?>
+									</a>
+								</p>
+							</div>
+							<?php if ( ! empty( $cloud_summary['last_request.optimax'] ) ) : ?>
+								<div class="inside litespeed-postbox-footer litespeed-postbox-footer--compact">
+									<?php
+									printf(
+										esc_html__( 'Last requested: %s', 'litespeed-cache' ),
+										esc_html( Utility::readable_time( $cloud_summary['last_request.optimax'] ) )
+									);
+									?>
+								</div>
+							<?php endif; ?>
+						</div>
+					<?php endif; ?>
 
 					<div class="postbox litespeed-postbox litespeed-postbox-crawler">
 						<div class="inside">
