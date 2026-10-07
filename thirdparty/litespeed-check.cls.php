@@ -115,6 +115,10 @@ class LiteSpeed_Check {
 	 * @return void
 	 */
 	public static function activated_plugin( $plugin, $network_wide ) {
+		// Only LSCWP itself or a newly activated incompatible plugin may show the notice again; others would re-show a dismissed one.
+		if (basename(LSCWP_DIR) . '/litespeed-cache.php' !== $plugin && !in_array($plugin, self::$_incompatible_plugins, true)) {
+			return;
+		}
 		self::incompatible_plugin_notice($plugin, $network_wide, 'activated');
 	}
 
@@ -127,6 +131,10 @@ class LiteSpeed_Check {
 	 * @return void
 	 */
 	public static function deactivated_plugin( $plugin, $network_wide ) {
+		// Refresh the list only when an incompatible plugin goes away and the notice was not dismissed.
+		if (!in_array($plugin, self::$_incompatible_plugins, true) || !self::notice_pinned()) {
+			return;
+		}
 		self::incompatible_plugin_notice($plugin, $network_wide, 'deactivated');
 	}
 
@@ -170,6 +178,24 @@ class LiteSpeed_Check {
 			false,
 			true
 		);
+	}
+
+	/**
+	 * Whether the incompatible plugin notice is still pinned, i.e. not dismissed.
+	 *
+	 * @since 7.9.2
+	 * @return bool
+	 */
+	private static function notice_pinned() {
+		$messages = \LiteSpeed\Admin_Display::get_option(\LiteSpeed\Admin_Display::DB_MSG_PIN, array());
+		if (is_array($messages)) {
+			foreach ($messages as $message) {
+				if (strpos($message, self::$_msg_id) !== false) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
