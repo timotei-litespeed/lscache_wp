@@ -36,6 +36,7 @@ class Router extends Base {
 	const ACTION_UCSS                  = 'ucss';
 	const ACTION_VPI                   = 'vpi';
 	const ACTION_OPTIMAX               = 'optimax';
+	const ACTION_TASK                  = 'task';
 	const ACTION_PRESET                = 'preset';
 	const ACTION_IMPORT                = 'import';
 	const ACTION_REPORT                = 'report';
@@ -70,6 +71,7 @@ class Router extends Base {
 		self::ACTION_PLACEHOLDER,
 		self::ACTION_PURGE,
 		self::ACTION_REPORT,
+		self::ACTION_TASK,
 	);
 
 	const TYPE = 'litespeed_type';
@@ -633,6 +635,7 @@ class Router extends Base {
 			case self::ACTION_UCSS:
 			case self::ACTION_VPI:
 			case self::ACTION_OPTIMAX:
+			case self::ACTION_TASK:
 			case self::ACTION_CONF:
 			case self::ACTION_ACTIVATION:
 			case self::ACTION_HEALTH:

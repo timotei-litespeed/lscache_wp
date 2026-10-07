@@ -171,6 +171,10 @@ class UCSS extends Cloud_Queue_Svc {
 			return false;
 		}
 
+		if ( ! $this->queueable_request() ) {
+			return false;
+		}
+
 		Core::comment( 'QUIC.cloud UCSS in queue' );
 
 		$uid = get_current_user_id();

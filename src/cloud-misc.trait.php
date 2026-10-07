@@ -226,7 +226,7 @@ trait Cloud_Misc {
 			$this->sync_usage();
 		}
 
-		if ( in_array( $service, [ self::SVC_CCSS, self::SVC_UCSS, self::SVC_VPI ], true ) ) {
+		if ( in_array( $service, [ self::SVC_CCSS, self::SVC_UCSS, self::SVC_VPI, self::SVC_OPTIMAX ], true ) ) { // TODO: temporary added OX to page optm so it uses that credit
 			// @since 4.2
 			$service = self::SVC_PAGE_OPTM;
 		}

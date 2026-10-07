@@ -238,6 +238,9 @@ class Core extends Root {
 
 		$this->cls( 'Tag' )->init();
 
+		// OptimaX page list: the notice for pages that need a refresh.
+		$this->cls( 'Optimax_Pages' )->init();
+
 		// Load hooks that may be related to users
 		add_action( 'init', [ $this, 'after_user_init' ], 5 );
 
@@ -471,7 +474,7 @@ class Core extends Root {
 		 */
 		if ( ! defined( 'LITESPEED_NO_OPTM' ) || ! LITESPEED_NO_OPTM ) {
 			// Optimax: first priority check — skip all hooks if ox HTML is cached
-			$ox_html = $this->cls( 'Optimax' )->serve();
+			$ox_html = $this->cls( 'Optimax' )->serve( $buffer );
 			if ( false !== $ox_html ) {
 				Debug2::debug( '[Core] Optimax served, skip litespeed_buffer_finalize' );
 				define( 'LITESPEED_OX_SERVED', true );

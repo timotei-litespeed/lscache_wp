@@ -805,6 +805,12 @@ class Admin_Display extends Base {
 			}
 		}
 
+		// OptiMax is on but paused by the Next-Gen gate. Checked live on every load,
+		// never stored, so it goes away as soon as the setting is fixed.
+		if ( Optimax::is_paused() ) {
+			self::note( esc_html( Optimax::paused_msg() ), true, true );
+		}
+
 		if ( empty( $_GET['page'] ) || 0 !== strpos( sanitize_text_field( wp_unslash( $_GET['page'] ) ), 'litespeed' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			global $pagenow;
 			if ( 'plugins.php' !== $pagenow ) {

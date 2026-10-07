@@ -199,3 +199,44 @@ function litespeed_update_7_9() {
 		$wpdb->query( "DROP TABLE IF EXISTS `{$tb}`" );
 	}
 }
+
+/**
+ * Update the url_file type comment and add the OptimaX page-list column.
+ *
+ * @since 8.0
+ */
+function litespeed_update_8_0() {
+	global $wpdb;
+	Debug2::debug( '[Data] Update url_file type comment' );
+
+	$tb = $wpdb->prefix . 'litespeed_url_file';
+	if ( litespeed_table_exists( $tb ) ) {
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
+		$wpdb->query( "ALTER TABLE `{$tb}` MODIFY `type` tinyint(4) NOT NULL COMMENT 'css=1,js=2,ccss=3,ucss=4,optimax=5,optimax_js=6,optimax_ucss=7,optimax_imgs=8'" );
+	}
+
+	litespeed_url_add_ox_column();
+}
+
+/**
+ * Add the OptimaX page-list column to the URL table.
+ *
+ * @since 8.0
+ */
+function litespeed_url_add_ox_column() {
+	global $wpdb;
+
+	$tb = $wpdb->prefix . 'litespeed_url';
+	if ( ! litespeed_table_exists( $tb ) ) {
+		return;
+	}
+
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	if ( $wpdb->get_var( "SHOW COLUMNS FROM `{$tb}` LIKE 'ox'" ) ) {
+		return;
+	}
+
+	Debug2::debug( '[Data] Add ox column to ' . $tb );
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange
+	$wpdb->query( "ALTER TABLE `{$tb}` ADD COLUMN `ox` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'in OptimaX page list=1', ADD KEY `ox` (`ox`)" );
+}
