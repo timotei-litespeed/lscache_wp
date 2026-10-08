@@ -352,6 +352,23 @@ trait Cloud_Misc {
 	}
 
 	/**
+	 * Lift this site's own err_domains block before a manual activation.
+	 *
+	 * An `err_alias` answer blocks every request for 24h, the activation's REST echo
+	 * included, which then reads as a blocked REST API. Activating registers the
+	 * domain again, so the earlier alias answer no longer applies.
+	 *
+	 * @since 7.9.2
+	 */
+	private function _clear_own_err_domain() {
+		$site_url = site_url();
+		if ( isset( $this->_summary['err_domains'][ $site_url ] ) ) {
+			self::debug( 'Activation: removed own domain from err_domains: ' . $site_url );
+			$this->_remove_domain_from_err_list( $site_url );
+		}
+	}
+
+	/**
 	 * Check if is err domain
 	 *
 	 * @since 5.0

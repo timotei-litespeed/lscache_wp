@@ -47,6 +47,7 @@ trait Cloud_Auth {
 	 */
 	public function init_qc() {
 		$this->init_qc_prepare();
+		$this->_clear_own_err_domain();
 
 		$ref = $this->_get_ref_url();
 
@@ -122,6 +123,7 @@ trait Cloud_Auth {
 	 */
 	public function init_qc_cli() {
 		$this->init_qc_prepare();
+		$this->_clear_own_err_domain();
 
 		$server_ip = $this->conf( self::O_SERVER_IP );
 		if ( ! $server_ip ) {
