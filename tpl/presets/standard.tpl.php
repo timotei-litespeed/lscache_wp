@@ -85,23 +85,6 @@ $presets = array(
 			esc_html__( 'A QUIC.cloud connection is required to use this preset. Enables the maximum level of optimizations for improved page speed scores.', 'litespeed-cache' ),
 		),
 	),
-	'optimax' => array(
-		'title'  => esc_html__( 'OptimaX', 'litespeed-cache' ),
-		'body'   => array(
-			esc_html__( 'OptimaX', 'litespeed-cache' ),
-			esc_html__( 'OptimaX Cron', 'litespeed-cache' ),
-			esc_html__( 'Cache', 'litespeed-cache' ),
-			esc_html__( 'Browser Cache', 'litespeed-cache' ),
-			esc_html__( 'Mobile Cache', 'litespeed-cache' ),
-			esc_html__( 'Guest Mode', 'litespeed-cache' ) . ' (' . esc_html__( 'OFF', 'litespeed-cache' ) . ')',
-			esc_html__( 'Next-Gen Image Format', 'litespeed-cache' ),
-			esc_html__( 'Add Missing Sizes', 'litespeed-cache' ),
-		),
-		'footer' => array(
-			esc_html__( 'The baseline OptimaX needs: caching on, so optimized pages can be stored and served, and next-gen images, so the images OptimaX returns are actually used.', 'litespeed-cache' ),
-			esc_html__( 'A QUIC.cloud connection is required to use this preset. Only the settings listed above are changed; everything else is left as you have it.', 'litespeed-cache' ),
-		),
-	),
 );
 ?>
 
@@ -202,7 +185,7 @@ if ( ! empty( $summary['preset'] ) || ! empty( $backups ) ) :
 			printf( esc_html__( 'Error: Failed to apply the settings %1$s', 'litespeed-cache' ), esc_html( $time ) );
 		} elseif ( 'backup' === $name ) {
 			printf( esc_html__( 'Restored backup settings %1$s', 'litespeed-cache' ), esc_html( $time ) );
-		} else {
+		} elseif ( isset( $presets[ $name ] ) ) {
 			printf(
 				esc_html__( 'Applied the %1$s preset %2$s', 'litespeed-cache' ),
 				'<strong>' . esc_html( $presets[ $name ]['title'] ) . '</strong>',

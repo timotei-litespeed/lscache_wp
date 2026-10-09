@@ -18,6 +18,15 @@ defined( 'WPINC' ) || exit();
 trait Cloud_Request {
 
 	/**
+	 * Whether the last _post() failed for a temporary reason (service unavailable,
+	 * rate limit, network or node error): the request can be sent again later.
+	 *
+	 * @since 8.0
+	 * @var bool
+	 */
+	public static $retry_later = false;
+
+	/**
 	 * Get data from QUIC cloud server
 	 *
 	 * @since 3.0
@@ -273,6 +282,8 @@ trait Cloud_Request {
 	 * @return mixed Response payload or false on failure.
 	 */
 	private function _post( $service, $data = false, $time_out = false ) {
+		self::$retry_later = false;
+
 		$service_tag = $service;
 		if ( ! empty( $data['action'] ) ) {
 			$service_tag .= '-' . $data['action'];
@@ -358,6 +369,8 @@ trait Cloud_Request {
 				self::debug( 'Node error, redetecting node [svc] ' . $service );
 				$this->detect_cloud( $service, true );
 			}
+			// Set after the redetect: its own request resets the flag.
+			self::$retry_later = true;
 			return false;
 		}
 
@@ -382,6 +395,8 @@ trait Cloud_Request {
 				$this->detect_cloud( $service, true );
 			}
 
+			// Set after the redetect: its own request resets the flag.
+			self::$retry_later = true;
 			return false;
 		}
 
@@ -411,6 +426,7 @@ trait Cloud_Request {
 
 			if ( 'rate_limit' === $json['_code'] ) {
 				self::debugErr( 'Cloud server rate limit exceeded.' );
+				self::$retry_later = true;
 				$msg = __( 'Cloud server refused the current request due to rate limiting. Please try again later.', 'litespeed-cache' );
 				Admin_Display::error( $msg );
 				return false;
@@ -438,6 +454,8 @@ trait Cloud_Request {
 			self::debugErr( 'Node error, redetecting node [svc] ' . $service );
 			$this->detect_cloud( $service, true );
 
+			// Set after the redetect: its own request resets the flag.
+			self::$retry_later = true;
 			return false;
 		}
 

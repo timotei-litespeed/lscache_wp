@@ -238,9 +238,6 @@ class Core extends Root {
 
 		$this->cls( 'Tag' )->init();
 
-		// OptimaX page list: the notice for pages that need a refresh.
-		$this->cls( 'Optimax_Pages' )->init();
-
 		// Load hooks that may be related to users
 		add_action( 'init', [ $this, 'after_user_init' ], 5 );
 

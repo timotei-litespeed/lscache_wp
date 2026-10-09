@@ -27,6 +27,16 @@ abstract class Cloud_Queue_Svc extends Base {
 	const TYPE_GEN_ITEM = 'gen_item';
 
 	/**
+	 * Seconds to wait before sending again when QUIC.cloud is temporarily unavailable.
+	 */
+	const RETRY_LATER_TTL = 300;
+
+	/**
+	 * Failed sends after which a kept item is no longer retried automatically.
+	 */
+	const MAX_TRIES = 5;
+
+	/**
 	 * In-memory working queue.
 	 *
 	 * @var array
@@ -87,6 +97,75 @@ abstract class Cloud_Queue_Svc extends Base {
 	 */
 	protected function _php_time_limit() {
 		return 120;
+	}
+
+	/**
+	 * Keep a failed item queued instead of dropping it.
+	 *
+	 * A kept item is marked failed, moved to the end of the queue and sent again
+	 * after RETRY_LATER_TTL, up to MAX_TRIES failures.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	protected function _keep_failed() {
+		return false;
+	}
+
+	/**
+	 * Mark a failed item and move it to the end of the queue.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $queue_k Queue key.
+	 * @return void
+	 */
+	private function _requeue_failed( $queue_k ) {
+		$type         = $this->_svc_id();
+		$this->_queue = $this->load_queue( $type );
+		if ( ! isset( $this->_queue[ $queue_k ] ) ) {
+			return;
+		}
+
+		$v            = $this->_queue[ $queue_k ];
+		$v['_status'] = 'failed';
+		$v['_err_at'] = time();
+		$v['_tries']  = ( empty( $v['_tries'] ) ? 0 : (int) $v['_tries'] ) + 1;
+		unset( $this->_queue[ $queue_k ] );
+		$this->_queue[ $queue_k ] = $v;
+		$this->save_queue( $type, $this->_queue );
+		self::debug( 'Failed ' . $v['_tries'] . '/' . self::MAX_TRIES . ', kept at the end of the queue [k] ' . $queue_k );
+	}
+
+	/**
+	 * Whether a failed item reached MAX_TRIES and is no longer sent by the cron.
+	 *
+	 * It stays listed until it is cleared or run manually.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $v Queue item.
+	 * @return bool
+	 */
+	public static function retries_stopped( $v ) {
+		return is_array( $v ) && ! empty( $v['_tries'] ) && (int) $v['_tries'] >= self::MAX_TRIES;
+	}
+
+	/**
+	 * Whether the cron skips a failed item: it waits before being sent again, or
+	 * reached MAX_TRIES.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $v Queue item.
+	 * @return bool
+	 */
+	private function _skip_failed( $v ) {
+		if ( self::retries_stopped( $v ) ) {
+			return true;
+		}
+		return is_array( $v ) && ! empty( $v['_err_at'] ) && time() - (int) $v['_err_at'] < self::RETRY_LATER_TTL;
 	}
 
 	/**
@@ -220,16 +299,33 @@ abstract class Cloud_Queue_Svc extends Base {
 				continue;
 			}
 
+			if ( $this->_skip_failed( $v ) ) {
+				continue;
+			}
+
 			self::debug( 'cron job [request] ' . substr( hash( 'sha256', (string) $k ), 0, 12 ) . ( ! empty( $v['is_mobile'] ) ? ' 📱 ' : '' ) );
 
 			$res = $this->_send_req( $k, $v );
 
+			if ( ! $res && Cloud::$retry_later ) {
+				// QUIC.cloud is unavailable for now (maintenance, rate limit, network):
+				// the item is fine, so it stays queued and the queue waits a while.
+				$this->_summary[ $next_run_key ] = time() + self::RETRY_LATER_TTL;
+				self::save_summary();
+				self::debug( 'QUIC.cloud unavailable: kept [k] ' . $k . ', retry in ' . self::RETRY_LATER_TTL . 's' );
+				return;
+			}
+
 			if ( ! $res ) {
-				// Reload to avoid clobbering concurrent writes, then drop the item.
-				// Settled decision: a failed result drops. See AGENTS.md "Settled decisions".
-				$this->_queue = $this->load_queue( $type );
-				unset( $this->_queue[ $k ] );
-				$this->save_queue( $type, $this->_queue );
+				if ( $this->_keep_failed() ) {
+					$this->_requeue_failed( $k );
+				} else {
+					// Reload to avoid clobbering concurrent writes, then drop the item.
+					// Settled decision: a failed result drops. See AGENTS.md "Settled decisions".
+					$this->_queue = $this->load_queue( $type );
+					unset( $this->_queue[ $k ] );
+					$this->save_queue( $type, $this->_queue );
+				}
 
 				if ( ! $keep_going ) {
 					return;
@@ -319,6 +415,7 @@ abstract class Cloud_Queue_Svc extends Base {
 				$this->_queue = $this->load_queue( $type );
 				if ( isset( $this->_queue[ $queue_k ] ) ) {
 					$this->_queue[ $queue_k ]['_status'] = 'queued';
+					unset( $this->_queue[ $queue_k ]['_err_at'] );
 					$this->save_queue( $type, $this->_queue );
 				}
 			}
@@ -449,12 +546,28 @@ abstract class Cloud_Queue_Svc extends Base {
 
 			self::debug( 'gen_item nothing pending, kept [k] ' . $queue_k );
 			Admin_Display::note( __( 'This URL is not being optimized yet. It stays in the queue and will be submitted shortly.', 'litespeed-cache' ) );
+		} elseif ( Cloud::$retry_later ) {
+			// QUIC.cloud is unavailable for now: keep the row and wait before sending again.
+			$this->_summary[ $this->_next_run_after_key() ] = time() + self::RETRY_LATER_TTL;
+			self::save_summary();
+
+			self::debug( 'gen_item QUIC.cloud unavailable, kept [k] ' . $queue_k );
+			Admin_Display::note( __( 'QUIC.cloud is unavailable right now. The URL stays in the queue and will be sent again later.', 'litespeed-cache' ) );
 		} else {
 			// Anything else means the request went out but came back unusable: a
 			// transport error, a response with no status, or _save_result() rejecting
 			// the payload. Cloud::post() can also yield null when node detection
 			// fails, so this is a catch-all rather than a strict false check —
 			// otherwise that case would silently leave the row with no notice.
+			if ( $this->_keep_failed() ) {
+				$this->_requeue_failed( $queue_k );
+				if ( self::retries_stopped( $this->_queue[ $queue_k ] ) ) {
+					Admin_Display::error( sprintf( __( 'Failed to optimize the queued URL %d times. It stays in the queue but is no longer sent automatically. Please check the debug log.', 'litespeed-cache' ), self::MAX_TRIES ) );
+				} else {
+					Admin_Display::error( __( 'Failed to optimize the queued URL. It stays in the queue and will be sent again later. Please check the debug log.', 'litespeed-cache' ) );
+				}
+				return;
+			}
 			$this->_queue = $this->load_queue( $type );
 			unset( $this->_queue[ $queue_k ] );
 			$this->save_queue( $type, $this->_queue );

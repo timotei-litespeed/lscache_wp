@@ -12,8 +12,6 @@ namespace LiteSpeed;
 
 defined( 'WPINC' ) || exit;
 
-$closest_server = Cloud::get_summary( 'server.' . Cloud::SVC_OPTIMAX );
-
 $this->form_action();
 ?>
 
@@ -34,25 +32,7 @@ $this->form_action();
 				<?php $this->build_switch( $option_id ); ?>
 				<div class="litespeed-desc">
 					<?php esc_html_e( 'Turn on OptimaX.', 'litespeed-cache' ); ?>
-					<br />
-					<?php
-					printf(
-						/* translators: %s: link to the Presets page */
-						esc_html__( 'We recommend applying the OptimaX preset in %s: it turns on the settings OptimaX needs.', 'litespeed-cache' ),
-						'<a href="' . esc_url( admin_url( 'admin.php?page=litespeed-presets' ) ) . '">' . esc_html__( 'Presets', 'litespeed-cache' ) . '</a>'
-					);
-					?>
 				</div>
-
-				<?php if ( Optimax::is_paused() ) : ?>
-					<div class="litespeed-danger litespeed-text-bold">
-						⚠️ <?php echo esc_html( Optimax::paused_msg() ); ?>
-					</div>
-				<?php endif; ?>
-				
-				<?php if ( $closest_server ) : ?>
-					<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_OPTIMAX ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label="<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>" data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class="litespeed-quic-icon"></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
-				<?php endif; ?>
 			</td>
 		</tr>
 
@@ -81,6 +61,24 @@ $this->form_action();
 					<?php esc_html_e( 'Specify how long, in seconds, an OptimaX build is used before it is rebuilt, to pick up theme and plugin updates its own checks do not catch. Pages keep being served while they are rebuilt. Every rebuild uses a QUIC.cloud request.', 'litespeed-cache' ); ?>
 					<?php esc_html_e( 'Set to 0 to never rebuild on a schedule.', 'litespeed-cache' ); ?>
 					<?php $this->_validate_ttl( $option_id, 86400, false, true ); ?>
+				</div>
+			</td>
+		</tr>
+
+		<tr>
+			<th>
+				<?php $option_id = Base::O_OPTIMAX_EXC; ?>
+				<?php $this->title( $option_id ); ?>
+			</th>
+			<td>
+				<?php $this->build_textarea( $option_id ); ?>
+				<div class="litespeed-desc">
+					<?php esc_html_e( 'Pages OptimaX should never optimize. They keep the other optimizations.', 'litespeed-cache' ); ?>
+					<?php $this->_uri_usage_example(); ?>
+					<br /><span class="litespeed-success">
+						<?php esc_html_e( 'API', 'litespeed-cache' ); ?>:
+						<?php printf( esc_html__( 'Filter %s is supported.', 'litespeed-cache' ), '<code>litespeed_optimax_uri_exc</code>' ); ?>
+					</span>
 				</div>
 			</td>
 		</tr>

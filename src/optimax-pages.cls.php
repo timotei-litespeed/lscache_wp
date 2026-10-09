@@ -1,6 +1,6 @@
 <?php
 /**
- * The OptimaX page list: which pages OptimaX may optimize.
+ * OptimaX builds per page: their fingerprints, expiry, stats and rebuilds.
  *
  * @since   8.0
  * @package LiteSpeed
@@ -11,10 +11,11 @@ namespace LiteSpeed;
 defined( 'WPINC' ) || exit();
 
 /**
- * OptimaX page list.
+ * OptimaX pages.
  *
- * A page is a `litespeed_url` row with `ox = 1`. Its versions are not stored:
- * they are read from its OptimaX build rows and its queue rows when needed.
+ * Every cacheable page can get OptimaX: there is no list. A page is its
+ * `litespeed_url` row; its versions are its OptimaX build rows (one per vary)
+ * and its queue rows.
  *
  * @since 8.0
  */
@@ -22,84 +23,12 @@ class Optimax_Pages extends Root {
 
 	const LOG_TAG = '🚀';
 
-	const STATUS_WORKING = 'working';
-	const STATUS_QUEUED  = 'queued';
-	const STATUS_IN_USE  = 'in_use';
-	const STATUS_REFRESH = 'refresh';
-
-	/**
-	 * Normalize a page the owner typed into the URL serve() computes for it.
-	 *
-	 * Mirrors Utility::request_url(): `trailingslashit( home_url( $wp->request ) )`
-	 * with pretty permalinks (any query is ignored there, as WordPress ignores it
-	 * for the request), `home_url( $wp->request ) . '?' . query` without. Scheme
-	 * and host always come from home, so a pasted http:// link still matches, and
-	 * the result is spelled by canonical_url().
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $input  A path relative to home (`/sample-page/`) or a full URL on this site.
-	 * @param string $home   home_url().
-	 * @param bool   $pretty Whether a permalink structure is set.
-	 * @return string|false The page URL, or false when it is not a page on this site.
-	 */
-	public static function normalize( $input, $home, $pretty ) {
-		$input = trim( (string) $input );
-		if ( '' === $input || preg_match( '/[\x00-\x20\x7f]/', $input ) ) {
-			return false;
-		}
-
-		$home       = untrailingslashit( (string) $home );
-		$home_parts = wp_parse_url( $home );
-		if ( empty( $home_parts['host'] ) ) {
-			return false;
-		}
-		$home_path = isset( $home_parts['path'] ) ? trim( $home_parts['path'], '/' ) : '';
-
-		if ( preg_match( '#^(https?:)?//#i', $input ) ) {
-			$parts = wp_parse_url( 0 === strpos( $input, '//' ) ? 'https:' . $input : $input );
-			if ( empty( $parts['host'] ) || strtolower( $parts['host'] ) !== strtolower( $home_parts['host'] ) ) {
-				return false;
-			}
-			$path = isset( $parts['path'] ) ? trim( $parts['path'], '/' ) : '';
-			// A full URL names its path from the domain root; the page is what follows home's own path.
-			if ( '' !== $home_path ) {
-				if ( $path !== $home_path && 0 !== strpos( $path, $home_path . '/' ) ) {
-					return false;
-				}
-				$path = trim( (string) substr( $path, strlen( $home_path ) ), '/' );
-			}
-		} else {
-			$parts = wp_parse_url( '/' . ltrim( $input, '/' ) );
-			if ( ! is_array( $parts ) ) {
-				return false;
-			}
-			$path = isset( $parts['path'] ) ? trim( $parts['path'], '/' ) : '';
-			// On a site at /blog, `/blog/page/` is typed as the address bar shows it.
-			if ( '' !== $home_path && ( $path === $home_path || 0 === strpos( $path, $home_path . '/' ) ) ) {
-				$path = trim( (string) substr( $path, strlen( $home_path ) ), '/' );
-			}
-		}
-		$query = isset( $parts['query'] ) ? $parts['query'] : '';
-
-		if ( preg_match( '#(^|/)\.{1,2}(/|$)#', $path ) ) {
-			return false;
-		}
-
-		$url = $home . ( '' !== $path ? '/' . $path : '' );
-		if ( $pretty ) {
-			return self::canonical_url( trailingslashit( $url ) );
-		}
-
-		return self::canonical_url( '' !== $query ? $url . '?' . $query : $url );
-	}
-
 	/**
 	 * One spelling per URL: bytes outside a URL's character set (raw UTF-8, say)
 	 * percent-encoded, every escape upper-cased.
 	 *
 	 * WordPress links a post as `caf%c3%a9`, a browser sends a typed address as
-	 * `caf%C3%A9`; both are one page, so one list entry.
+	 * `caf%C3%A9`; both are one page, so one set of builds.
 	 *
 	 * @since 8.0
 	 *
@@ -128,8 +57,8 @@ class Optimax_Pages extends Root {
 	 * Whether a query has an arg other than those LSCache drops.
 	 *
 	 * With pretty permalinks a page URL leaves the query out, so `/?s=term` would
-	 * read as the listed front page. Only args in Drop Query String (`*` matching
-	 * any characters, as there) keep it the same page.
+	 * read as the front page. Only args in Drop Query String (`*` matching any
+	 * characters, as there) keep it the same page.
 	 *
 	 * @since 8.0
 	 *
@@ -198,301 +127,119 @@ class Optimax_Pages extends Root {
 	}
 
 	/**
-	 * A version's status. Precedence: Working on it > In local queue > In Use > Needs refresh.
+	 * The vary of the same version on the other device: desktop <-> mobile.
+	 *
+	 * The server's rewrite rules append `+ismobile`, then `+webp` (for AVIF too), to
+	 * whatever vary cookies the request carries, so `+webp` <-> `+ismobile+webp`.
 	 *
 	 * @since 8.0
 	 *
-	 * @param string|null $queue_status Null when not queued; the queue row's `_status` otherwise ('queued' = sent).
-	 * @param bool        $live         Has a build row with `expired = 0`.
-	 * @param bool        $expired      Has a build row with `expired > 0`.
-	 * @return string One of the STATUS_* constants, or '' for none.
+	 * @param string $vary Raw vary.
+	 * @return string
 	 */
-	public static function version_status( $queue_status, $live, $expired ) {
-		if ( null !== $queue_status ) {
-			return 'queued' === $queue_status ? self::STATUS_WORKING : self::STATUS_QUEUED;
+	public static function device_sibling( $vary ) {
+		$vary = (string) $vary;
+		if ( false !== strpos( $vary, '+ismobile' ) ) {
+			return str_replace( '+ismobile', '', $vary );
 		}
-		if ( $live ) {
-			return self::STATUS_IN_USE;
+		foreach ( [ '+webp', '+avif' ] as $token ) {
+			$pos = strpos( $vary, $token );
+			if ( false !== $pos ) {
+				return substr_replace( $vary, '+ismobile', $pos, 0 );
+			}
 		}
-		if ( $expired ) {
-			return self::STATUS_REFRESH;
-		}
-		return '';
+		return $vary . '+ismobile';
 	}
 
 	/**
-	 * Whether this blog's URL table can hold the list.
+	 * Add a version's queue row, and its other device's when that one needs a rebuild.
+	 *
+	 * A new page is added for the device the visit came from only. When the design
+	 * changed, every version expired: the other device is queued with it, or it would
+	 * stay without OptimaX until someone on it happens to visit.
 	 *
 	 * @since 8.0
 	 *
-	 * @return bool
+	 * @param array $queue Queue, changed in place.
+	 * @param array $row   Queue row: `url`, `is_mobile`, `is_nextgen`, `uid`, `vary`, `url_tag`.
+	 * @param int   $max   Queue size limit.
+	 * @return string|false Queue key of the version asked for; false when the queue is full.
 	 */
-	public function ready() {
-		return Data::cls()->url_has_ox_col();
-	}
-
-	/**
-	 * Add the `ox` column when this blog has not run its 8.0 upgrade yet.
-	 *
-	 * Sites already on 8.0.0 never reach an `8.0-bX` updater, and a subsite only
-	 * upgrades on its own first request after an update; the OptimaX admin page
-	 * calls this so the list works without waiting for either. It also lists the
-	 * homepage, which is always an OptimaX page.
-	 *
-	 * @since 8.0
-	 *
-	 * @return bool Whether the column exists now.
-	 */
-	public function ensure_ready() {
-		if ( ! $this->ready() ) {
-			require_once LSCWP_DIR . 'src/data.upgrade.func.php';
-			\litespeed_url_add_ox_column();
-			if ( ! Data::cls()->url_has_ox_col( true ) ) {
+	public function add_versions( &$queue, $row, $max ) {
+		$queue_k = self::vary_key( $row['vary'] ) . ' ' . $row['url_tag'];
+		if ( ! isset( $queue[ $queue_k ] ) ) {
+			if ( count( $queue ) >= $max ) {
+				self::debug( 'Queue is full - ' . $max );
 				return false;
 			}
+			$queue[ $queue_k ] = $row;
 		}
 
-		$this->_respell_home();
-		$this->add( '/' );
-
-		return true;
-	}
-
-	/**
-	 * Keep one homepage row across a permalink switch.
-	 *
-	 * page_url( '/' ) is `https://site/` with pretty permalinks and `https://site`
-	 * without, so after a switch add( '/' ) would list the homepage again under the
-	 * new spelling. The old row is renamed, keeping its builds; when a row with the
-	 * new spelling already exists, the old one is removed instead.
-	 *
-	 * @since 8.0
-	 *
-	 * @return void
-	 */
-	private function _respell_home() {
-		global $wpdb;
-
-		$home  = self::page_url( '/' );
-		$other = '/' === substr( $home, -1 ) ? untrailingslashit( $home ) : trailingslashit( $home );
-		$stale = $this->get( $other );
-		if ( ! $stale ) {
-			return;
-		}
-
-		$tb = Data::cls()->tb( 'url' );
-		if ( $wpdb->get_var( $wpdb->prepare( "SELECT id FROM `$tb` WHERE url = %s", $home ) ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-			$this->remove( (int) $stale['id'] );
-			self::debug( 'Removed the homepage row of the previous permalink setting: ' . $other );
-			return;
-		}
-
-		$wpdb->query( $wpdb->prepare( "UPDATE `$tb` SET url = %s WHERE id = %d", $home, (int) $stale['id'] ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		self::debug( 'Homepage row renamed after a permalink switch: ' . $other . ' => ' . $home );
-	}
-
-	/**
-	 * normalize() for this site.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $input Path or full URL.
-	 * @return string|false
-	 */
-	public static function page_url( $input ) {
-		return self::normalize( $input, home_url(), (bool) get_option( 'permalink_structure' ) );
-	}
-
-	/**
-	 * Whether this page is the homepage, which is always listed.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $url Page URL, as page_url() builds it.
-	 * @return bool
-	 */
-	public static function is_home( $url ) {
-		return self::page_url( '/' ) === self::canonical_url( (string) $url );
-	}
-
-	/**
-	 * The listed page with this URL.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $url Page URL, as page_url() / Utility::request_url() build it (spelled any way).
-	 * @return array|null `id`, `url`, `cache_tags`.
-	 */
-	public function get( $url ) {
-		global $wpdb;
-
-		if ( ! is_string( $url ) || '' === $url || ! $this->ready() ) {
-			return null;
-		}
-
-		$tb  = Data::cls()->tb( 'url' );
-		$q   = "SELECT id, url, cache_tags FROM `$tb` WHERE url = %s AND ox = 1";
-		$row = $wpdb->get_row( $wpdb->prepare( $q, self::canonical_url( $url ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-
-		return $row ? $row : null;
-	}
-
-	/**
-	 * Every listed page.
-	 *
-	 * @since 8.0
-	 *
-	 * @return array Rows with `id`, `url`, `cache_tags`.
-	 */
-	public function all() {
-		global $wpdb;
-
-		if ( ! $this->ready() ) {
-			return [];
-		}
-
-		$tb = Data::cls()->tb( 'url' );
-		return (array) $wpdb->get_results( "SELECT id, url, cache_tags FROM `$tb` WHERE ox = 1 ORDER BY url", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-	}
-
-	/**
-	 * How many pages are listed.
-	 *
-	 * @since 8.0
-	 *
-	 * @return int
-	 */
-	public function count() {
-		global $wpdb;
-
-		if ( ! $this->ready() ) {
-			return 0;
-		}
-
-		$tb = Data::cls()->tb( 'url' );
-		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM `$tb` WHERE ox = 1" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-	}
-
-	/**
-	 * How many pages the list may hold; 0 = no limit.
-	 *
-	 * The one place the QUIC.cloud account limit will be enforced. Lowering it
-	 * never removes pages; it only stops new ones being added.
-	 *
-	 * @since 8.0
-	 *
-	 * @return int
-	 */
-	public static function max_links() {
-		return 0;
-	}
-
-	/**
-	 * Add a page to the list.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $input Path or full URL the owner typed.
-	 * @return true|string True, or an error code: 'not_ready', 'invalid', 'exists', 'limit'.
-	 */
-	public function add( $input ) {
-		global $wpdb;
-
-		if ( ! $this->ready() ) {
-			return 'not_ready';
-		}
-
-		$url = self::page_url( $input );
-		if ( ! $url ) {
-			return 'invalid';
-		}
-		if ( $this->get( $url ) ) {
-			return 'exists';
-		}
-		$max = self::max_links();
-		if ( $max && $this->count() >= $max ) {
-			return 'limit';
-		}
-
-		// UCSS, CCSS or an earlier OptimaX build may already own a row for this URL: flag it, never duplicate it.
-		$tb = Data::cls()->tb( 'url' );
-		$q  = "SELECT id FROM `$tb` WHERE url = %s";
-		$id = (int) $wpdb->get_var( $wpdb->prepare( $q, $url ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-		if ( $id ) {
-			$q = "UPDATE `$tb` SET ox = 1 WHERE id = %d";
-			$wpdb->query( $wpdb->prepare( $q, $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-			// A build made before the page was listed may be stale. Deleted, not expired:
-			// an expired build waits for a manual run, and a new page builds on its first visit.
-			$this->_delete_builds( $wpdb->prepare( 'url_id = %d', $id ) );
-		} else {
-			$q = "INSERT INTO `$tb` SET url = %s, ox = 1";
-			$wpdb->query( $wpdb->prepare( $q, $url ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-		}
-
-		// LSCache serves its copy without reaching serve(): the page would not be queued until it expired.
-		$this->cls( 'Purge' )->purge_url( $url, false, true );
-
-		self::debug( 'Page added to OptimaX list: ' . $url );
-		return true;
-	}
-
-	/**
-	 * Remove a page and everything OptimaX holds for it.
-	 *
-	 * Its builds and their files (a file another page still uses is kept: files
-	 * are named by content md5), its queue rows, its cached copy. The URL row
-	 * itself stays for UCSS/CCSS; the next prune drops it if nothing uses it.
-	 *
-	 * @since 8.0
-	 *
-	 * @param int $id Page row id.
-	 * @return bool False when no listed page has this id, or it is the homepage.
-	 */
-	public function remove( $id ) {
-		global $wpdb;
-
-		if ( ! $this->ready() ) {
-			return false;
-		}
-
-		$tb_url = Data::cls()->tb( 'url' );
-
-		$q   = "SELECT id, url FROM `$tb_url` WHERE id = %d AND ox = 1";
-		$row = $wpdb->get_row( $wpdb->prepare( $q, (int) $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-		if ( ! $row || self::is_home( $row['url'] ) ) {
-			return false;
-		}
-
-		$q = "UPDATE `$tb_url` SET ox = 0, cache_tags = '' WHERE id = %d";
-		$wpdb->query( $wpdb->prepare( $q, (int) $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-
-		$this->_delete_builds( $wpdb->prepare( 'url_id = %d', (int) $id ) );
-
-		$queue  = $this->load_queue( 'optimax' );
-		$before = count( $queue );
-		foreach ( $queue as $k => $v ) {
-			if ( is_array( $v ) && isset( $v['url_tag'] ) && $v['url_tag'] === $row['url'] ) {
-				unset( $queue[ $k ] );
+		if ( $this->conf( Base::O_CACHE_MOBILE ) ) {
+			$sibling              = $row;
+			$sibling['vary']      = self::device_sibling( $row['vary'] );
+			$sibling['is_mobile'] = ! $row['is_mobile'];
+			$sibling['uid']       = 0;
+			$sibling_k            = self::vary_key( $sibling['vary'] ) . ' ' . $row['url_tag'];
+			if ( ! isset( $queue[ $sibling_k ] ) && count( $queue ) < $max && $this->_needs_rebuild( $row['url_tag'], $sibling['vary'] ) ) {
+				$queue[ $sibling_k ] = $sibling;
+				self::debug( 'Queued the other device too [vary] ' . $sibling['vary'] );
 			}
 		}
-		if ( count( $queue ) !== $before ) {
-			$this->save_queue( 'optimax', $queue );
-		}
 
-		Purge::add( Optimax::page_tag( $row['url'] ) );
-		$this->cls( 'Purge' )->purge_url( $row['url'], false, true );
-
-		self::debug( 'Page removed from OptimaX list: ' . $row['url'] );
-		return true;
+		return $queue_k;
 	}
 
 	/**
-	 * Stop serving a page's builds until they are rebuilt: the page needs a refresh.
+	 * Whether a version was built before and all its builds expired.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Vary, raw or stored.
+	 * @return bool
+	 */
+	private function _needs_rebuild( $url_tag, $vary ) {
+		global $wpdb;
+
+		$url_id = $this->url_id( $url_tag );
+		if ( ! $url_id ) {
+			return false;
+		}
+
+		if ( strlen( $vary ) > 32 ) {
+			$vary = md5( $vary );
+		}
+
+		$tb  = Data::cls()->tb( 'url_file' );
+		$min = $wpdb->get_var( $wpdb->prepare( "SELECT MIN(expired) FROM `$tb` WHERE url_id = %d AND vary = %s AND type = %d", $url_id, $vary, Data::cls()->file_type_id( 'optimax' ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		return null !== $min && (int) $min > 0;
+	}
+
+	/**
+	 * The `litespeed_url` row id of a page, or 0.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @return int
+	 */
+	public function url_id( $url_tag ) {
+		global $wpdb;
+
+		$tb = Data::cls()->tb( 'url' );
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM `$tb` WHERE url = %s", $url_tag ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Stop serving a page's builds: its design changed.
 	 *
 	 * Uses the expiry Data::save_url() gives a replaced build, so load_url_file()
-	 * stops returning them at once. Visitors get the page without OptimaX, and
-	 * serve() queues no rebuild (needs_refresh()): the owner runs it. clean_expired()
-	 * deletes them once the rebuild is stored and their grace period is over.
+	 * stops returning them at once and visitors get the page without OptimaX. Each
+	 * version is queued again on its next visit (serve()), or all at once with
+	 * rebuild_all(). clean_expired() deletes them once the rebuild is stored and
+	 * their grace period is over.
 	 *
 	 * @since 8.0
 	 *
@@ -582,79 +329,85 @@ class Optimax_Pages extends Root {
 	}
 
 	/**
-	 * A page's versions: one per vary, from its builds and its queue rows.
+	 * Versions whose builds all expired (the design changed): newest build row of each.
 	 *
 	 * @since 8.0
 	 *
-	 * @param array $page A row from get()/all().
-	 * @return array List of `vary`, `groups`, `status`, `q_k` (md5 of the queue key, '' if not queued), `file_id` (a build row id, 0 if none),
-	 *               `patches` (times its live build had its text updated).
+	 * @return array Rows with `url_id`, `vary`, `file_id`.
 	 */
-	public function versions( $page ) {
+	private function _refresh_rows() {
 		global $wpdb;
 
-		$tb       = Data::cls()->tb( 'url_file' );
-		$type     = Data::cls()->file_type_id( 'optimax' );
-		$versions = [];
+		$tb   = Data::cls()->tb( 'url_file' );
+		$type = Data::cls()->file_type_id( 'optimax' );
+		$q    = "SELECT url_id, vary, MAX(id) AS file_id FROM `$tb` WHERE type = %d GROUP BY url_id, vary HAVING MIN(expired) > 0";
 
-		$q    = "SELECT id, vary, mobile, webp, expired FROM `$tb` WHERE url_id = %d AND type = %d ORDER BY id DESC";
-		$rows = $wpdb->get_results( $wpdb->prepare( $q, (int) $page['id'], $type ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+		return (array) $wpdb->get_results( $wpdb->prepare( $q, $type ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/**
+	 * Counts for the Summary tab.
+	 *
+	 * @since 8.0
+	 *
+	 * @return array `pages` with an OptimaX build in use, `versions` in use, `refresh` versions waiting for a rebuild.
+	 */
+	public function stats() {
+		global $wpdb;
+
+		$tb   = Data::cls()->tb( 'url_file' );
+		$type = Data::cls()->file_type_id( 'optimax' );
+		$q    = "SELECT COUNT(DISTINCT url_id) AS pages, COUNT(*) AS versions FROM `$tb` WHERE type = %d AND expired = 0";
+		$live = $wpdb->get_row( $wpdb->prepare( $q, $type ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+
+		return [
+			'pages'    => $live ? (int) $live['pages'] : 0,
+			'versions' => $live ? (int) $live['versions'] : 0,
+			'refresh'  => count( $this->_refresh_rows() ),
+		];
+	}
+
+	/**
+	 * Pages with an OptimaX build in use, each with its versions.
+	 *
+	 * @since 8.0
+	 *
+	 * @param int $limit Pages to return.
+	 * @return array Page URL => list of version groups (`mobile`, `nextgen`).
+	 */
+	public function optimized( $limit = 50 ) {
+		global $wpdb;
+
+		$data    = Data::cls();
+		$tb_url  = $data->tb( 'url' );
+		$tb_file = $data->tb( 'url_file' );
+		$q       = "SELECT u.url, f.vary, f.mobile, f.webp FROM `$tb_file` f JOIN `$tb_url` u ON u.id = f.url_id
+			WHERE f.type = %d AND f.expired = 0 AND f.url_id IN ( SELECT url_id FROM ( SELECT DISTINCT url_id FROM `$tb_file` WHERE type = %d AND expired = 0 ORDER BY url_id LIMIT %d ) AS p )
+			ORDER BY u.url, f.vary";
+		$rows    = $wpdb->get_results( $wpdb->prepare( $q, $data->file_type_id( 'optimax' ), $data->file_type_id( 'optimax' ), (int) $limit ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+
+		$pages = [];
 		foreach ( (array) $rows as $r ) {
-			$k = (string) $r['vary'];
-			if ( ! isset( $versions[ $k ] ) ) {
-				$versions[ $k ] = [
-					'vary'         => $k,
-					'groups'       => self::version_groups( $k, $r['mobile'], $r['webp'] ),
-					'live'         => false,
-					'expired'      => false,
-					'file_id'      => 0,
-					'q_k'          => '',
-					'queue_status' => null,
-				];
-			}
-			if ( 0 === (int) $r['expired'] ) {
-				$versions[ $k ]['live']    = true;
-				$versions[ $k ]['file_id'] = (int) $r['id'];
-			} else {
-				$versions[ $k ]['expired'] = true;
-				if ( ! $versions[ $k ]['file_id'] ) {
-					$versions[ $k ]['file_id'] = (int) $r['id'];
-				}
-			}
+			$pages[ $r['url'] ][] = self::version_groups( $r['vary'], $r['mobile'], $r['webp'] );
 		}
+		return $pages;
+	}
 
-		foreach ( $this->load_queue( 'optimax' ) as $queue_k => $v ) {
-			if ( ! is_array( $v ) || ! isset( $v['url_tag'], $v['vary'] ) || $v['url_tag'] !== $page['url'] ) {
-				continue;
+	/**
+	 * Queue every version whose design changed for a rebuild now, instead of on its next visit.
+	 *
+	 * @since 8.0
+	 *
+	 * @return int Versions queued.
+	 */
+	public function rebuild_all() {
+		$n = 0;
+		foreach ( $this->_refresh_rows() as $row ) {
+			if ( $this->queue_version( (int) $row['file_id'] ) ) {
+				++$n;
 			}
-			$k = self::vary_key( $v['vary'] );
-			if ( ! isset( $versions[ $k ] ) ) {
-				$versions[ $k ] = [
-					'vary'    => $k,
-					'live'    => false,
-					'expired' => false,
-					'file_id' => 0,
-				];
-			}
-			// The queue keeps the raw vary, which reads better than a hashed one.
-			$versions[ $k ]['groups']       = self::version_groups( $v['vary'], ! empty( $v['is_mobile'] ), ! empty( $v['is_nextgen'] ) );
-			$versions[ $k ]['q_k']          = md5( $queue_k );
-			$versions[ $k ]['queue_status'] = ! empty( $v['_status'] ) ? (string) $v['_status'] : '';
 		}
-
-		$out = [];
-		foreach ( $versions as $ver ) {
-			$fp    = $ver['live'] ? $this->load_fingerprint( $page['url'], $ver['vary'] ) : null;
-			$out[] = [
-				'vary'    => $ver['vary'],
-				'groups'  => $ver['groups'],
-				'status'  => self::version_status( $ver['queue_status'], $ver['live'], $ver['expired'] ),
-				'q_k'     => $ver['q_k'],
-				'file_id' => $ver['file_id'],
-				'patches' => $fp ? (int) $fp['patches'] : 0,
-			];
-		}
-		return $out;
+		return $n;
 	}
 
 	/**
@@ -664,7 +417,7 @@ class Optimax_Pages extends Root {
 	 *
 	 * @since 8.0
 	 *
-	 * @param int $file_id An `optimax` build row id of a listed page.
+	 * @param int $file_id An `optimax` build row id.
 	 * @return string|false The queue key.
 	 */
 	public function queue_version( $file_id ) {
@@ -674,49 +427,30 @@ class Optimax_Pages extends Root {
 		$tb_url  = $data->tb( 'url' );
 		$tb_file = $data->tb( 'url_file' );
 
-		$q   = "SELECT f.vary, f.mobile, f.webp, u.url FROM `$tb_file` f JOIN `$tb_url` u ON u.id = f.url_id WHERE f.id = %d AND f.type = %d AND u.ox = 1";
+		$q   = "SELECT f.vary, f.mobile, f.webp, u.url FROM `$tb_file` f JOIN `$tb_url` u ON u.id = f.url_id WHERE f.id = %d AND f.type = %d";
 		$row = $wpdb->get_row( $wpdb->prepare( $q, (int) $file_id, $data->file_type_id( 'optimax' ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 		if ( ! $row ) {
 			return false;
 		}
 
 		// The stored vary is already in its 32-char-at-most form, so this is the key serve() would build.
-		$queue_k = $row['vary'] . ' ' . $row['url'];
 		$queue   = $this->load_queue( 'optimax' );
-		if ( ! isset( $queue[ $queue_k ] ) ) {
-			$queue[ $queue_k ] = [
+		$queue_k = $this->add_versions(
+			$queue,
+			[
 				'url'        => apply_filters( 'litespeed_optimax_url', $row['url'] ),
 				'is_mobile'  => (bool) $row['mobile'],
 				'is_nextgen' => $row['webp'] ? $this->cls( 'Media' )->webp_support( true ) : '',
 				'uid'        => 0,
 				'vary'       => $row['vary'],
 				'url_tag'    => $row['url'],
-			];
-			$this->save_queue( 'optimax', $queue );
-			self::debug( 'Re-queued from build row [file_id] ' . (int) $file_id );
-		}
+			],
+			$this->cls( 'Optimax' )->max_queue_size()
+		);
+		$this->save_queue( 'optimax', $queue );
+		self::debug( 'Re-queued from build row [file_id] ' . (int) $file_id );
 
 		return $queue_k;
-	}
-
-	/**
-	 * Drop one queue row.
-	 *
-	 * @since 8.0
-	 *
-	 * @param string $q_k md5 of the queue key, as versions() reports it.
-	 * @return bool
-	 */
-	public function dequeue( $q_k ) {
-		$queue = $this->load_queue( 'optimax' );
-		foreach ( array_keys( $queue ) as $k ) {
-			if ( md5( $k ) === $q_k ) {
-				unset( $queue[ $k ] );
-				$this->save_queue( 'optimax', $queue );
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**
@@ -751,115 +485,6 @@ class Optimax_Pages extends Root {
 		$this->save_queue( 'optimax', $queue );
 
 		return count( $queue );
-	}
-
-
-	/**
-	 * Register the notice for pages that need a refresh.
-	 *
-	 * @since 8.0
-	 *
-	 * @return void
-	 */
-	public function init() {
-		if ( is_admin() ) {
-			add_action( 'admin_notices', [ $this, 'refresh_notice' ] );
-		}
-	}
-
-	/**
-	 * Tell the owner which listed pages wait for a manual run after a design change.
-	 *
-	 * @since 8.0
-	 *
-	 * @return void
-	 */
-	public function refresh_notice() {
-		if ( ! $this->conf( Base::O_OPTIMAX ) || ! current_user_can( 'manage_options' ) ) {
-			return;
-		}
-		$urls = $this->refresh_urls();
-		if ( ! $urls ) {
-			return;
-		}
-
-		$msg = sprintf(
-			/* translators: %d: number of pages */
-			_n(
-				'OptimaX: %d page changed in a way OptimaX cannot update by itself. Visitors get it without OptimaX until you run it again.',
-				'OptimaX: %d pages changed in a way OptimaX cannot update by itself. Visitors get them without OptimaX until you run them again.',
-				count( $urls ),
-				'litespeed-cache'
-			),
-			count( $urls )
-		);
-		$link = '<a href="' . esc_url( admin_url( 'admin.php?page=litespeed-optimax' ) ) . '">' . esc_html__( 'Open OptimaX', 'litespeed-cache' ) . '</a>';
-
-		echo '<div class="notice notice-warning"><p>' . esc_html( $msg ) . ' ' . $link . '</p></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-	}
-
-	/**
-	 * Listed pages with a version that needs a refresh and is not queued.
-	 *
-	 * @since 8.0
-	 *
-	 * @return array Page URLs.
-	 */
-	public function refresh_urls() {
-		global $wpdb;
-
-		if ( ! $this->ready() ) {
-			return [];
-		}
-
-		$data    = Data::cls();
-		$tb_url  = $data->tb( 'url' );
-		$tb_file = $data->tb( 'url_file' );
-		$q       = "SELECT DISTINCT u.url, f.vary FROM `$tb_file` f JOIN `$tb_url` u ON u.id = f.url_id AND u.ox = 1
-			WHERE f.type = %d AND f.expired > 0
-			AND NOT EXISTS ( SELECT 1 FROM `$tb_file` l WHERE l.url_id = f.url_id AND l.vary = f.vary AND l.type = f.type AND l.expired = 0 )";
-		$rows    = $wpdb->get_results( $wpdb->prepare( $q, $data->file_type_id( 'optimax' ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-		if ( ! $rows ) {
-			return [];
-		}
-
-		$queued = [];
-		foreach ( $this->load_queue( 'optimax' ) as $v ) {
-			if ( is_array( $v ) && isset( $v['url_tag'], $v['vary'] ) ) {
-				$queued[ self::vary_key( $v['vary'] ) . ' ' . $v['url_tag'] ] = true;
-			}
-		}
-
-		$urls = [];
-		foreach ( $rows as $r ) {
-			if ( ! isset( $queued[ $r['vary'] . ' ' . $r['url'] ] ) ) {
-				$urls[ $r['url'] ] = true;
-			}
-		}
-
-		return array_keys( $urls );
-	}
-
-	/**
-	 * Whether this version of a page waits for a manual run: it has builds, all expired.
-	 *
-	 * A version never built has no rows and is queued on its first visit as before.
-	 *
-	 * @since 8.0
-	 *
-	 * @param int    $url_id Page row id.
-	 * @param string $vary   Raw vary.
-	 * @return bool
-	 */
-	public function needs_refresh( $url_id, $vary ) {
-		global $wpdb;
-
-		$tb   = Data::cls()->tb( 'url_file' );
-		$q    = "SELECT MIN(expired) FROM `$tb` WHERE url_id = %d AND vary = %s AND type = %d";
-		$min  = $wpdb->get_var( $wpdb->prepare( $q, (int) $url_id, self::vary_key( $vary ), Data::cls()->file_type_id( 'optimax' ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
-
-		// No rows: never built. A row with expired = 0: live.
-		return null !== $min && (int) $min > 0;
 	}
 
 	/**
@@ -947,8 +572,7 @@ class Optimax_Pages extends Root {
 	public function drop_fingerprint( $url_tag, $vary ) {
 		global $wpdb;
 
-		$tb = Data::cls()->tb( 'url' );
-		$id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM `$tb` WHERE url = %s", $url_tag ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$id = $this->url_id( $url_tag );
 		if ( $id ) {
 			$this->_delete_builds( $wpdb->prepare( 'url_id = %d AND vary = %s AND type = %d', $id, self::vary_key( $vary ), Data::cls()->file_type_id( 'optimax_src' ) ) );
 		}

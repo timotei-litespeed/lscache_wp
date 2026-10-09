@@ -21,11 +21,7 @@ class Optimax extends Cloud_Queue_Svc {
 
 	const LOG_TAG = '🚀';
 
-	const TYPE_PAGE_ADD    = 'page_add';
-	const TYPE_PAGE_DEL    = 'page_del';
-	const TYPE_VER_RUN     = 'ver_run';
-	const TYPE_VER_QUEUE   = 'ver_queue';
-	const TYPE_VER_DEQUEUE = 'ver_dequeue';
+	const TYPE_REBUILD = 'rebuild';
 
 	/**
 	 * Registered image sizes the owner excluded from optimization.
@@ -150,7 +146,7 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Admin action handler: page-list and version actions; the queue's manual "Run" actions honour the pause too.
+	 * Admin action handler: rebuild the pages whose design changed, clear the queue, run it.
 	 *
 	 * "Run queue" and "Run item" reach the service through cron( true ) and
 	 * gen_item(), bypassing cron_push(). While paused nothing may be sent, so
@@ -164,44 +160,14 @@ class Optimax extends Cloud_Queue_Svc {
 	public function handler() {
 		$type  = Router::verify_type();
 		$pages = $this->cls( 'Optimax_Pages' );
-		// Back to the bare page: the default redirect keeps every query arg, so one action's
-		// `q_k`/`fid`/`id` would ride along into the next action's links.
+		// Back to the bare page: the default redirect keeps every query arg.
 		$back = admin_url( 'admin.php?page=litespeed-optimax' );
 
-		// phpcs:disable WordPress.Security.NonceVerification -- Router::verify_action() checked the nonce.
 		switch ( $type ) {
-			case self::TYPE_PAGE_ADD:
-				// Not sanitize_text_field(): it strips `%XX`, the escapes of a non-ASCII slug. add() validates it.
-				$input = isset( $_POST['ox_page'] ) && is_string( $_POST['ox_page'] ) ? trim( wp_unslash( $_POST['ox_page'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-				$res   = $pages->add( $input );
-				if ( true === $res ) {
-					Admin_Display::success( sprintf( __( 'Added to OptimaX pages: %s', 'litespeed-cache' ), esc_html( $input ) ) );
-				} elseif ( 'exists' === $res ) {
-					Admin_Display::note( __( 'This page is already in OptimaX pages.', 'litespeed-cache' ) );
-				} elseif ( 'limit' === $res ) {
-					Admin_Display::error( sprintf( __( 'Your QUIC.cloud plan allows %d OptimaX pages.', 'litespeed-cache' ), Optimax_Pages::max_links() ) );
-				} elseif ( 'not_ready' === $res ) {
-					Admin_Display::error( __( 'The OptimaX page list is not ready yet. Reload this page to finish the database update.', 'litespeed-cache' ) );
-				} else {
-					Admin_Display::error( sprintf( __( 'Not a page on this site: %s', 'litespeed-cache' ), esc_html( $input ) ) );
-				}
-				Admin::redirect( $back );
-				return;
-
-			case self::TYPE_PAGE_DEL:
-				if ( $pages->remove( ! empty( $_GET['id'] ) ? absint( $_GET['id'] ) : 0 ) ) {
-					Admin_Display::success( __( 'Removed the page and its OptimaX builds.', 'litespeed-cache' ) );
-				}
-				Admin::redirect( $back );
-				return;
-
-			case self::TYPE_VER_QUEUE:
-				$pages->queue_version( ! empty( $_GET['fid'] ) ? absint( $_GET['fid'] ) : 0 );
-				Admin::redirect( $back );
-				return;
-
-			case self::TYPE_VER_DEQUEUE:
-				$pages->dequeue( ! empty( $_GET['q_k'] ) ? sanitize_key( wp_unslash( $_GET['q_k'] ) ) : '' );
+			case self::TYPE_REBUILD:
+				$n = $pages->rebuild_all();
+				/* translators: %d: number of page versions queued */
+				Admin_Display::success( sprintf( _n( '%d page version queued for a new OptimaX build.', '%d page versions queued for a new OptimaX build.', $n, 'litespeed-cache' ), $n ) );
 				Admin::redirect( $back );
 				return;
 
@@ -217,7 +183,7 @@ class Optimax extends Cloud_Queue_Svc {
 				return;
 		}
 
-		if ( in_array( $type, [ self::TYPE_GEN, self::TYPE_GEN_ITEM, self::TYPE_VER_RUN ], true ) && ! self::nextgen_ready() ) {
+		if ( in_array( $type, [ self::TYPE_GEN, self::TYPE_GEN_ITEM ], true ) && ! self::nextgen_ready() ) {
 			self::debug( 'Manual run skipped: Next-Gen Image Format is OFF' );
 			Admin_Display::note( esc_html( self::paused_msg() ) );
 			Admin::redirect( $back );
@@ -238,21 +204,85 @@ class Optimax extends Cloud_Queue_Svc {
 			return;
 		}
 
-		if ( self::TYPE_VER_RUN === $type ) {
-			// A version not in the queue is queued from its build row first; gen_item() then sends it by hash.
-			if ( empty( $_GET['q_k'] ) && ! empty( $_GET['fid'] ) ) {
-				$queue_k = $pages->queue_version( absint( $_GET['fid'] ) );
-				if ( $queue_k ) {
-					$_GET['q_k'] = md5( $queue_k );
+		parent::handler();
+	}
+
+	/**
+	 * Settings OptimaX needs, with the value each takes while it is on.
+	 *
+	 * Cache, so its pages can be stored and served. Mobile Cache, so phones get a
+	 * build of their own. Add Missing Sizes, so its images keep their sizes.
+	 * Next-Gen Image Format, which it needs to run at all: AVIF when it is off.
+	 *
+	 * @since 8.0
+	 *
+	 * @return array Option id => value.
+	 */
+	public static function required_settings() {
+		return [
+			self::O_CACHE                   => true,
+			self::O_CACHE_MOBILE            => true,
+			self::O_MEDIA_ADD_MISSING_SIZES => true,
+			self::O_IMG_OPTM_WEBP           => self::VAL_ON2,
+		];
+	}
+
+	/**
+	 * Turn on the settings OptimaX needs, while it is on (Guest Optimization style).
+	 *
+	 * The stored settings are left as they are: each one only reads as ON through
+	 * its `litespeed_conf_load_option_*` filter, so switching OptimaX off gives the
+	 * owner's own values back. A setting already on keeps its value (WebP stays
+	 * WebP). OptimaX is read live, so the save that turns it on writes `.htaccess`
+	 * with the mobile and next-gen rules already. Runs before Conf::define_cache().
+	 *
+	 * @since 8.0
+	 *
+	 * @param Conf $conf Settings, loaded.
+	 * @return void
+	 */
+	public static function force_required( $conf ) {
+		foreach ( self::required_settings() as $id => $val ) {
+			add_filter(
+				'litespeed_conf_load_option_' . $id,
+				function ( $setting ) use ( $conf, $val ) {
+					return $setting || ! $conf->conf( self::O_OPTIMAX, true ) ? $setting : $val;
+				}
+			);
+		}
+	}
+
+	/**
+	 * The same settings turned on in a raw options array, for code that reads the
+	 * stored array instead of conf(): `.htaccess` gets its mobile and next-gen rules.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $cfg Options, as stored.
+	 * @return array
+	 */
+	public static function with_required( $cfg ) {
+		if ( ! empty( $cfg[ self::O_OPTIMAX ] ) ) {
+			foreach ( self::required_settings() as $id => $val ) {
+				if ( empty( $cfg[ $id ] ) ) {
+					$cfg[ $id ] = $val;
 				}
 			}
-			$this->gen_item();
-			Admin::redirect( $back );
-			return;
 		}
-		// phpcs:enable WordPress.Security.NonceVerification
+		return $cfg;
+	}
 
-		parent::handler();
+	/**
+	 * Whether OptimaX is what turns this setting on: OptimaX is on, the setting off.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $id Option id.
+	 * @return bool
+	 */
+	public static function forces( $id ) {
+		$conf = static::cls();
+		return array_key_exists( $id, self::required_settings() ) && $conf->conf( self::O_OPTIMAX, true ) && ! $conf->conf( $id, true );
 	}
 
 	/**
@@ -336,6 +366,17 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
+	 * A page that failed stays queued and is sent again later.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	protected function _keep_failed() {
+		return true;
+	}
+
+	/**
 	 * Legacy summary key for the try_later deadline; kept across upgrades.
 	 *
 	 * @return string
@@ -400,11 +441,7 @@ class Optimax extends Cloud_Queue_Svc {
 	}
 
 	/**
-	 * Store a result for a page that is still listed.
-	 *
-	 * Removed from the list while QC was building it: the result is dropped, and
-	 * returning true clears the queue row without a failure notice. Once stored,
-	 * the page's builds past their grace period are deleted.
+	 * Store a result. Once stored, the page's builds past their grace period are deleted.
 	 *
 	 * @param array  $ox      data_optimax payload.
 	 * @param string $queue_k Queue key.
@@ -412,17 +449,14 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @return bool
 	 */
 	protected function _save_result( $ox, $queue_k, $v ) {
-		$pages = $this->cls( 'Optimax_Pages' );
-		$page  = ! empty( $v['url_tag'] ) && $pages->ready() ? $pages->get( $v['url_tag'] ) : null;
-		if ( ! empty( $v['url_tag'] ) && $pages->ready() && ! $page ) {
-			self::debug( 'Page no longer in OptimaX list; result discarded [k] ' . $queue_k );
-			return true;
-		}
-
 		$stored = $this->_store_result( $ox, $queue_k, $v );
 
-		if ( $stored && $page ) {
-			$pages->clean_expired( (int) $page['id'] );
+		if ( $stored && ! empty( $v['url_tag'] ) ) {
+			$pages  = $this->cls( 'Optimax_Pages' );
+			$url_id = $pages->url_id( $v['url_tag'] );
+			if ( $url_id ) {
+				$pages->clean_expired( $url_id );
+			}
 		}
 
 		return $stored;
@@ -686,25 +720,35 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
-		// Opt-in: only pages in the OptimaX list are served from, or queued for, OptimaX.
-		$pages = $this->cls( 'Optimax_Pages' );
-		$page  = $pages->get( $request_url );
-		if ( ! $page ) {
-			self::debug( 'serve() bypassed: not in OptimaX list' );
+		// The owner's OptimaX URI Excludes.
+		$excludes = apply_filters( 'litespeed_optimax_uri_exc', $this->conf( self::O_OPTIMAX_EXC ) );
+		$hit      = isset( $_SERVER['REQUEST_URI'] ) ? REST::str_hit_uri( wp_unslash( $_SERVER['REQUEST_URI'] ), $excludes ) : false; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		if ( $hit ) {
+			self::debug( 'serve() bypassed: hit OptimaX URI Excludes: ' . $hit );
 			return false;
 		}
 
-		// A listed page whose post is gone renders the 404 page, which is not what was listed.
+		// A page whose post is gone renders the 404 page: not a page to optimize.
 		if ( is_404() ) {
-			self::debug( 'serve() bypassed: listed page is a 404' );
+			self::debug( 'serve() bypassed: 404' );
 			return false;
 		}
 
-		// Keyed by the listed URL: a visitor may spell its escapes another way.
+		// One spelling per page: a visitor may spell its escapes another way.
+		$pages           = $this->cls( 'Optimax_Pages' );
 		$filepath_prefix = $this->_build_filepath_prefix( 'optimax' );
-		$url_tag         = self::get_url_tag( $page['url'] );
+		$url_tag         = self::get_url_tag( Optimax_Pages::canonical_url( $request_url ) );
 		$vary            = $this->cls( 'Vary' )->finalize_full_varies();
-		$filename        = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
+
+		// Next-gen versions only (desktop and mobile): every browser takes AVIF or WebP.
+		// A visitor that does not (a bot, a monitor) gets the page without OptimaX,
+		// and no QUIC.cloud request is spent on a version nobody browses.
+		if ( ! Optimax_Pages::version_groups( $vary )['nextgen'] ) {
+			self::debug( 'serve() bypassed: visitor without next-gen image support' );
+			return false;
+		}
+
+		$filename = $this->cls( 'Data' )->load_url_file( $url_tag, $vary, 'optimax' );
 
 		// Tag every render OptimaX could replace, on both the hit and the queue path,
 		// so a finished build can evict it. Keyed on the page rather than going through
@@ -726,11 +770,12 @@ class Optimax extends Cloud_Queue_Svc {
 						return false;
 					}
 					if ( false === $html ) {
-						// The design changed: the page waits for the owner to run OptimaX again.
-						$pages->expire( (int) $page['id'] );
+						// The design changed: rebuild. Visitors get the page without OptimaX meanwhile.
+						$pages->expire( $pages->url_id( $url_tag ) );
 						// Its other versions are still cached with their OptimaX HTML; drop them too.
 						Purge::add( self::page_tag( $url_tag ) );
-						Core::comment( 'Optimax needs refresh: page changed' );
+						$this->_enqueue( $request_url, $url_tag, $vary );
+						Core::comment( 'Optimax rebuild queued: page changed' );
 						return false;
 					}
 					$this->_maybe_rebuild( $request_url, $url_tag, $vary );
@@ -744,13 +789,7 @@ class Optimax extends Cloud_Queue_Svc {
 			}
 		}
 
-		// Its builds expired on a design change: only the owner's run rebuilds it.
-		if ( $pages->needs_refresh( (int) $page['id'], $vary ) ) {
-			self::debug( 'serve() bypassed: needs refresh' );
-			return false;
-		}
-
-		// No cached optimax, add to queue
+		// No build in use (never built, or its design changed): queue one.
 		if ( $this->_enqueue( $request_url, $url_tag, $vary ) ) {
 			Core::comment( 'QUIC.cloud Optimax in queue' );
 		}
@@ -761,37 +800,46 @@ class Optimax extends Cloud_Queue_Svc {
 	/**
 	 * Queue this request's version of a page for a build.
 	 *
+	 * A version already queued is left as it is: QUIC.cloud may be building it. The
+	 * LiteSpeed crawler never queues: it warms the cache, and would put the whole site
+	 * in the queue at once.
+	 *
 	 * @since 8.0
 	 *
 	 * @param string $request_url Request URL.
 	 * @param string $url_tag     Page identity.
 	 * @param string $vary        Raw vary.
-	 * @param bool   $keep        Leave an existing queue row as it is (a rebuild; the row may already be with QUIC.cloud).
 	 * @return bool Whether the version is queued.
 	 */
-	private function _enqueue( $request_url, $url_tag, $vary, $keep = false ) {
+	private function _enqueue( $request_url, $url_tag, $vary ) {
 		if ( ! $this->queueable_request() ) {
+			return false;
+		}
+
+		$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		if ( false !== strpos( $ua, Crawler::FAST_USER_AGENT ) || false !== strpos( $ua, Crawler::USER_AGENT ) ) {
+			self::debug( 'Not queued: crawler request' );
 			return false;
 		}
 
 		$this->_queue = $this->load_queue( 'optimax' );
 
-		$queue_k = ( strlen( $vary ) > 32 ? md5( $vary ) : $vary ) . ' ' . $url_tag;
-		if ( $keep && isset( $this->_queue[ $queue_k ] ) ) {
-			return true;
-		}
-		if ( ! isset( $this->_queue[ $queue_k ] ) && count( $this->_queue ) >= $this->_max_queue_size() ) {
-			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
+		// This version, and the other device's.
+		$queue_k = $this->cls( 'Optimax_Pages' )->add_versions(
+			$this->_queue,
+			[
+				'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
+				'is_mobile'  => $this->_separate_mobile(),
+				'is_nextgen' => $this->cls( 'Media' )->webp_support(),
+				'uid'        => get_current_user_id(),
+				'vary'       => $vary,
+				'url_tag'    => $url_tag,
+			],
+			$this->_max_queue_size()
+		);
+		if ( ! $queue_k ) {
 			return false;
 		}
-		$this->_queue[ $queue_k ] = [
-			'url'        => apply_filters( 'litespeed_optimax_url', $request_url ),
-			'is_mobile'  => $this->_separate_mobile(),
-			'is_nextgen' => $this->cls( 'Media' )->webp_support(),
-			'uid'        => get_current_user_id(),
-			'vary'       => $vary,
-			'url_tag'    => $url_tag,
-		];
 		$this->save_queue( 'optimax', $this->_queue );
 		self::debug( 'Added Optimax queue item [request] ' . substr( hash( 'sha256', $queue_k ), 0, 12 ) );
 
@@ -799,6 +847,17 @@ class Optimax extends Cloud_Queue_Svc {
 		Tag::add( 'OPTIMAX.' . md5( $queue_k ) );
 
 		return true;
+	}
+
+	/**
+	 * The queue size limit, for code queueing versions outside this class.
+	 *
+	 * @since 8.0
+	 *
+	 * @return int
+	 */
+	public function max_queue_size() {
+		return $this->_max_queue_size();
 	}
 
 	/**
@@ -824,7 +883,7 @@ class Optimax extends Cloud_Queue_Svc {
 			return;
 		}
 
-		if ( $this->_enqueue( $request_url, $url_tag, $vary, true ) ) {
+		if ( $this->_enqueue( $request_url, $url_tag, $vary ) ) {
 			self::debug( 'Rebuild queued: build older than ' . $ttl . 's' );
 		}
 	}
@@ -903,6 +962,7 @@ class Optimax extends Cloud_Queue_Svc {
 		$patches = (int) $old['patches'] + 1;
 		if ( $this->_save_patch( $patched, $url_tag, $vary ) ) {
 			$pages->save_fingerprint( $url_tag, $vary, $now, $patches, empty( $old['built'] ) ? 0 : (int) $old['built'] );
+			self::save_summary( [ 'ox_patches' => (int) self::get_summary( 'ox_patches' ) + 1 ] );
 			self::debug( 'sync: content updated [patches] ' . $patches );
 		}
 

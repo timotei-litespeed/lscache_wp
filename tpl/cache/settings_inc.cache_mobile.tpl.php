@@ -20,6 +20,7 @@ defined( 'WPINC' ) || exit;
 	</th>
 	<td>
 		<?php $this->build_switch( $cid ); ?>
+		<?php Doc::maybe_on_by_ox( $cid ); ?>
 		<div class="litespeed-desc">
 			<?php esc_html_e( 'Serve a separate cache copy for mobile visitors.', 'litespeed-cache' ); ?>
 			<?php Doc::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/cache/#cache-mobile', esc_html__( 'Learn more about when this is needed', 'litespeed-cache' ) ); ?>

@@ -290,6 +290,7 @@ class Base extends Root {
 	const O_OPTIMAX      = 'optimax';
 	const O_OPTIMAX_CRON = 'optimax-cron';
 	const O_OPTIMAX_TTL  = 'optimax-ttl';
+	const O_OPTIMAX_EXC  = 'optimax-exc';
 
 	const NETWORK_O_USE_PRIMARY = 'use_primary_settings';
 
@@ -573,6 +574,7 @@ class Base extends Root {
 		self::O_OPTIMAX => false,
 		self::O_OPTIMAX_CRON => false,
 		self::O_OPTIMAX_TTL => 0,
+		self::O_OPTIMAX_EXC => [],
 
 		self::DEBUG_TMP_DISABLE => 0,
 	];
@@ -948,6 +950,7 @@ class Base extends Root {
 			// self::O_OPTM_CSS_EXC     => 'uri', // Need to comment out for inline & external CSS
 			// self::O_OPTM_JS_EXC          => 'uri',
 			self::O_OPTM_EXC => 'relative',
+			self::O_OPTIMAX_EXC => 'relative',
 			self::O_OPTM_CCSS_SEP_URI => 'uri',
 			// self::O_OPTM_JS_DEFER_EXC    => 'uri',
 			self::O_OPTM_DNS_PREFETCH => 'domain',
@@ -976,6 +979,7 @@ class Base extends Root {
 		$check_ids = [
 			self::O_MEDIA_LAZY_URI_EXC,
 			self::O_OPTM_EXC,
+			self::O_OPTIMAX_EXC,
 			self::O_CACHE_PRIV_URI,
 			self::O_PURGE_TIMED_URLS,
 			self::O_CACHE_FORCE_URI,

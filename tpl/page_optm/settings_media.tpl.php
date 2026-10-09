@@ -244,6 +244,7 @@ $scaled_size = apply_filters( 'big_image_size_threshold', 2560, [], '', 0 ) . 'p
 			</th>
 			<td>
 				<?php $this->build_switch( $option_id ); ?>
+				<?php Doc::maybe_on_by_ox( $option_id ); ?>
 				<div class="litespeed-desc">
 					<?php esc_html_e( 'Set an explicit width and height on image elements to reduce layout shifts and improve CLS (a Core Web Vitals metric).', 'litespeed-cache' ); ?>
 					<?php Doc::learn_more( 'https://web.dev/optimize-cls/#images-without-dimensions' ); ?>

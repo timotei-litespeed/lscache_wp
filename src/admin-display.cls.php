@@ -224,6 +224,9 @@ class Admin_Display extends Base {
 		self::O_OPTM_EXC => [
 			'filter' => 'litespeed_optm_uri_exc',
 		],
+		self::O_OPTIMAX_EXC => [
+			'filter' => 'litespeed_optimax_uri_exc',
+		],
 		// Page Optimization - Tuning (CSS).
 		self::O_OPTM_CSS_EXC => [
 			'filter' => 'litespeed_optimize_css_excludes',
@@ -805,12 +808,6 @@ class Admin_Display extends Base {
 			}
 		}
 
-		// OptiMax is on but paused by the Next-Gen gate. Checked live on every load,
-		// never stored, so it goes away as soon as the setting is fixed.
-		if ( Optimax::is_paused() ) {
-			self::note( esc_html( Optimax::paused_msg() ), true, true );
-		}
-
 		if ( empty( $_GET['page'] ) || 0 !== strpos( sanitize_text_field( wp_unslash( $_GET['page'] ) ), 'litespeed' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			global $pagenow;
 			if ( 'plugins.php' !== $pagenow ) {
@@ -1253,6 +1250,11 @@ class Admin_Display extends Base {
 		$deprecated_filter_val = $this->deprecated_filter_overwritten( $id );
 		$filter_val            = $this->filter_overwritten( $id );
 		$server_val            = $this->server_overwritten( $id );
+
+		// A setting OptimaX turns on shows its own note (Doc::maybe_on_by_ox()).
+		if ( null !== $filter_val && Optimax::forces( $id ) ) {
+			$filter_val = null;
+		}
 
 		if ( null === $const_val && null === $primary_val && null === $deprecated_filter_val && null === $filter_val && null === $server_val ) {
 			return;
