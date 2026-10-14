@@ -22,8 +22,40 @@ defined( 'WPINC' ) || exit();
  */
 abstract class Cloud_Queue_Svc extends Base {
 
-	const TYPE_GEN     = 'gen';
-	const TYPE_CLEAR_Q = 'clear_q';
+	use Queue_Ops;
+
+	const TYPE_GEN           = 'gen';
+	const TYPE_CLEAR_Q       = 'clear_q';
+	const TYPE_GEN_ITEM      = 'gen_item';
+	const TYPE_RM_ITEM       = 'rm_item';
+	const TYPE_RETRY_ITEM    = 'retry_item';
+	const TYPE_CLEAR_FAILED  = 'clear_failed';
+	const TYPE_CLEAR_WAITING = 'clear_waiting';
+	const TYPE_CLEAR_ALL     = 'clear_all';
+	const TYPE_RUN_NEXT      = 'run_next';
+	const TYPE_PAUSE         = 'pause';
+	const TYPE_RESUME        = 'resume';
+
+	/**
+	 * Failed items are retried up to this many times, then listed as "Not retried".
+	 *
+	 * @var int
+	 */
+	const MAX_TRIES = 5;
+
+	/**
+	 * Seconds to wait after a failure / temporary QUIC.cloud trouble.
+	 *
+	 * @var int
+	 */
+	const RETRY_LATER_TTL = 300;
+
+	/**
+	 * Seconds without progress before a queue counts as stuck.
+	 *
+	 * @var int
+	 */
+	const STUCK_TTL = 3600;
 
 	/**
 	 * In-memory working queue.
@@ -60,8 +92,8 @@ abstract class Cloud_Queue_Svc extends Base {
 	/**
 	 * Persist the generated data.
 	 *
-	 * Returning false signals the caller to treat the item as failed and drop
-	 * it from the queue without claiming success.
+	 * Returning false signals the caller to treat the item as failed: it is
+	 * kept in the queue, marked failed and retried up to MAX_TRIES times.
 	 *
 	 * @param mixed  $data    Value at the response data key.
 	 * @param string $queue_k Queue key.
@@ -187,17 +219,17 @@ abstract class Cloud_Queue_Svc extends Base {
 			return;
 		}
 
-		$next_run_key = $this->_next_run_after_key();
-		if ( ! empty( $this->_summary[ $next_run_key ] ) && time() < $this->_summary[ $next_run_key ] ) {
-			$wait_seconds = $this->_summary[ $next_run_key ] - time();
-			self::debug( 'Waiting for try_later timeout: ' . $wait_seconds . ' seconds remaining' );
+		if ( $this->is_paused() ) {
+			static $paused_logged = [];
+			if ( empty( $paused_logged[ $type ] ) ) {
+				$paused_logged[ $type ] = true;
+				self::debug( 'Queue is paused, skipping cron' );
+			}
 			return;
 		}
 
-		if ( ! empty( $this->_summary[ $next_run_key ] ) ) {
-			unset( $this->_summary[ $next_run_key ] );
-			self::save_summary();
-			self::debug( 'Cleared try_later flag, resuming ' . $type . ' processing' );
+		if ( $this->_throttled() ) {
+			return;
 		}
 
 		$curr_key = $this->_curr_request_key();
@@ -210,7 +242,9 @@ abstract class Cloud_Queue_Svc extends Base {
 			}
 		}
 
-		foreach ( $this->_queue as $k => $v ) {
+		$now = time();
+		// Sort a working copy only: `_prio` = 1 items first, stored order untouched.
+		foreach ( self::prioritize( $this->_queue ) as $k => $v ) {
 			if ( ! $this->_valid_queue_item( $k, $v ) ) {
 				self::debug( 'invalid queue item, dropping [tag] ' . $k );
 				$this->_queue = $this->load_queue( $type );
@@ -219,40 +253,74 @@ abstract class Cloud_Queue_Svc extends Base {
 				continue;
 			}
 
-			self::debug( 'cron job [request] ' . substr( hash( 'sha256', (string) $k ), 0, 12 ) . ( ! empty( $v['is_mobile'] ) ? ' 📱 ' : '' ) );
-
-			$res = $this->_send_req( $k, $v );
-
-			if ( ! $res ) {
-				// Reload to avoid clobbering concurrent writes, then drop the item.
-				// Settled decision: a failed result drops. See AGENTS.md "Settled decisions".
-				$this->_queue = $this->load_queue( $type );
-				unset( $this->_queue[ $k ] );
-				$this->save_queue( $type, $this->_queue );
-
-				if ( ! $keep_going ) {
-					return;
-				}
+			// Capped (tries >= MAX_TRIES) or recently failed items stay listed but are skipped this pass.
+			if ( ! self::item_runnable( $v, $now ) ) {
+				self::debug2( 'skip item [state] ' . self::item_state( $v ) . ' [tag] ' . $k );
 				continue;
 			}
 
-			if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+			self::debug( 'cron job [request] ' . substr( hash( 'sha256', (string) $k ), 0, 12 ) . ( ! empty( $v['is_mobile'] ) ? ' 📱 ' : '' ) );
+
+			$res = $this->_run_item( $k, $v );
+
+			// Temporary QUIC.cloud trouble, quota or cooldown: stop this pass, the item is kept.
+			if ( 'retry_later' === $res || 'out_of_quota' === $res || 'svc_hot' === $res ) {
 				return;
 			}
 
+			// QUIC.cloud accepted the item and asked to poll later.
 			if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
-				$ttl                             = (int) $res['try_later'];
-				$next_run_time                   = time() + $ttl;
-				$this->_summary[ $next_run_key ] = $next_run_time;
-				self::save_summary();
-				self::debug( 'Set next ' . $type . ' cron run after ' . $ttl . ' seconds (at ' . gmdate( 'Y-m-d H:i:s', $next_run_time ) . ')' );
 				return;
 			}
 
+			// A real failure keeps the item (marked, moved to the end) and continues with the next one.
 			if ( ! $keep_going ) {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Run one queue item and apply the shared failure handling.
+	 *
+	 * Temporary QUIC.cloud trouble (Cloud::$retry_later) keeps the item
+	 * untouched and makes the whole queue wait RETRY_LATER_TTL. A real
+	 * failure keeps the item too, but marks it failed, bumps `_tries` and
+	 * moves it to the end of the queue.
+	 *
+	 * @param string $queue_k Queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool|string|array True on success, [try_later=>ttl] when accepted, 'retry_later'|'failed'|'out_of_quota'|'svc_hot' otherwise.
+	 */
+	protected function _run_item( $queue_k, $v ) {
+		$this->_last_err = '';
+
+		$res = $this->_send_req( $queue_k, $v );
+
+		if ( ! $res ) {
+			if ( Cloud::$retry_later ) {
+				self::debug( 'Temporary QUIC.cloud trouble, keeping item and waiting [q_k] ' . $queue_k );
+				$this->_set_retry_later( static::RETRY_LATER_TTL, Cloud::$last_err );
+				return 'retry_later';
+			}
+
+			$this->_mark_failed( $queue_k, $this->_last_err ? $this->_last_err : Cloud::$last_err );
+			return 'failed';
+		}
+
+		if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+			return $res;
+		}
+
+		if ( is_array( $res ) && ! empty( $res['try_later'] ) ) {
+			$this->_mark_sent( $queue_k );
+			$this->_set_retry_later( (int) $res['try_later'] );
+			return $res;
+		}
+
+		$this->_mark_progress();
+
+		return true;
 	}
 
 	/**
@@ -270,6 +338,7 @@ abstract class Cloud_Queue_Svc extends Base {
 		if ( ! $allowance ) {
 			self::debug( '❌ No credit: ' . $err );
 			$err && Admin_Display::error( Error::msg( $err ) );
+			$this->_record_err( $err ? Error::msg( $err ) : __( 'Out of QUIC.cloud quota', 'litespeed-cache' ) );
 			return 'out_of_quota';
 		}
 
@@ -283,6 +352,7 @@ abstract class Cloud_Queue_Svc extends Base {
 
 		$json = Cloud::post( $svc, $data, $this->_post_timeout() );
 		if ( ! is_array( $json ) ) {
+			$this->_last_err = Cloud::$last_err ? Cloud::$last_err : __( 'Request to QUIC.cloud failed', 'litespeed-cache' );
 			return $json;
 		}
 
@@ -295,6 +365,7 @@ abstract class Cloud_Queue_Svc extends Base {
 
 		if ( empty( $json['status'] ) ) {
 			self::debug( '❌ No status in response' );
+			$this->_last_err = __( 'No status in QUIC.cloud response', 'litespeed-cache' );
 			return false;
 		}
 
@@ -310,6 +381,10 @@ abstract class Cloud_Queue_Svc extends Base {
 		// persist as-is (returns true to mark the URL as processed).
 		if ( false === $this->_save_result( $data_val, $queue_k, $v ) ) {
 			self::debug( '❌ _save_result returned false [k] ' . $queue_k );
+			$this->_last_err = empty( $data_val )
+				/* translators: %s: response data key */
+				? sprintf( __( 'QUIC.cloud returned no %s data', 'litespeed-cache' ), $data_key )
+				: __( 'Could not save the generated result', 'litespeed-cache' );
 			return false;
 		}
 
@@ -347,6 +422,7 @@ abstract class Cloud_Queue_Svc extends Base {
 				break;
 
 			default:
+				$this->_queue_type_handler( $type );
 				break;
 		}
 

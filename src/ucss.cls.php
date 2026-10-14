@@ -194,6 +194,8 @@ class UCSS extends Cloud_Queue_Svc {
 			'uid'        => $uid,
 			'vary'       => $vary,
 			'url_tag'    => $url_tag,
+			'_added'     => time(),
+			'_prio'      => 0,
 		]; // Current UA will be used to request
 		$this->save_queue( 'ucss', $this->_queue );
 		self::debug( 'Added queue_ucss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] ' . $uid );
@@ -249,6 +251,8 @@ class UCSS extends Cloud_Queue_Svc {
 				'uid'        => false,
 				'vary'       => $vary,
 				'url_tag'    => $url_tag,
+				'_added'     => time(),
+				'_prio'      => 1, // Explicit purge/regenerate: ahead of visitor-added rows.
 			]; // Current UA will be used to request
 
 			self::debug( 'Added queue_ucss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] false' );

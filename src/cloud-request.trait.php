@@ -18,6 +18,24 @@ defined( 'WPINC' ) || exit();
 trait Cloud_Request {
 
 	/**
+	 * Whether the last post() failed because of temporary QUIC.cloud trouble
+	 * (network error, unparsable reply, rate limit, 503, local throttle)
+	 * rather than a real rejection. Queue services keep the item and wait.
+	 *
+	 * @since 8.1
+	 * @var bool
+	 */
+	public static $retry_later = false;
+
+	/**
+	 * Short reason of the last failed request, tag-free, for queue rows.
+	 *
+	 * @since 8.1
+	 * @var string
+	 */
+	public static $last_err = '';
+
+	/**
 	 * Get data from QUIC cloud server
 	 *
 	 * @since 3.0
@@ -163,6 +181,9 @@ trait Cloud_Request {
 						Admin_Display::error( [ 'cloud_trylater' => $msg ] );
 					}
 
+					self::$retry_later = true;
+					/* translators: %s: readable wait time */
+					self::$last_err = wp_strip_all_tags( sprintf( __( 'Previous request still running, try after %s', 'litespeed-cache' ), Utility::readable_time( $expired, 0, true ) ) );
 					return false;
 				}
 			} else {
@@ -173,6 +194,9 @@ trait Cloud_Request {
 					$expired      = (int) $last_request + $expiration_req * 10 - time();
 					if ( $expired > 0 ) {
 						self::debug( '❌ try [' . $service_tag . '] after ' . $expired . ' seconds' );
+						self::$retry_later = true;
+						/* translators: %s: readable wait time */
+						self::$last_err = wp_strip_all_tags( sprintf( __( 'Previous request still running, try after %s', 'litespeed-cache' ), Utility::readable_time( $expired, 0, true ) ) );
 						return false;
 					}
 				}
@@ -197,6 +221,9 @@ trait Cloud_Request {
 
 		if ( ! $this->activated() && self::SVC_D_ACTIVATE !== $service_tag ) {
 			Admin_Display::error( Error::msg( 'qc_setup_required' ) );
+			// Not a bad item: queues just wait until QUIC.cloud is set up.
+			self::$retry_later = true;
+			self::$last_err    = wp_strip_all_tags( Error::msg( 'qc_setup_required' ) );
 			return false;
 		}
 
@@ -278,6 +305,9 @@ trait Cloud_Request {
 			$service_tag .= '-' . $data['action'];
 		}
 
+		self::$retry_later = false;
+		self::$last_err    = '';
+
 		$maybe_cloud = $this->_maybe_cloud( $service_tag );
 		if ( ! $maybe_cloud || 'svc_hot' === $maybe_cloud ) {
 			self::debug( 'Maybe cloud failed: ' . wp_json_encode( $maybe_cloud ) );
@@ -358,6 +388,9 @@ trait Cloud_Request {
 				self::debug( 'Node error, redetecting node [svc] ' . $service );
 				$this->detect_cloud( $service, true );
 			}
+			// After the redetect: its own request resets the flags.
+			self::$retry_later = true;
+			self::$last_err    = wp_strip_all_tags( $error_message );
 			return false;
 		}
 
@@ -382,6 +415,9 @@ trait Cloud_Request {
 				$this->detect_cloud( $service, true );
 			}
 
+			// After the redetect: its own request resets the flags.
+			self::$retry_later = true;
+			self::$last_err    = __( 'Unreadable reply from QUIC.cloud', 'litespeed-cache' );
 			return false;
 		}
 
@@ -398,6 +434,7 @@ trait Cloud_Request {
 
 		if ( ! empty( $json['_code'] ) ) {
 			self::debugErr( 'Hit err _code: ' . $json['_code'] );
+			self::$last_err = wp_strip_all_tags( Error::msg( $json['_code'] ) );
 			if ( 'unpulled_images' === $json['_code'] ) {
 				$msg = __( 'Cloud server refused the current request due to unpulled images. Please pull the images first.', 'litespeed-cache' );
 				Admin_Display::error( $msg );
@@ -413,6 +450,8 @@ trait Cloud_Request {
 				self::debugErr( 'Cloud server rate limit exceeded.' );
 				$msg = __( 'Cloud server refused the current request due to rate limiting. Please try again later.', 'litespeed-cache' );
 				Admin_Display::error( $msg );
+				self::$retry_later = true;
+				self::$last_err    = $msg;
 				return false;
 			}
 
@@ -438,6 +477,9 @@ trait Cloud_Request {
 			self::debugErr( 'Node error, redetecting node [svc] ' . $service );
 			$this->detect_cloud( $service, true );
 
+			// After the redetect: its own request resets the flags.
+			self::$retry_later = true;
+			self::$last_err    = wp_strip_all_tags( __( 'QUIC.cloud service temporarily unavailable (503)', 'litespeed-cache' ) . ' ' . $json['_503'] );
 			return false;
 		}
 
@@ -567,6 +609,7 @@ trait Cloud_Request {
 			self::debug( '❌ _err: ' . $json_msg );
 
 			$str_translated = Error::msg( $json_msg );
+			self::$last_err = wp_strip_all_tags( $str_translated );
 			$msg            = __( 'Failed to communicate with QUIC.cloud server', 'litespeed-cache' ) . ': ' . $str_translated . ' [server] ' . esc_html( $server ) . ' [service] ' . esc_html( $service );
 			$msg           .= $this->_parse_link( $json );
 			$visible_err    = self::API_VER !== $service && self::API_NEWS !== $service && self::SVC_D_DASH !== $service;

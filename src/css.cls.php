@@ -242,6 +242,8 @@ class CSS extends Cloud_Queue_Svc {
 			'uid'        => $uid,
 			'vary'       => $vary,
 			'url_tag'    => $url_tag,
+			'_added'     => time(),
+			'_prio'      => 0,
 		]; // Current UA will be used to request
 		$this->save_queue( 'ccss', $this->_queue );
 		self::debug( 'Added queue_ccss [url_tag] ' . $url_tag . ' [UA] ' . $ua . ' [vary] ' . $vary . ' [uid] ' . $uid );

@@ -4471,3 +4471,126 @@ a.litespeed-media-href svg:hover {
 	display: flex;
 	justify-content: space-between;
 }
+
+/* =======================================
+		QUIC.cloud QUEUE BOX
+======================================= */
+.litespeed-queue-box h4 .litespeed-queue-tools .button {
+	margin-left: 4px;
+}
+
+.litespeed-queue-state:empty {
+	display: none;
+}
+
+.litespeed-queue-nav {
+	margin: 8px 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.litespeed-queue-nav .litespeed-right {
+	margin-left: auto;
+}
+
+.litespeed-queue-list {
+	max-height: 480px;
+	overflow-y: auto;
+	padding-right: 6px;
+}
+
+.litespeed-queue-row {
+	padding: 6px 0;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.litespeed-queue-url {
+	font-weight: 600;
+	word-break: break-all;
+}
+
+.litespeed-queue-ver {
+	padding: 2px 0 2px 16px;
+	font-size: 12px;
+	line-height: 1.8;
+}
+
+.litespeed-queue-ver-label {
+	display: inline-block;
+	min-width: 90px;
+	margin-right: 6px;
+}
+
+.litespeed-queue-dot {
+	display: inline-block;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	margin-right: 6px;
+	background-color: #5bc0de;
+	vertical-align: middle;
+}
+
+.litespeed-queue-dot-success {
+	background-color: #5cb85c;
+}
+
+.litespeed-queue-dot-warning {
+	background-color: #f0ad4e;
+}
+
+.litespeed-queue-dot-danger {
+	background-color: #d9534f;
+}
+
+.litespeed-queue-err {
+	display: inline-block;
+	max-width: 320px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: bottom;
+	margin: 0 6px;
+}
+
+.litespeed-queue-actions {
+	margin-left: 8px;
+	white-space: nowrap;
+}
+
+.litespeed-queue-progress-bar.litespeed-progress {
+	margin: 8px 0 !important;
+	height: 16px;
+	width: 100%;
+}
+
+.litespeed-queue-log {
+	max-height: 160px;
+	overflow-y: auto;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 11px;
+	line-height: 1.6;
+	background: rgba(0, 0, 0, 0.03);
+	padding: 4px 8px;
+	margin-bottom: 8px;
+}
+
+.litespeed-queue-log-failed,
+.litespeed-queue-log-skipped {
+	color: #d9534f;
+}
+
+.litespeed-queue-log-sent {
+	color: #5cb85c;
+}
+
+.litespeed-queue-run .button {
+	margin-right: 4px;
+}
+
+.litespeed-queues-overview td,
+.litespeed-queues-overview th {
+	vertical-align: top;
+}

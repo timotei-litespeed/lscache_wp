@@ -18,6 +18,10 @@ defined( 'WPINC' ) || exit();
  */
 class Placeholder extends Base {
 
+	use Queue_Ops;
+
+	const LOG_TAG = '[LQIP]';
+
 	/**
 	 * Action type: generate.
 	 *
@@ -31,6 +35,25 @@ class Placeholder extends Base {
 	 * @var string
 	 */
 	const TYPE_CLEAR_Q = 'clear_q';
+
+	const TYPE_GEN_ITEM      = 'gen_item';
+	const TYPE_RM_ITEM       = 'rm_item';
+	const TYPE_RETRY_ITEM    = 'retry_item';
+	const TYPE_CLEAR_FAILED  = 'clear_failed';
+	const TYPE_CLEAR_WAITING = 'clear_waiting';
+	const TYPE_CLEAR_ALL     = 'clear_all';
+	const TYPE_RUN_NEXT      = 'run_next';
+	const TYPE_PAUSE         = 'pause';
+	const TYPE_RESUME        = 'resume';
+
+	/**
+	 * Same retry policy as Cloud_Queue_Svc.
+	 *
+	 * @var int
+	 */
+	const MAX_TRIES       = 5;
+	const RETRY_LATER_TTL = 300;
+	const STUCK_TTL       = 3600;
 
 	/**
 	 * Whether responsive placeholders are enabled.
@@ -126,6 +149,58 @@ class Placeholder extends Base {
 		$this->_conf_ph_default             = $this->conf(self::O_MEDIA_LAZY_PLACEHOLDER) ? $this->conf(self::O_MEDIA_LAZY_PLACEHOLDER) : LITESPEED_PLACEHOLDER;
 
 		$this->_summary = self::get_summary();
+	}
+
+	/**
+	 * Svc id slug — queue type and summary key prefix.
+	 *
+	 * @since 8.1
+	 * @return string
+	 */
+	protected function _svc_id() {
+		return 'lqip';
+	}
+
+	/**
+	 * Cloud service constant.
+	 *
+	 * @since 8.1
+	 * @return string
+	 */
+	protected function _svc_const() {
+		return Cloud::SVC_LQIP;
+	}
+
+	/**
+	 * Summary key for the retry-later deadline.
+	 *
+	 * @since 8.1
+	 * @return string
+	 */
+	protected function _next_run_after_key() {
+		return 'lqip_next_run_after';
+	}
+
+	/**
+	 * Load the LQIP queue as `"WxH src" => item` rows.
+	 *
+	 * Legacy queues stored a plain list of "WxH src" strings; those are
+	 * normalized to keyed rows so the shared queue tooling applies.
+	 *
+	 * @since 8.1
+	 * @return array
+	 */
+	public function load_q() {
+		$queue      = $this->load_queue( 'lqip' );
+		$normalized = [];
+		foreach ( $queue as $k => $v ) {
+			if ( is_string( $v ) ) {
+				$normalized[ $v ] = [];
+			} elseif ( is_array( $v ) ) {
+				$normalized[ (string) $k ] = $v;
+			}
+		}
+		return $normalized;
 	}
 
 	/**
@@ -358,8 +433,8 @@ class Placeholder extends Base {
 		$tmp_placeholder = $this->_generate_placeholder_locally( $size );
 
 		// Store it to prepare for cron.
-		$queue = $this->load_queue( 'lqip' );
-		if ( in_array( $arr_key, $queue, true ) ) {
+		$queue = $this->load_q();
+		if ( isset( $queue[ $arr_key ] ) ) {
 			Debug2::debug2( '[LQIP] already in queue' );
 
 			return $tmp_placeholder;
@@ -371,7 +446,10 @@ class Placeholder extends Base {
 			return $tmp_placeholder;
 		}
 
-		$queue[] = $arr_key;
+		$queue[ $arr_key ] = [
+			'_added' => time(),
+			'_prio'  => 0,
+		];
 		$this->save_queue( 'lqip', $queue );
 		Debug2::debug( '[LQIP] Added placeholder queue' );
 
@@ -426,9 +504,22 @@ class Placeholder extends Base {
 	public static function cron( $do_continue = false ) {
 		$_instance = self::cls();
 
-		$queue = $_instance->load_queue( 'lqip' );
+		$queue = $_instance->load_q();
 
 		if ( empty( $queue ) ) {
+			return;
+		}
+
+		if ( $_instance->is_paused() ) {
+			static $paused_logged = false;
+			if ( ! $paused_logged ) {
+				$paused_logged = true;
+				Debug2::debug( '[LQIP] Queue is paused, skipping cron' );
+			}
+			return;
+		}
+
+		if ( $_instance->_throttled() ) {
 			return;
 		}
 
@@ -440,13 +531,19 @@ class Placeholder extends Base {
 			}
 		}
 
-		foreach ( $queue as $v ) {
-			Debug2::debug( '[LQIP] cron job [size] ' . $v );
+		$now = time();
+		foreach ( self::prioritize( $queue ) as $k => $v ) {
+			// Capped or recently failed items stay listed but are skipped this pass.
+			if ( ! self::item_runnable( $v, $now ) ) {
+				continue;
+			}
 
-			$res = $_instance->_generate_placeholder( $v, true );
+			Debug2::debug( '[LQIP] cron job [size] ' . $k );
 
-			// Exit queue if out of quota.
-			if ( 'out_of_quota' === $res ) {
+			$res = $_instance->_run_item( $k, $v );
+
+			// Exit queue if out of quota, cooling down or QUIC.cloud is in trouble.
+			if ( 'out_of_quota' === $res || 'svc_hot' === $res || 'retry_later' === $res ) {
 				return;
 			}
 
@@ -455,6 +552,39 @@ class Placeholder extends Base {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Run one LQIP queue item with the shared failure handling.
+	 *
+	 * @since 8.1
+	 *
+	 * @param string $queue_k "WxH src" queue key.
+	 * @param array  $v       Queue item.
+	 * @return bool|string True on success, 'retry_later'|'failed'|'out_of_quota'|'svc_hot' otherwise.
+	 */
+	protected function _run_item( $queue_k, $v ) {
+		$res = $this->_generate_placeholder( $queue_k, true );
+
+		if ( 'failed' === $res ) {
+			if ( Cloud::$retry_later ) {
+				Debug2::debug( '[LQIP] Temporary QUIC.cloud trouble, keeping item and waiting [q_k] ' . $queue_k );
+				$this->_set_retry_later( self::RETRY_LATER_TTL, Cloud::$last_err );
+				return 'retry_later';
+			}
+
+			$this->_mark_failed( $queue_k, Cloud::$last_err );
+			return 'failed';
+		}
+
+		if ( 'out_of_quota' === $res || 'svc_hot' === $res ) {
+			return $res;
+		}
+
+		// Generated, or dropped for good (no src / 404 / bad reply): both count as progress.
+		$this->_mark_progress();
+
+		return true;
 	}
 
 	/**
@@ -487,7 +617,7 @@ class Placeholder extends Base {
 	 * @access private
 	 * @param string $raw_size_and_src Concatenated "SIZE SRC".
 	 * @param bool   $from_cron        If true, called from cron context.
-	 * @return string Data URL placeholder.
+	 * @return string|bool Data URL placeholder; from cron: true (done or dropped), 'failed', 'out_of_quota' or 'svc_hot'.
 	 */
 	private function _generate_placeholder( $raw_size_and_src, $from_cron = false ) {
 		// Parse containing size and src info.
@@ -497,7 +627,7 @@ class Placeholder extends Base {
 		if ( empty( $size_and_src[1] ) ) {
 			$this->_popup_and_save( $raw_size_and_src );
 			Debug2::debug( '[LQIP] ❌ No src [raw] ' . $raw_size_and_src );
-			return $this->_generate_placeholder_locally( $size );
+			return $from_cron ? true : $this->_generate_placeholder_locally( $size );
 		}
 
 		$src = $size_and_src[1];
@@ -515,6 +645,7 @@ class Placeholder extends Base {
 				$err && Admin_Display::error( Error::msg( $err ) );
 
 				if ( $from_cron ) {
+					$this->_record_err( $err ? Error::msg( $err ) : __( 'Out of QUIC.cloud quota', 'litespeed-cache' ) );
 					return 'out_of_quota';
 				}
 
@@ -535,7 +666,7 @@ class Placeholder extends Base {
 				$this->_popup_and_save( $raw_size_and_src, true );
 				$this->_append_exc( $src );
 				Debug2::debug( '[LQIP] 404 before request [src] ' . $req_data['url'] );
-				return $this->_generate_placeholder_locally( $size );
+				return $from_cron ? true : $this->_generate_placeholder_locally( $size );
 			}
 
 			// Update request status.
@@ -544,6 +675,10 @@ class Placeholder extends Base {
 
 			$json = Cloud::post( Cloud::SVC_LQIP, $req_data, 120 );
 			if ( ! is_array( $json ) ) {
+				if ( $from_cron ) {
+					// Kept in queue: _run_item() decides between retry-later and failed.
+					return 'svc_hot' === $json ? 'svc_hot' : 'failed';
+				}
 				return $this->_generate_placeholder_locally( $size );
 			}
 
@@ -553,7 +688,7 @@ class Placeholder extends Base {
 				$this->_append_exc( $src );
 				Debug2::debug( '[LQIP] wrong response format', $json );
 
-				return $this->_generate_placeholder_locally( $size );
+				return $from_cron ? true : $this->_generate_placeholder_locally( $size );
 			}
 
 			$data = $json['lqip'];
@@ -573,7 +708,7 @@ class Placeholder extends Base {
 
 		Debug2::debug( '[LQIP] saved LQIP ' . $file );
 
-		return $data;
+		return $from_cron ? true : $data;
 	}
 
 	/**
@@ -617,13 +752,8 @@ class Placeholder extends Base {
 	 * @return void
 	 */
 	private function _popup_and_save( $raw_size_and_src, $append_to_exc = false ) {
-		$queue = $this->load_queue( 'lqip' );
-		if ( ! empty( $queue ) && in_array( $raw_size_and_src, $queue, true ) ) {
-			$idx = array_search( $raw_size_and_src, $queue, true );
-			if ( false !== $idx ) {
-				unset( $queue[ $idx ] );
-			}
-		}
+		$queue = $this->load_q();
+		unset( $queue[ $raw_size_and_src ] );
 
 		if ( $append_to_exc ) {
 			$size_and_src = explode( ' ', $raw_size_and_src, 2 );
@@ -635,7 +765,7 @@ class Placeholder extends Base {
 				// Check if other queues contain this src or not.
 				if ( $queue ) {
 					foreach ( $queue as $k => $raw_item ) {
-						$parsed = explode( ' ', $raw_item, 2 );
+						$parsed = explode( ' ', $k, 2 );
 						if ( empty( $parsed[1] ) ) {
 							continue;
 						}
@@ -671,6 +801,7 @@ class Placeholder extends Base {
 				break;
 
 			default:
+				$this->_queue_type_handler( $type );
 				break;
 		}
 

@@ -14,9 +14,6 @@ defined( 'WPINC' ) || exit;
 
 $summary        = VPI::get_summary();
 $closest_server = Cloud::get_summary( 'server.' . Cloud::SVC_VPI );
-
-$queue           = $this->load_queue( 'vpi' );
-$vpi_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_VPI );
 ?>
 
 <h3 class="litespeed-title-short">
@@ -59,54 +56,7 @@ $vpi_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_VPI );
 						<a class='litespeed-redetect' href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_VPI ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label='<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>' data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class='litespeed-quic-icon'></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
 					<?php endif; ?>
 
-					<?php if ( ! empty( $queue ) ) : ?>
-						<div class="litespeed-callout notice notice-warning inline">
-							<h4>
-								<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'VPI' ); ?> ( <?php echo esc_html( count( $queue ) ); ?> )
-								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_VPI, VPI::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
-							</h4>
-							<p>
-								<?php
-								$i = 0;
-								foreach ( $queue as $k => $v ) {
-									if ( $i++ > 20 ) {
-										echo '...';
-										break;
-									}
-									if ( ! is_array( $v ) ) {
-										continue;
-									}
-									if ( ! empty( $v['_status'] ) ) {
-										echo '<span class="litespeed-success">';
-									}
-									echo esc_html( $v['url'] );
-									if ( ! empty( $v['_status'] ) ) {
-										echo '</span>';
-									}
-									$pos = strpos( $k, ' ' );
-									if ( $pos ) {
-										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $k, 0, $pos ) ) . ')';
-									}
-									if ( $v['is_mobile'] ) {
-										echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-									}
-									echo '<br />';
-								}
-								?>
-							</p>
-						</div>
-						<?php if ( $vpi_service_hot ) : ?>
-							<button class="button button-secondary" disabled>
-								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'VPI' ); ?>
-								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $vpi_service_hot ) ); ?>
-							</button>
-						<?php else : ?>
-							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_VPI, VPI::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
-								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'VPI' ); ?>
-							</a>
-						<?php endif; ?>
-						<?php Doc::queue_issues(); ?>
-					<?php endif; ?>
+					<?php Queue_Box::render( 'vpi' ); ?>
 				</div>
 			</td>
 		</tr>

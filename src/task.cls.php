@@ -186,6 +186,31 @@ class Task extends Root {
 	}
 
 	/**
+	 * Whether WP-Cron is disabled on this site (DISABLE_WP_CRON).
+	 *
+	 * Scheduled hooks still exist, but nothing runs them unless a system
+	 * cron hits wp-cron.php.
+	 *
+	 * @since 8.1
+	 * @return bool
+	 */
+	public static function wp_cron_off() {
+		return defined( 'DISABLE_WP_CRON' ) && constant( 'DISABLE_WP_CRON' );
+	}
+
+	/**
+	 * Cron hook name registered for an option id, if any.
+	 *
+	 * @since 8.1
+	 *
+	 * @param string $id Option id of the cron trigger.
+	 * @return string|false
+	 */
+	public static function hook_name( $id ) {
+		return ! empty( self::$_triggers[ $id ]['name'] ) ? self::$_triggers[ $id ]['name'] : false;
+	}
+
+	/**
 	 * Handle all async noabort requests.
 	 *
 	 * @since 5.5

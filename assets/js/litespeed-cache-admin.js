@@ -218,6 +218,129 @@
 				$(this).addClass('disabled');
 			});
 		}
+
+		/**
+		 * QUIC.cloud queue box: "Run until empty" loop (one item per AJAX call).
+		 * @since 8.1
+		 */
+		$(document).on('click', '[data-litespeed-queue-run]', function (e) {
+			e.preventDefault();
+			var $btn = $(this);
+			if ($btn.hasClass('disabled')) {
+				return;
+			}
+			var url = $btn.data('litespeed-queue-run');
+			var $box = $btn.closest('.litespeed-queue-box');
+			var $wrap = $box.find('.litespeed-queue-progress').show();
+			var $bar = $wrap.find('.litespeed-progress-bar');
+			var $log = $wrap.find('.litespeed-queue-log');
+			var $stop = $box.find('[data-litespeed-queue-stop]');
+			var total = 0;
+			var done = 0;
+			var stopped = false;
+			var timer = null;
+
+			$btn.addClass('disabled');
+			$stop.show().off('click.lsqueue').on('click.lsqueue', function (ev) {
+				ev.preventDefault();
+				stopped = true;
+				if (timer) {
+					clearTimeout(timer);
+					timer = null;
+					finish('Stopped.');
+				}
+			});
+
+			var log = function (txt, cls) {
+				$log.append($('<div/>').addClass(cls || '').text(txt));
+				$log.scrollTop($log[0].scrollHeight);
+			};
+			var finish = function (txt) {
+				if (txt) {
+					log(txt);
+				}
+				$stop.hide();
+				$btn.removeClass('disabled');
+				setTimeout(function () {
+					window.location.reload();
+				}, 1500);
+			};
+			var step = function () {
+				if (stopped) {
+					finish('Stopped.');
+					return;
+				}
+				$.ajax({ url: url, dataType: 'json', cache: false })
+					.done(function (res) {
+						if (!res || typeof res.done === 'undefined') {
+							finish('Unexpected response.');
+							return;
+						}
+						if (!total) {
+							total = res.remaining + (res.last ? 1 : 0);
+						}
+						if (res.last) {
+							done++;
+							log(res.last.url + ' — ' + res.last.msg, 'litespeed-queue-log-' + res.last.status);
+						}
+						var pct = total ? Math.min(100, Math.round((done / total) * 100)) : 100;
+						$bar.css('width', pct + '%');
+						if (res.stop) {
+							finish(res.msg || res.stop);
+							return;
+						}
+						if (res.done) {
+							finish(res.msg || '');
+							return;
+						}
+						if (res.wait > 0) {
+							var left = res.wait;
+							var tick = function () {
+								if (stopped) {
+									finish('Stopped.');
+									return;
+								}
+								if (left <= 0) {
+									step();
+									return;
+								}
+								$bar.text(left + 's');
+								left--;
+								timer = setTimeout(tick, 1000);
+							};
+							tick();
+							return;
+						}
+						$bar.text('');
+						step();
+					})
+					.fail(function (xhr) {
+						finish('Request failed (' + xhr.status + ').');
+					});
+			};
+			step();
+		});
+
+		/**
+		 * QUIC.cloud queue box: server-side URL search (the page is one big settings form, so no nested <form>).
+		 * @since 8.1
+		 */
+		var litespeed_queue_search = function (input) {
+			var $input = $(input);
+			var base = $input.data('litespeed-qs');
+			var sep = base.indexOf('?') === -1 ? '?' : '&';
+			window.location.href = base + sep + 'qs=' + encodeURIComponent($input.val()) + '#' + $input.data('litespeed-qs-hash');
+		};
+		$(document).on('keydown', '[data-litespeed-qs]', function (e) {
+			if (e.key === 'Enter' || e.keyCode === 13) {
+				e.preventDefault();
+				litespeed_queue_search(this);
+			}
+		});
+		$(document).on('click', '[data-litespeed-qs-btn]', function (e) {
+			e.preventDefault();
+			litespeed_queue_search($(this).siblings('[data-litespeed-qs]')[0]);
+		});
 	});
 })(jQuery);
 

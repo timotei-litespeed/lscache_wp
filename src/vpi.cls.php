@@ -166,6 +166,8 @@ class VPI extends Cloud_Queue_Svc {
 			'post_id'    => $post_id,
 			'user_agent' => substr( $ua, 0, 200 ),
 			'is_mobile'  => $is_mobile,
+			'_added'     => time(),
+			'_prio'      => 0,
 		]; // Current UA will be used to request.
 		$this->save_queue( 'vpi', $this->_queue );
 		self::debug( 'Added queue_vpi [url] ' . $queue_k . ' [UA] ' . $ua );

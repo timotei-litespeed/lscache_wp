@@ -33,6 +33,7 @@ $litespeed_php_files = array(
 	'src/cloud-node.trait.php',
 	'src/cloud-misc.trait.php',
 	'src/cloud.cls.php',
+	'src/queue-ops.trait.php',
 	'src/cloud-queue-svc.cls.php',
 	'src/conf.cls.php',
 	'src/control.cls.php',
@@ -69,6 +70,7 @@ $litespeed_php_files = array(
 	'src/optimizer.cls.php',
 	'src/placeholder.cls.php',
 	'src/purge.cls.php',
+	'src/queue-box.cls.php',
 	'src/report.cls.php',
 	'src/rest.cls.php',
 	'src/router.cls.php',
@@ -94,6 +96,7 @@ $litespeed_php_files = array(
 	'cli/presets.cls.php',
 	'cli/purge.cls.php',
 	'cli/database.cls.php',
+	'cli/queue.cls.php',
 
 	// 3rd party libraries
 	'lib/css_js_min/pathconverter/converter.cls.php',

@@ -732,6 +732,11 @@ class Admin_Display extends Base {
 		// If is in dev version, always check latest update
 		Cloud::cls()->check_dev_version();
 
+		// Stuck QUIC.cloud queues: one notice per episode, only on the plugin's own pages.
+		if ( ! empty( $_GET['page'] ) && 0 === strpos( sanitize_text_field( wp_unslash( $_GET['page'] ) ), 'litespeed' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			Queue_Box::maybe_stuck_notices();
+		}
+
 		// One time msg
 		$messages       = self::get_option( self::DB_MSG, [] );
 		$added_thickbox = false;

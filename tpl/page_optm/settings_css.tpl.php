@@ -17,14 +17,6 @@ $css_summary         = CSS::get_summary();
 $ucss_summary        = UCSS::get_summary();
 $closest_server_ucss = Cloud::get_summary( 'server.' . Cloud::SVC_UCSS );
 $closest_server      = Cloud::get_summary( 'server.' . Cloud::SVC_CCSS );
-
-$ccss_queue = $this->load_queue( 'ccss' );
-$ucss_queue = $this->load_queue( 'ucss' );
-
-$next_gen = '<code class="litespeed-success">' . $this->cls( 'Media' )->next_gen_image_title() . '</code>';
-
-$ucss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_UCSS );
-$ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 ?>
 
 <h3 class="litespeed-title-short">
@@ -111,57 +103,7 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 						<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_UCSS ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label="<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server_ucss ) ); ?>" data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class="litespeed-quic-icon"></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
 					<?php endif; ?>
 
-					<?php if ( ! empty( $ucss_queue ) ) : ?>
-						<div class="litespeed-callout notice notice-warning inline">
-							<h4>
-								<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'UCSS' ); ?> ( <?php echo esc_html( count( $ucss_queue ) ); ?> )
-								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_UCSS, UCSS::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
-							</h4>
-							<p>
-								<?php
-								$i = 0;
-								foreach ( $ucss_queue as $queue_key => $queue_val ) :
-									if ( $i++ > 20 ) :
-										echo '...';
-										break;
-									endif;
-									if ( ! is_array( $queue_val ) ) {
-										continue;
-									}
-									if ( ! empty( $queue_val['_status'] ) ) {
-										echo '<span class="litespeed-success">';
-									}
-									echo esc_html( $queue_val['url'] );
-									if ( ! empty( $queue_val['_status'] ) ) {
-										echo '</span>';
-									}
-									$pos = strpos( $queue_key, ' ' );
-									if ( $pos ) {
-										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
-									}
-									if ( $queue_val['is_mobile'] ) {
-										echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-									}
-									if ( ! empty( $queue_val['is_webp'] ) ) {
-										echo ' ' . wp_kses_post( $next_gen );
-									}
-									echo '<br />';
-								endforeach;
-								?>
-							</p>
-						</div>
-						<?php if ( $ucss_service_hot ) : ?>
-							<button class="button button-secondary" disabled>
-								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'UCSS' ); ?>
-								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ucss_service_hot ) ); ?>
-							</button>
-						<?php else : ?>
-							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_UCSS, UCSS::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
-								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'UCSS' ); ?>
-							</a>
-						<?php endif; ?>
-						<?php Doc::queue_issues(); ?>
-					<?php endif; ?>
+					<?php Queue_Box::render( 'ucss' ); ?>
 				</div>
 			</td>
 		</tr>
@@ -248,57 +190,7 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 						<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_CCSS ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label="<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>" data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class="litespeed-quic-icon"></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
 					<?php endif; ?>
 
-					<?php if ( ! empty( $ccss_queue ) ) : ?>
-						<div class="litespeed-callout notice notice-warning inline">
-							<h4>
-								<?php printf( esc_html__( 'URL list in %s queue waiting for cron', 'litespeed-cache' ), 'CCSS' ); ?> ( <?php echo esc_html( count( $ccss_queue ) ); ?> )
-								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
-							</h4>
-							<p>
-								<?php
-								$i = 0;
-								foreach ( $ccss_queue as $queue_key => $queue_val ) :
-									if ( $i++ > 20 ) :
-										echo '...';
-										break;
-									endif;
-									if ( ! is_array( $queue_val ) ) {
-										continue;
-									}
-									if ( ! empty( $queue_val['_status'] ) ) {
-										echo '<span class="litespeed-success">';
-									}
-									echo esc_html( $queue_val['url'] );
-									if ( ! empty( $queue_val['_status'] ) ) {
-										echo '</span>';
-									}
-									$pos = strpos( $queue_key, ' ' );
-									if ( $pos ) {
-										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
-									}
-									if ( $queue_val['is_mobile'] ) {
-										echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-									}
-									if ( ! empty( $queue_val['is_webp'] ) ) {
-										echo ' ' . wp_kses_post( $next_gen );
-									}
-									echo '<br />';
-								endforeach;
-								?>
-							</p>
-						</div>
-						<?php if ( $ccss_service_hot ) : ?>
-							<button class="button button-secondary" disabled>
-								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'CCSS' ); ?>
-								- <?php printf( esc_html__( 'Available after %d second(s)', 'litespeed-cache' ), esc_html( $ccss_service_hot ) ); ?>
-							</button>
-						<?php else : ?>
-							<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_CSS, CSS::TYPE_GEN ) ); ?>" class="button litespeed-btn-success">
-								<?php printf( esc_html__( 'Run %s Queue Manually', 'litespeed-cache' ), 'CCSS' ); ?>
-							</a>
-						<?php endif; ?>
-						<?php Doc::queue_issues(); ?>
-					<?php endif; ?>
+					<?php Queue_Box::render( 'ccss' ); ?>
 				</div>
 			</td>
 		</tr>

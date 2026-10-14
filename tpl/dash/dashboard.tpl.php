@@ -794,6 +794,48 @@ $can_page_load_time      = defined( 'LITESPEED_SERVER_TYPE' ) && 'NONE' !== LITE
 						<?php endif; ?>
 					</div>
 
+					<div class="postbox litespeed-postbox litespeed-postbox-double litespeed-postbox-queues">
+						<div class="inside">
+							<h3 class="litespeed-title">
+								<?php esc_html_e( 'QUIC.cloud Queues', 'litespeed-cache' ); ?>
+							</h3>
+							<table class="litespeed-table litespeed-table-compact litespeed-queues-overview">
+								<thead>
+									<tr>
+										<th><?php esc_html_e( 'Service', 'litespeed-cache' ); ?></th>
+										<th><?php esc_html_e( 'Waiting', 'litespeed-cache' ); ?></th>
+										<th><?php esc_html_e( 'Building', 'litespeed-cache' ); ?></th>
+										<th><?php esc_html_e( 'Failed', 'litespeed-cache' ); ?></th>
+										<th><?php esc_html_e( 'State', 'litespeed-cache' ); ?></th>
+									</tr>
+								</thead>
+								<tbody>
+									<?php foreach ( array_keys( Queue_Box::svcs() ) as $queue_svc ) : ?>
+										<?php $queue_info = Queue_Box::info( $queue_svc ); ?>
+										<tr>
+											<td><a href="<?php echo esc_url( $queue_info['link'] ); ?>"><?php echo esc_html( $queue_info['title'] ); ?></a></td>
+											<td><code><?php echo (int) $queue_info['counts']['waiting']; ?></code></td>
+											<td><code class="<?php echo $queue_info['counts']['sent'] ? 'litespeed-success' : ''; ?>"><?php echo (int) $queue_info['counts']['sent']; ?></code></td>
+											<td><code class="<?php echo $queue_info['counts']['failed'] ? 'litespeed-danger' : ''; ?>"><?php echo (int) $queue_info['counts']['failed']; ?></code></td>
+											<td class="litespeed-desc">
+												<?php if ( $queue_info['paused'] ) : ?>
+													<span class="litespeed-label-warning litespeed-label-dashboard"><?php esc_html_e( 'Paused', 'litespeed-cache' ); ?></span>
+												<?php endif; ?>
+												<?php if ( $queue_info['stuck'] ) : ?>
+													<span class="litespeed-label-danger litespeed-label-dashboard"><?php esc_html_e( 'Stuck', 'litespeed-cache' ); ?></span>
+												<?php endif; ?>
+												<?php echo esc_html( $queue_info['next_line'] ); ?>
+												<?php if ( $queue_info['err_recent'] ) : ?>
+													<br /><span class="litespeed-danger">⚠️ <?php echo esc_html( $queue_info['err_recent'] ); ?></span>
+												<?php endif; ?>
+											</td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					</div>
+
 					<div class="postbox litespeed-postbox litespeed-postbox-crawler">
 						<div class="inside">
 							<h3 class="litespeed-title">

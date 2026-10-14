@@ -16,8 +16,6 @@ $__admin_display     = Admin_Display::cls();
 $placeholder_summary = Placeholder::get_summary();
 $closest_server      = Cloud::get_summary( 'server.' . Cloud::SVC_LQIP );
 
-$lqip_queue = $this->load_queue( 'lqip' );
-
 $scaled_size = apply_filters( 'big_image_size_threshold', 2560, [], '', 0 ) . 'px';
 
 ?>
@@ -194,31 +192,7 @@ $scaled_size = apply_filters( 'big_image_size_threshold', 2560, [], '', 0 ) . 'p
 						<a class="litespeed-redetect" href="<?php echo esc_url( Utility::build_url( Router::ACTION_CLOUD, Cloud::TYPE_REDETECT_CLOUD, false, null, array( 'svc' => Cloud::SVC_LQIP ) ) ); ?>" data-balloon-pos="up" data-balloon-break aria-label='<?php printf( esc_html__( 'Current closest Cloud server is %s. Click to redetect.', 'litespeed-cache' ), esc_html( $closest_server ) ); ?>' data-litespeed-cfm="<?php esc_html_e( 'Are you sure you want to redetect the closest cloud server for this service?', 'litespeed-cache' ); ?>"><i class='litespeed-quic-icon'></i> <?php esc_html_e( 'Redetect', 'litespeed-cache' ); ?></a>
 					<?php endif; ?>
 
-					<?php if ( ! empty( $lqip_queue ) ) : ?>
-						<div class="litespeed-callout notice notice-warning inline">
-							<h4>
-								<?php esc_html_e( 'Size list in queue waiting for cron', 'litespeed-cache' ); ?> ( <?php echo esc_html( count( $lqip_queue ) ); ?> )
-								<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_PLACEHOLDER, Placeholder::TYPE_CLEAR_Q ) ); ?>" class="button litespeed-btn-warning litespeed-right"><?php esc_html_e( 'Clear', 'litespeed-cache' ); ?></a>
-							</h4>
-							<p>
-								<?php
-								$i = 0;
-								foreach ( $lqip_queue as $k => $v ) {
-									if ( $i++ > 20 ) {
-										echo '...';
-										break;
-									}
-									echo esc_html( $v );
-									echo '<br />';
-								}
-								?>
-							</p>
-						</div>
-						<a href="<?php echo esc_url( Utility::build_url( Router::ACTION_PLACEHOLDER, Placeholder::TYPE_GENERATE ) ); ?>" class="button litespeed-btn-success">
-							<?php esc_html_e( 'Run Queue Manually', 'litespeed-cache' ); ?>
-						</a>
-						<?php Doc::queue_issues(); ?>
-					<?php endif; ?>
+					<?php Queue_Box::render( 'lqip' ); ?>
 				</div>
 			</td>
 		</tr>
