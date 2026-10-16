@@ -94,6 +94,9 @@ class Conf extends Base {
 		add_action( 'litespeed_conf_append', [ $this, 'option_append' ], 10, 2 );
 		add_action( 'litespeed_conf_force', [ $this, 'force_option' ], 10, 2 );
 
+		// OptimaX turns on the settings it needs; before define_cache(), which reads Cache.
+		Optimax::force_required( $this );
+
 		$this->define_cache();
 	}
 
@@ -662,6 +665,11 @@ class Conf extends Base {
 				// Reset crawler bypassed list when any of the options WebP replace, guest mode, or cache mobile got changed
 				if ( self::O_IMG_OPTM_WEBP === $id || self::O_GUEST === $id || self::O_CACHE_MOBILE === $id ) {
 					$this->cls( 'Crawler' )->clear_disabled_list();
+				}
+
+				// OptimaX builds and their CSS link the old format's images.
+				if ( self::O_IMG_OPTM_WEBP === $id ) {
+					$this->cls( 'Optimax_Pages' )->all_designs_changed( 'next-gen image format changed' );
 				}
 			}
 

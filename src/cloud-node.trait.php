@@ -52,6 +52,24 @@ trait Cloud_Node {
 			return $this->_cloud_server;
 		}
 
+		// TODO: REMOVE THIS BLOCK !!!!!!!!!!!!!!!!!!!!!!!!!
+		// Development: pin the generator services to a local QCOS node, set as
+		// LITESPEED_QC_NODE in wp-config.php. Short-circuits the cached node and
+		// its re-detection, which would otherwise undo the pin on the first node
+		// error.
+		//
+		// Only the services QCOS implements. A local node serves ccss, ucss, vpi
+		// and optimax and nothing else, so pinning everything sends LQIP and
+		// image optimization to an address with no such route — which answers
+		// with an HTML 404 and surfaces as "failed to decode response json".
+		if ( defined( 'LITESPEED_QC_NODE' ) && constant( 'LITESPEED_QC_NODE' ) ) {
+			$local_svc_set = [ self::SVC_CCSS, self::SVC_UCSS, self::SVC_VPI, self::SVC_OPTIMAX ];
+			if ( in_array( $service, $local_svc_set, true ) ) {
+				return constant( 'LITESPEED_QC_NODE' );
+			}
+		}
+		// TODO: REMOVE THIS BLOCK !!!!!!!!!!!!!!!!!!!!!!!!!
+
 		if ( in_array( $service, self::$wp_svc_set, true ) ) {
 			return $this->_cloud_server_wp;
 		}

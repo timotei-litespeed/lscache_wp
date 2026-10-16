@@ -33,16 +33,47 @@ class Doc {
 		if ( ! apply_filters( 'litespeed_conf', Base::O_GUEST_OPTM ) ) {
 			return;
 		}
+		self::on_by( Base::O_GUEST_OPTM );
+	}
+
+	/**
+	 * Show that a setting is ON because OptimaX needs it.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $id Option id.
+	 * @return void
+	 */
+	public static function maybe_on_by_ox( $id ) {
+		if ( ! Optimax::forces( $id ) ) {
+			return;
+		}
+		self::on_by( Base::O_OPTIMAX );
+	}
+
+	/**
+	 * The "This setting is ON due to …" note, for the feature that turns the setting on.
+	 *
+	 * Guest Optimization turns settings on for qualifying requests only, OptimaX for
+	 * every request while it is on. Only Guest Optimization has a Learn More page yet.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $feature Base::O_GUEST_OPTM (default) or Base::O_OPTIMAX.
+	 * @return void
+	 */
+	public static function on_by( $feature = Base::O_GUEST_OPTM ) {
+		$text = Base::O_OPTIMAX === $feature
+			/* translators: 1: ON, 2: feature name */
+			? __( 'This setting is %1$s because %2$s needs it!', 'litespeed-cache' )
+			/* translators: 1: ON, 2: feature name */
+			: __( 'This setting is %1$s for certain qualifying requests due to %2$s!', 'litespeed-cache' );
+
 		echo '<font class="litespeed-warning">';
-		echo wp_kses_post(
-			'⚠️ ' .
-			sprintf(
-				__( 'This setting is %1$s for certain qualifying requests due to %2$s!', 'litespeed-cache' ),
-				'<code>' . esc_html__( 'ON', 'litespeed-cache' ) . '</code>',
-				esc_html( Lang::title( Base::O_GUEST_OPTM ) )
-			)
-		);
-		self::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/general/#guest-optimization' );
+		echo wp_kses_post( '⚠️ ' . sprintf( $text, '<code>' . esc_html__( 'ON', 'litespeed-cache' ) . '</code>', esc_html( Lang::title( $feature ) ) ) );
+		if ( Base::O_GUEST_OPTM === $feature ) {
+			self::learn_more( 'https://docs.litespeedtech.com/lscache/lscwp/general/#guest-optimization' );
+		}
 		echo '</font>';
 	}
 

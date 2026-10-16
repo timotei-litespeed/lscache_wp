@@ -499,7 +499,7 @@ class Core extends Root {
 		 */
 		if ( ! defined( 'LITESPEED_NO_OPTM' ) || ! LITESPEED_NO_OPTM ) {
 			// Optimax: first priority check — skip all hooks if ox HTML is cached. Checked here: building Optimax reads its summary option.
-			$ox_html = $this->conf( Base::O_OPTIMAX ) ? $this->cls( 'Optimax' )->serve() : false;
+			$ox_html = $this->conf( Base::O_OPTIMAX ) ? $this->cls( 'Optimax' )->serve( $buffer ) : false;
 			if ( false !== $ox_html ) {
 				Debug2::debug( '[Core] Optimax served, skip litespeed_buffer_finalize' );
 				define( 'LITESPEED_OX_SERVED', true );
@@ -660,7 +660,10 @@ class Core extends Root {
 
 		// Avoid PHP warning for headers sent out already
 		if ( headers_sent() ) {
-			self::debug( '❌ !!! Err: Header sent out already' );
+			// wp-cron.php finishes the response before running jobs on purpose; nothing to send there.
+			if ( ! wp_doing_cron() ) {
+				self::debug( '❌ !!! Err: Header sent out already' );
+			}
 			return;
 		}
 
