@@ -105,6 +105,23 @@ abstract class Root {
 	}
 
 	/**
+	 * Whether a cache folder gets a Purge action
+	 *
+	 * OptimaX saves the UCSS, CCSS and VPI of the pages it builds, so their purges are hidden while it is on.
+	 *
+	 * @since 8.0
+	 * @param string $type Cache folder.
+	 * @return bool
+	 */
+	public function has_purgeable_folder( $type ) {
+		if (in_array($type, array( 'ucss', 'ccss', 'vpi' ), true) && $this->conf(Base::O_OPTIMAX)) {
+			return false;
+		}
+
+		return $this->has_cache_folder($type);
+	}
+
+	/**
 	 * Maybe make the cache folder if not existed
 	 *
 	 * @since 4.4.2
@@ -157,6 +174,31 @@ abstract class Root {
 		}
 
 		return $filepath_prefix;
+	}
+
+	/**
+	 * Whether the current request may queue its own URL for a QUIC.cloud service.
+	 *
+	 * A cron run is not a page view. `wp-cron.php` renders no page, and with
+	 * ALTERNATE_WP_CRON the visitor is redirected to `?doing_wp_cron=...`, a URL
+	 * nobody browses. Queueing either one spends a generation on a URL that is
+	 * never served, so every service skips it.
+	 *
+	 * Only enqueues of the current request's URL use this. Re-queueing rows that
+	 * already exist (e.g. `UCSS::add_to_q()` after a purge) is legitimate during
+	 * cron and must not be blocked.
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	public function queueable_request() {
+		if (wp_doing_cron()) {
+			self::debug('Queue bypassed: doing cron');
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
