@@ -287,7 +287,14 @@ trait Cloud_Misc {
 				}
 			}
 
-			return $allowance;
+			if ( $allowance ) {
+				return $allowance;
+			}
+
+			// The daily limit only caps free quota; Pay As You Go credit can still be spent today.
+			if ( empty( $usage['pag_bal'] ) ) {
+				return 0;
+			}
 		}
 
 		// Check Pay As You Go balance
