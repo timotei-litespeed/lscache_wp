@@ -310,7 +310,7 @@ class Media extends Root {
 		// <link rel="preload" as="image" href="xx">
 		if ( $this->_vpi_preload_list ) {
 			foreach ( $this->_vpi_preload_list as $v ) {
-				$content .= '<link rel="preload" fetchpriority="high" as="image" href="' . esc_url( Str::trim_quotes( $v ) ) . '">';
+				$content .= '<link rel="preload" fetchpriority="high" as="image" ' . $v . '>';
 			}
 		}
 		return $content;
@@ -991,6 +991,14 @@ class Media extends Root {
 			$match = [ $source_match[0][0], $source_match['attrs'][0] ];
 			$attrs = Utility::parse_attr($match[1]);
 
+			// Lazy-load markup keeps the real sources in data-*: preload those, but rebuild the tag from the original attributes.
+			$img_attrs = $attrs;
+			foreach ( [ 'src', 'srcset', 'sizes' ] as $k ) {
+				if ( ! empty( $attrs[ 'data-' . $k ] ) && ( empty( $attrs[ $k ] ) || 0 === strpos( $attrs[ $k ], 'data:' ) ) ) {
+					$attrs[ $k ] = $attrs[ 'data-' . $k ];
+				}
+			}
+
 			if ( empty( $attrs['src'] ) ) {
 				continue;
 			}
@@ -1012,10 +1020,19 @@ class Media extends Root {
 
 			self::debug2( 'VPI preload found and matched: ' . $attrs['src'] );
 
-			$this->_vpi_preload_list[] = $attrs['src'];
+			// Pass srcset/sizes so the browser preloads the same candidate the <img> uses.
+			$preload = 'href="' . esc_url( Str::trim_quotes( $attrs['src'] ) ) . '"';
+			if ( ! empty( $attrs['srcset'] ) ) {
+				$preload .= ' imagesrcset="' . esc_attr( $attrs['srcset'] ) . '"';
+				if ( ! empty( $attrs['sizes'] ) ) {
+					$preload .= ' imagesizes="' . esc_attr( $attrs['sizes'] ) . '"';
+				}
+			}
+			$this->_vpi_preload_list[ $preload ] = $preload;
 
 			// Add attributes fetchpriority="high" and decode="sync"
 			// after WP 6.3.0 use: wp_img_tag_add_loading_optimization_attrs().
+			$attrs                    = $img_attrs;
 			$new_html                 = [];
 			$attrs[ 'fetchpriority' ] = 'high';
 			$attrs[ 'decoding' ]      = 'sync';
