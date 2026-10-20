@@ -589,9 +589,15 @@ class Control extends Root {
 	 *
 	 * @param string $location Redirect location.
 	 * @param int    $status   HTTP status.
-	 * @return string          Redirect location.
+	 * @return string|false    Redirect location, or false to cancel it in an ESI request.
 	 */
 	public function check_redirect( $location, $status ) {
+		// A redirect is never valid ESI content: LiteSpeed would cache it as the fragment, so cancel it.
+		if ( defined( 'LSCACHE_IS_ESI' ) ) {
+			self::set_nocache( 'redirect inside ESI request' );
+			return false;
+		}
+
 		$script_uri = '';
 		if ( !empty( $_SERVER['SCRIPT_URI'] ) ) {
 			$script_uri = wp_unslash( $_SERVER['SCRIPT_URI'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- URL comparison must preserve encoding.

@@ -275,6 +275,10 @@ class ESI extends Root {
 		 */
 		!defined('LSCACHE_IS_ESI') && define('LSCACHE_IS_ESI', $_GET[self::QS_ACTION]); // Reused this to ESI block ID
 
+		// Tag now, so any response of this ESI request stays purgeable even if the block never loads.
+		Tag::add(rtrim(Tag::TYPE_ESI, '.'));
+		Tag::add(Tag::TYPE_ESI . LSCACHE_IS_ESI);
+
 		!empty($_SERVER['ESI_REFERER']) && defined('LSCWP_LOG') && self::debug('[ESI] ESI_REFERER: ' . $_SERVER['ESI_REFERER']);
 
 		/**
@@ -688,9 +692,6 @@ class ESI extends Root {
 		if (!empty($params['is_json'])) {
 			add_filter('litespeed_is_json', '__return_true');
 		}
-
-		Tag::add(rtrim(Tag::TYPE_ESI, '.'));
-		Tag::add(Tag::TYPE_ESI . LSCACHE_IS_ESI);
 
 		// self::debug(var_export($params, true ));
 
