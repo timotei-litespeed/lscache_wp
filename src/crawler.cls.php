@@ -776,6 +776,7 @@ class Crawler extends Root {
 			return false;
 		}
 		$this->_summary['test_port_tts'] = time();
+		$this->_summary['test_port']     = 0;
 		self::save_summary();
 
 		$options = $this->_get_curl_options();
@@ -805,6 +806,12 @@ class Crawler extends Root {
 				self::debug( '❌ Test port curl error: [errNo] ' . curl_errno( $ch ) . ' [err] ' . curl_error( $ch ) );
 			} elseif ( $result !== $home ) {
 				self::debug( '❌ Test port response is wrong: ' . $result );
+			}
+
+			// Only fall back to plain HTTP when nothing listens on 443: pages crawled on port 80 are cached apart from https visitors.
+			if ( 'https' === $parsed_url['scheme'] && CURLE_COULDNT_CONNECT !== curl_errno( $ch ) ) {
+				self::debug( '❌ Test local 443 port failed, port 80 fallback skipped' );
+				return false;
 			}
 			self::debug( '❌ Test local 443 port failed, try port 80' );
 
