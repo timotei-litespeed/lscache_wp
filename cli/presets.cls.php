@@ -57,7 +57,9 @@ class Presets {
 			return;
 		}
 
-		return $this->preset->apply( $preset );
+		if ( ! $this->preset->apply( $preset ) ) {
+			WP_CLI::error( 'Failed to apply the preset. Check the preset name and backup directory permissions.' );
+		}
 	}
 
 	/**

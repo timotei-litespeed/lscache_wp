@@ -3,8 +3,8 @@ Contributors: LiteSpeedTech
 Tags: caching, optimize, performance, pagespeed, seo, image optimize, object cache, redis, memcached, database cleaner
 Requires at least: 6.0
 Requires PHP: 7.4
-Tested up to: 7.0
-Stable tag: 7.9
+Tested up to: 7.1
+Stable tag: 7.9.2
 License: GPLv3
 License URI: http://www.gnu.org/licenses/gpl.html
 
@@ -253,12 +253,63 @@ The vast majority of plugins and themes are compatible with LiteSpeed Cache. The
 
 = How can I report security bugs? =
 
-You can report security bugs through the Patchstack Vulnerability Disclosure Program. The Patchstack team help validate, triage and handle any security vulnerabilities. [Report a security vulnerability.](https://patchstack.com/database/vdp/litespeed-cache)
+Report a suspected vulnerability through either channel:
+
+* The [Patchstack Vulnerability Disclosure Program](https://patchstack.com/database/vdp/litespeed-cache), where the Patchstack team help validate and triage the report.
+* Email `support@litespeedtech.com`, or open a private ticket from the LiteSpeed Client Area.
+
+Please don't report a suspected vulnerability in this support forum. Reporting details are in `security.md` in the plugin folder.
 
 == Changelog ==
 
 = 8.0 - Coming soon 2026 =
 * 🌱**OptiMax** OptiMax to maximize the page score.
+
+= 7.9.2 - Oct 20 2026 =
+* **Image Optimize** Fixed thumbnails skipped for images in the uploads root. (AsFLY-902 PR#1059)
+* **Cloud** Retry credit sync after one hour when credit is exhausted.
+* **Cache** URI rules like `Do Not Cache URIs` now ignore a leading or trailing `*`, so `/wp-json/mcp/*` matches the same as `/wp-json/mcp/`. (#1040)
+* **Page Optimize** Protected HTML boundaries during resource rewriting, insertion and minification. Hardened delayed-script globals, preserved pages on parsing errors, and corrected Deferred ordering. Removed JS Delayed Includes and its public filter; global Delayed mode remains available. Improved Instant Click CDN compatibility.
+* **Media** Corrected next-gen image variants, lazy-load priorities and VPI markup, and protected quoted content, raw text and noscript fallbacks. Validated LQIP and avatar paths, and made remote dimension checks opt-in.
+* **Cache** Hardened visitor isolation, vary cookies, Guest Mode and cache-control permissions, including Force Public safeguards for private and authenticated responses. Corrected ignored query strings, exclusions and purge scheduling, and restricted shared-cache management to network administrators. (Ionut Platon #419630)
+* **Image Optimize** Corrected callback accounting, duplicate detection, scan cursors and metadata handling. Preserved offload hooks and reported failed clean/reset writes.
+* **Conf** Protected site identity and shared multisite settings, moved runtime configuration to a PHP-protected file, and improved import validation and .htaccess updates. Synchronized shared Guest settings and preserved runtime overrides during upgrades. Shared multisite settings now require network activation.
+* **Presets** Prevented path traversal, isolated backups by site in protected PHP files, excluded secrets from new backups, and added a legacy-backup cleanup reminder.
+* **Object Cache** Corrected Add/Replace conditions, forced reads, Redis/Memcached connections, timeouts, TTLs and flush results. Improved drop-in cleanup and disabled status, preserved runtime fallback, and removed the unused lifetime field. Isolated cache keys per installation.
+* **ESI** Hardened request signatures and cleanup markers, made WooCommerce nonce fragments private by default, and preserved shortcode attributes. Clarified private-content requirements.
+* **Cloud** Restricted service nodes to trusted QUIC.cloud origins and preserved replay protection. Corrected nonce parsing, site throttling and dashboard data, escaped free-text notices, and restricted news/dashboard markup.
+* **CDN** Prevented HTML injection during inline CSS URL rewriting, validated mapping URLs, and preserved Cloudflare zones after failed lookups. (nathaningram)
+* **Crawler** Restricted sitemap origins and role simulation, hardened hash checks, and corrected mobile/Guest variants and request isolation. Preserved successful child sitemaps and the previous map on total failure. (#866256)
+* **CLI** Corrected local and multisite URL purges, required HTTPS imports, validated blog IDs, preserved nested option values, and limited sync output to usage data.
+* **Database Optimize** Scoped table operations to the site's table prefix and safely quoted identifiers. Preserved recent auto drafts, bounded cleanup, invalidated caches, added confirmations, and reported cleanup and conversion failures. Restricted multisite management to network administrators.
+* **Debug** Restricted beta packages to trusted sources, protected logs, and redacted credentials from logs, reports and page comments while preserving useful diagnostics. Removed the default trusted loopback IP.
+* **Task** Isolated asynchronous tokens by job type, used constant-time validation, and excluded tokens from logs.
+* **Purge** Corrected unpublished-post and empty-archive purges, preserved encoded paths, and prevented site cron from flushing shared backends.
+* **3rd** Corrected WooCommerce and NextGEN purges, protected unvaried cart responses, and validated bulk-edit and WCML settings permissions.
+* **3rd** WCML: guests in the shop currency now use the default cache, and the crawler warms it. (#1057)
+* **Core** Hardened file writes, admin output and static asset headers, replaced React and Babel with plain jQuery/JavaScript forms, and improved installation, upgrade and uninstall handling.
+* **Localization** Validated resource patterns while preserving comments, limited remote JavaScript downloads to 10 seconds, cleaned failed downloads, and restored HTTPS fallback redirects.
+
+= 7.9.1 - Sep 1 2026 =
+* **Core** Aligned the runtime PHP and WordPress guards with the published minimum requirements.
+* **ESI** Prevented Guest Mode pages from creating ESI subrequests when an integration registered its ESI hooks before Guest Mode detection.
+* **ESI** Bound ESI execution to the signed query payload so POST parameters cannot replace validated block data.
+* **Image Optimize** Fixed a fatal error when the WordPress HTTP fallback could not download an image.
+* **Image Optimize** The image optimization callback is now verified by a QUIC.cloud signature instead of the source IP address, and every notified download location is validated before use.
+* **Image Optimize** Successful callback retries now ignore rows already returned to the raw queue without blocking other live rows in the same batch.
+* **Image Optimize** An image whose queued file can no longer be verified against its attachment is now dropped instead of being sent back for optimization, so it can no longer request optimization again on every cron run.
+* **Image Optimize** Bounded and expired pending image-completion notifications without keeping the image pull cron running indefinitely.
+* **Image Optimize** Optimized image downloads now use the WordPress safe HTTP API, refuse redirects, and validate each response before publication.
+* **Image Optimize** Image pull notices now distinguish download, remote-service, and local-save failures.
+* **Cache** Do Not Cache, Private Cached, Force Cache, Optimization and Lazy Load URI rules now compare the same query string against both spellings of a REST route, so a rule naming a query argument, or anchored to an exact address, applies to plain-permalink sites the same way it does elsewhere.
+* **Optimization** Remote images, avatars, localized JavaScript, CSS/JS cache files, and Guest Mode lists now share bounded streamed downloads and atomic file publication.
+* **VPI** Fixed queue-key collisions on plain-permalink sites and enforced the configured queue limit.
+* **Cloud** Every QUIC.cloud callback — CDN status, error domains, IP validation and ping — is now verified by a QUIC.cloud signature rather than by the source IP address, and the source IP allow list has been removed. Activation, echo, account-link and CDN-enable signatures are now bound to their purpose and site.
+* **Cloud** Added stable callback error codes so QUIC.cloud can distinguish retryable timestamp, storage and replay-cache-capacity failures from terminal authorization failures.
+* **REST** Removed the legacy `check_img` diagnostic endpoint.
+* **API** Removed the `litespeed_is_from_cloud` filter. Each callback is now authorized by its own signature instead of by a request-wide flag.
+* **API** Added the `litespeed_static_dir_htaccess` filter so hosts can remove unsupported directives from the generated static-directory protection file. (vvvllll #1043)
+* **Avatar** Prevented failed on-demand avatar downloads from redirecting visitors to the WordPress admin area.
 
 = 7.9 - Aug 5 2026 =
 * **Cloud** Changed Health service to run asynchronously, resuming through WP cron when the cloud defers the request.

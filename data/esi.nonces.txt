@@ -77,7 +77,8 @@ af_form_nonce
 af_submission_*
 
 # Woo nonce
-woocommerce-login
+woocommerce-* private
+woocommerce_* private
 
 # Premium Addons for Elementor
 pa-blog-widget-nonce
@@ -99,5 +100,5 @@ wpda-*
 elementor-pro-frontend
 elementor-conversion-center-click
 
-# Gavity Forms
-gfrom_*
+# Gravity Forms
+gform_*

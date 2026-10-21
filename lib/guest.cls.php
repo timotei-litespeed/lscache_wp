@@ -17,7 +17,9 @@ namespace LiteSpeed\Lib;
  */
 class Guest {
 
-	const CONF_FILE            = '.litespeed_conf.dat';
+	const CONF_FILE            = '.litespeed_conf.php';
+	const CONF_FILE_LEGACY     = '.litespeed_conf.dat';
+	const CONF_FILE_GUARD      = "<?php exit; // LiteSpeed Cache runtime configuration. Do not edit. ?>\n";
 	const HASH                 = 'hash'; // Not set-able
 	const O_CACHE_LOGIN_COOKIE = 'cache-login_cookie';
 	const O_DEBUG              = 'debug';
@@ -62,15 +64,36 @@ class Guest {
 	 */
 	public function __construct() {
 		! defined( 'LSCWP_CONTENT_FOLDER' ) && define( 'LSCWP_CONTENT_FOLDER', dirname( __DIR__, 3 ) );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- No WP available
-		$this->_conf = file_get_contents( LSCWP_CONTENT_FOLDER . '/' . self::CONF_FILE );
-		if ( $this->_conf ) {
-			$this->_conf = json_decode( $this->_conf, true );
-		}
+		$this->_conf = $this->read_conf( LSCWP_CONTENT_FOLDER );
 
 		if ( ! empty( $this->_conf[ self::O_CACHE_LOGIN_COOKIE ] ) ) {
 			self::$_vary_name = $this->_conf[ self::O_CACHE_LOGIN_COOKIE ];
 		}
+	}
+
+	/**
+	 * Read the runtime configuration without WordPress: the guarded file first, the legacy plaintext file as fallback.
+	 *
+	 * @since 7.9.2
+	 * @param string $dir Directory holding the files.
+	 * @return array|false
+	 */
+	private function read_conf( $dir ) {
+		$file = $dir . '/' . self::CONF_FILE;
+		if ( is_file( $file ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- No WP available
+			$raw = file_get_contents( $file );
+			if ( is_string( $raw ) && 0 === strncmp( $raw, self::CONF_FILE_GUARD, strlen( self::CONF_FILE_GUARD ) ) ) {
+				$data = json_decode( substr( $raw, strlen( self::CONF_FILE_GUARD ) ), true );
+				if ( is_array( $data ) ) {
+					return $data;
+				}
+			}
+		}
+		$file = $dir . '/' . self::CONF_FILE_LEGACY;
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- No WP available
+		$data = is_file( $file ) ? json_decode( file_get_contents( $file ), true ) : false;
+		return is_array( $data ) ? $data : false;
 	}
 
 	/**
@@ -87,6 +110,14 @@ class Guest {
 		header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
 		header( 'Pragma: no-cache' );
 
+		// This endpoint does not bootstrap WordPress; a login-cookie hint must never receive anonymous vary.
+		foreach ( array_keys( $_COOKIE ) as $cookie_name ) {
+			if ( 0 === strpos( $cookie_name, 'wordpress_logged_in_' ) || ( ! empty( $this->_conf['logged_in_cookie'] ) && $cookie_name === $this->_conf['logged_in_cookie'] ) ) {
+				echo '[]';
+				exit;
+			}
+		}
+
 		if ( $this->always_guest() ) {
 			echo '[]';
 			exit;
@@ -98,15 +129,17 @@ class Guest {
 			exit;
 		}
 
-		// Send vary cookie
-		$vary = 'guest_mode:1';
-		if ( $this->_conf && empty( $this->_conf[ self::O_DEBUG ] ) ) {
-			$vary = md5( $this->_conf[ self::HASH ] . $vary );
+		// Send vary cookie, always hashed; without a site hash no cookie can be issued.
+		if ( ! is_array( $this->_conf ) || empty( $this->_conf[ self::HASH ] ) ) {
+			echo '[]';
+			exit;
 		}
+		$vary = md5( $this->_conf[ self::HASH ] . 'guest_mode:1' );
 
 		$expire = time() + 2 * 86400;
 		$is_ssl = ! empty( $this->_conf[ self::O_UTIL_NO_HTTPS_VARY ] ) ? false : $this->is_ssl();
-		setcookie( self::$_vary_name, $vary, $expire, '/', false, $is_ssl, true );
+		$scope  = isset( $this->_conf['guest_cookie'] ) ? $this->_conf['guest_cookie'] : [ 'path' => '/', 'domain' => '' ];
+		setcookie( self::$_vary_name, $vary, $expire, $scope['path'], $scope['domain'], $is_ssl, true );
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- No WP available
 		echo json_encode( [ 'reload' => 'yes' ] );

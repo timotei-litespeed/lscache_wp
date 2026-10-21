@@ -20,13 +20,6 @@ class UCSS extends Cloud_Queue_Svc {
 	const LOG_TAG = '[UCSS]';
 
 	/**
-	 * Summary data.
-	 *
-	 * @var array
-	 */
-	protected $_summary;
-
-	/**
 	 * UCSS whitelist selectors.
 	 *
 	 * @var array
@@ -96,7 +89,7 @@ class UCSS extends Cloud_Queue_Svc {
 	/**
 	 * Persist the generated UCSS to disk. Empty payload is treated as a
 	 * generation error (matches pre-refactor UCSS behavior at
-	 * commit b88b7e53): drop the queue item rather than persist a blank.
+	 * commit b88b7e53): drop the unusable queue item rather than persist a blank.
 	 *
 	 * @param string $data    UCSS content.
 	 * @param string $queue_k Queue key.
@@ -107,8 +100,7 @@ class UCSS extends Cloud_Queue_Svc {
 		if ( empty( $data ) ) {
 			return false;
 		}
-		$this->_save_css_con( 'ucss', $data, $v['url_tag'], $v['vary'], $queue_k, ! empty( $v['is_mobile'] ), ! empty( $v['is_webp'] ) );
-		return true;
+		return $this->_save_css_con( 'ucss', $data, $v['url_tag'], $v['vary'], $queue_k, ! empty( $v['is_mobile'] ), ! empty( $v['is_webp'] ) );
 	}
 
 	/**

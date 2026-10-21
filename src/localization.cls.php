@@ -83,26 +83,16 @@ class Localization extends Base {
 
 		header( 'Content-Type: application/javascript' );
 
-		// Generate
-		$this->_maybe_mk_cache_folder( 'localres' );
-
 		$file = $this->_realpath( $url );
 
 		self::debug( 'localize [url] ' . $url );
-		$response = wp_safe_remote_get( $url, [
-			'timeout'  => 180,
-			'stream'   => true,
-			'filename' => $file,
-		] );
-
-		// Parse response data
-		if ( is_wp_error( $response ) ) {
-			$error_message = $response->get_error_message();
-			if ( file_exists( $file ) ) {
-				wp_delete_file( $file );
+		$temp = File::download( $url, $file, 10 );
+		if ( is_wp_error( $temp ) || ! File::publish_temp_file( $temp, $file ) ) {
+			if ( ! is_wp_error( $temp ) ) {
+				wp_delete_file( $temp );
 			}
-			self::debug( 'failed to get: ' . $error_message );
-			wp_safe_redirect( $url );
+			self::debug( 'failed to localize: ' . ( is_wp_error( $temp ) ? $temp->get_error_code() : File::E_FILE ) );
+			wp_redirect( $url ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Exact HTTPS URL matched against the configured allowlist above.
 			exit();
 		}
 
@@ -200,6 +190,10 @@ class Localization extends Base {
 				continue;
 			}
 
+			// Existing saved needles must not consume markup delimiters during replacement.
+			if ( preg_match( '/[\s\x00-\x1f\x7f"\'<>\\\\`]/', $domain ) ) {
+				continue;
+			}
 			$content = str_replace( $domain, LITESPEED_STATIC_URL . '/localres/' . base64_encode( $domain ), $content ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
 		}
 

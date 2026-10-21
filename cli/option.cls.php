@@ -73,7 +73,7 @@ class Option extends Base {
 
 		// Contains child set
 		if ( false !== strpos( $key, '[' ) ) {
-			parse_str( $key . '=' . $val, $key2 );
+			parse_str( $key . '=' . rawurlencode( $val ), $key2 );
 			$raw_data = array_merge( $raw_data, $key2 );
 		} else {
 			$raw_data[ $key ] = $val;
@@ -387,6 +387,11 @@ class Option extends Base {
 	 */
 	public function import_remote( $args ) {
 		$file = $args[0];
+		// download_url() fetches through wp_safe_remote_get(), which validates the URL.
+		if ( 'https' !== strtolower( (string) wp_parse_url( $file, PHP_URL_SCHEME ) ) ) {
+			WP_CLI::error( 'Remote option imports require a valid HTTPS URL.' );
+			return;
+		}
 
 		$tmp_file = download_url( $file );
 
@@ -395,7 +400,11 @@ class Option extends Base {
 			return;
 		}
 
-		$res = $this->cls( 'Import' )->import( $tmp_file );
+		try {
+			$res = $this->cls( 'Import' )->import( $tmp_file );
+		} finally {
+			wp_delete_file( $tmp_file );
+		}
 
 		if ( ! $res ) {
 			WP_CLI::error( 'Failed to parse serialized data from file.' );

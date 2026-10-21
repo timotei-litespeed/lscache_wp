@@ -23,6 +23,13 @@ class Task extends Root {
 	const LOG_TAG = '⏰';
 
 	/**
+	 * Async job types accepted by async_call() and async_litespeed_handler().
+	 *
+	 * @var string[]
+	 */
+	const ASYNC_TYPES = [ 'crawler', 'crawler_force', 'imgoptm', 'imgoptm_force' ];
+
+	/**
 	 * Map of option id => cron hook registration.
 	 *
 	 * @var array<string,array{name:string,hook:callable|string}>
@@ -192,20 +199,25 @@ class Task extends Root {
 	 * @return void
 	 */
 	public static function async_litespeed_handler() {
-		$hash_data = self::get_option( 'async_call-hash', [] );
+		$type = Router::verify_type();
+		if ( ! in_array( $type, self::ASYNC_TYPES, true ) ) {
+			return;
+		}
+
+		$key       = 'async_call-hash.' . $type;
+		$hash_data = self::get_option( $key, [] );
 		if ( ! $hash_data || ! is_array( $hash_data ) || empty( $hash_data['hash'] ) || empty( $hash_data['ts'] ) ) {
-			self::debug( 'async_litespeed_handler no hash data', $hash_data );
+			self::debug( 'async_litespeed_handler no hash data' );
 			return;
 		}
 
 		$nonce = isset( $_GET['nonce'] ) ? sanitize_text_field( wp_unslash( $_GET['nonce'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		if ( 120 < time() - (int) $hash_data['ts'] || '' === $nonce || $nonce !== $hash_data['hash'] ) {
+		if ( 120 < time() - (int) $hash_data['ts'] || '' === $nonce || ! is_string( $hash_data['hash'] ) || ! hash_equals( $hash_data['hash'], $nonce ) ) {
 			self::debug( 'async_litespeed_handler nonce mismatch' );
 			return;
 		}
-		self::delete_option( 'async_call-hash' );
+		self::delete_option( $key );
 
-		$type = Router::verify_type();
 		self::debug( 'type=' . $type );
 
 		// Don't lock up other requests while processing.
@@ -238,9 +250,13 @@ class Task extends Root {
 	 * @return void
 	 */
 	public static function async_call( $type ) {
+		if ( ! in_array( $type, self::ASYNC_TYPES, true ) ) {
+			return;
+		}
+
 		$hash = Str::rrand( 32 );
 		self::update_option(
-			'async_call-hash',
+			'async_call-hash.' . $type,
 			[
 				'hash' => $hash,
 				'ts'   => time(),
@@ -261,7 +277,7 @@ class Task extends Root {
 		];
 
 		$url = add_query_arg( $qs, admin_url( 'admin-ajax.php' ) );
-		self::debug( 'async call to ' . $url );
+		self::debug( 'async call dispatched [type] ' . $type );
 		wp_safe_remote_post( esc_url_raw( $url ), $args );
 	}
 

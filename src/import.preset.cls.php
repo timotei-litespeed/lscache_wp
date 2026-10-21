@@ -11,18 +11,36 @@ defined('WPINC') || exit();
 
 class Preset extends Import {
 
-	protected $_summary;
-
 	const MAX_BACKUPS = 10;
 
 	const TYPE_APPLY   = 'apply';
 	const TYPE_RESTORE = 'restore';
 
 	const STANDARD_DIR = LSCWP_DIR . 'data/preset';
-	const BACKUP_DIR   = LITESPEED_STATIC_DIR . '/auto-backup';
+	const BACKUP_DIR   = LSCWP_CONTENT_DIR . '/litespeed-preset-backups';
+	const BACKUP_GUARD = "<?php exit; ?>\n";
+	const BACKUP_EXTENSION = '.php';
+	const LEGACY_DIR = LITESPEED_STATIC_DIR . '/auto-backup';
 
 	/**
-	 * Returns sorted backup names
+	 * Preset and backup names become file names, so only this shape is accepted.
+	 *
+	 * @since 7.9.2
+	 */
+	const PATTERN_NAME = '/^[A-Za-z0-9][A-Za-z0-9_-]*\z/';
+	const PATTERN_BACKUP_NAME = '/^backup-([0-9]+)-before-([A-Za-z0-9_-]+)\z/';
+
+	/**
+	 * Validate a preset or backup name; false when it cannot be used as a file name.
+	 *
+	 * @since 7.9.2
+	 */
+	public static function sanitize_name( $name ) {
+		return is_string($name) && preg_match(self::PATTERN_NAME, $name) ? $name : false;
+	}
+
+	/**
+	 * Returns sorted backup names, excluding entries that cannot be restored or pruned.
 	 *
 	 * @since  5.3.0
 	 * @access public
@@ -31,12 +49,18 @@ class Preset extends Import {
 		self::init_filesystem();
 		global $wp_filesystem;
 
-		$backups = array_map(
-			function ( $path ) {
-				return self::basename($path['name']);
-			},
-			$wp_filesystem->dirlist(self::BACKUP_DIR) ?: array()
-		);
+		$backups = [];
+		$files = $wp_filesystem->dirlist(self::backup_dir());
+		foreach ($files ? $files : [] as $file) {
+			// Unrelated files and directories must not consume backup retention slots.
+			if ('f' !== $file['type'] || self::BACKUP_EXTENSION !== substr($file['name'], -4)) {
+				continue;
+			}
+			$name = self::basename($file['name']);
+			if ( preg_match( self::PATTERN_BACKUP_NAME, $name ) ) {
+				$backups[] = $name;
+			}
+		}
 		rsort($backups);
 
 		return $backups;
@@ -66,7 +90,19 @@ class Preset extends Import {
 	 * @access public
 	 */
 	public static function basename( $path ) {
-		return basename($path, '.data');
+		return basename(basename($path, '.data'), self::BACKUP_EXTENSION);
+	}
+
+	/**
+	 * Backups belong to the current blog, even when the plugin is network active.
+	 *
+	 * @since 7.9.2
+	 * @return string
+	 */
+	public static function backup_dir() {
+		$network_id = is_multisite() ? max( 1, (int) get_current_network_id() ) : 1;
+		$blog_id    = max( 1, (int) get_current_blog_id() );
+		return self::BACKUP_DIR . '/network-' . $network_id . '/blog-' . $blog_id;
 	}
 
 	/**
@@ -76,7 +112,8 @@ class Preset extends Import {
 	 * @access public
 	 */
 	public static function get_standard( $name ) {
-		return path_join(self::STANDARD_DIR, $name . '.data');
+		$name = self::sanitize_name($name);
+		return $name ? path_join(self::STANDARD_DIR, $name . '.data') : false;
 	}
 
 	/**
@@ -86,7 +123,8 @@ class Preset extends Import {
 	 * @access public
 	 */
 	public static function get_backup( $name ) {
-		return path_join(self::BACKUP_DIR, $name . '.data');
+		$name = self::sanitize_name($name);
+		return $name ? path_join(self::backup_dir(), $name . self::BACKUP_EXTENSION) : false;
 	}
 
 	/**
@@ -115,14 +153,24 @@ class Preset extends Import {
 	 *
 	 * @since  5.3.0
 	 * @access public
+	 * @return bool Whether the preset was applied successfully.
 	 */
 	public function apply( $preset ) {
-		$this->make_backup($preset);
+		$path = self::get_standard($preset);
+		if (!$path || !is_file($path)) {
+			$this->log('error');
+			return false;
+		}
 
-		$path   = self::get_standard($preset);
+		if (!$this->make_backup($preset)) {
+			$this->log('error');
+			return false;
+		}
+
 		$result = $this->import_file($path) ? $preset : 'error';
 
 		$this->log($result);
+		return 'error' !== $result;
 	}
 
 	/**
@@ -132,9 +180,9 @@ class Preset extends Import {
 	 * @access public
 	 */
 	public function restore( $timestamp ) {
-		$backups = array();
+		$backups = [];
 		foreach (self::get_backups() as $backup) {
-			if (preg_match('/^backup-' . $timestamp . '(-|$)/', $backup) === 1) {
+			if (preg_match('/^backup-' . (int) $timestamp . '-/', $backup) === 1) {
 				$backups[] = $backup;
 			}
 		}
@@ -166,16 +214,21 @@ class Preset extends Import {
 	 *
 	 * @since  5.3.0
 	 * @access public
+	 * @return bool Whether the backup was completely saved. Failure prevents applying the preset.
 	 */
 	public function make_backup( $preset ) {
 		$backup = 'backup-' . time() . '-before-' . $preset;
-		$data   = $this->export(true);
+		$data   = $this->export(true, true);
 
 		$path = self::get_backup($backup);
-		File::save($path, $data, true);
+		if ( ! $path || ! File::save_atomic( $path, self::BACKUP_GUARD . $data, true ) ) {
+			Debug2::debug('[Preset] Failed to save backup; settings were not changed');
+			return false;
+		}
 		Debug2::debug('[Preset] Backup saved to ' . $backup);
 
 		self::prune_backups();
+		return true;
 	}
 
 	/**
@@ -191,39 +244,29 @@ class Preset extends Import {
 		};
 
 		$name     = self::basename($path);
-		$contents = file_get_contents($path);
+		$is_backup = self::BACKUP_EXTENSION === substr( $path, -4 );
+		$contents  = file_get_contents($path);
 
 		if (false === $contents) {
 			Debug2::debug('[Preset] ❌ Failed to get file contents');
 			return $debug(false, $name);
 		}
-
-		$parsed = array();
-		try {
-			// Check if the data is v4+
-			if (strpos($contents, '["_version",') === 0) {
-				$contents = explode("\n", $contents);
-				foreach ($contents as $line) {
-					$line = trim($line);
-					if (empty($line)) {
-						continue;
-					}
-					list($key, $value) = \json_decode($line, true);
-					$parsed[$key]      = $value;
-				}
-			} else {
-				$parsed = \json_decode(base64_decode($contents), true);
+		if ( $is_backup ) {
+			if ( 0 !== strpos( $contents, self::BACKUP_GUARD ) ) {
+				return $debug( false, $name );
 			}
-		} catch (\Exception $ex) {
-			Debug2::debug('[Preset] ❌ Failed to parse serialized data');
-			return $debug(false, $name);
+			$contents = substr( $contents, strlen( self::BACKUP_GUARD ) );
 		}
 
-		if (empty($parsed)) {
+		$parsed = Import::parse_settings( $contents );
+
+		if ( ! is_array( $parsed ) || empty($parsed) ) {
 			Debug2::debug('[Preset] ❌ Nothing to apply');
 			return $debug(false, $name);
 		}
 
+		// Leave network-managed shared settings untouched with one summary instead of a per-option error under a success notice.
+		$parsed = $this->_strip_unwritable_shared( $parsed );
 		$this->cls('Conf')->update_confs($parsed);
 
 		return $debug(true, $name);
@@ -251,11 +294,11 @@ class Preset extends Import {
 
 		switch ($type) {
 			case self::TYPE_APPLY:
-            $this->apply(!empty($_GET['preset']) ? $_GET['preset'] : false);
+				$this->apply(!empty($_GET['preset']) ? sanitize_text_field(wp_unslash($_GET['preset'])) : false);
 				break;
 
 			case self::TYPE_RESTORE:
-            $this->restore(!empty($_GET['timestamp']) ? $_GET['timestamp'] : false);
+				$this->restore(!empty($_GET['timestamp']) ? absint($_GET['timestamp']) : 0);
 				break;
 
 			default:

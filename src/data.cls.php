@@ -30,6 +30,7 @@ class Data extends Root {
 		'7.0.1-b1'  => [ 'litespeed_update_7_0_1' ],
 		'7.7-b28'   => [ 'litespeed_update_7_7' ],
 		'7.9-b5'    => [ 'litespeed_update_7_9' ],
+		'7.9.2-b60' => [ 'litespeed_update_7_9_2' ],
 	];
 
 	/**
@@ -144,9 +145,14 @@ class Data extends Root {
 		// Update related files.
 		$this->cls( 'Activation' )->update_files();
 
-		// Update version to latest.
-		Conf::delete_option( Base::_VER );
-		Conf::add_option( Base::_VER, Core::VER );
+		if ( ! Purge::queue_upgrade_invalidation() ) {
+			return;
+		}
+
+		// Update version to latest only after the page-cache purge is durable.
+		if ( ! Conf::update_option( Base::_VER, Core::VER ) ) {
+			return;
+		}
 
 		self::debug( 'Updated version to ' . Core::VER );
 
@@ -167,11 +173,11 @@ class Data extends Root {
 	 * @access public
 	 *
 	 * @param string $ver Currently stored version string.
-	 * @return void
+	 * @return bool Whether the upgrade completed.
 	 */
 	public function conf_site_upgrade( $ver ) {
 		if ( $this->_get_upgrade_lock() ) {
-			return;
+			return false;
 		}
 
 		$this->_set_upgrade_lock( true );
@@ -189,9 +195,15 @@ class Data extends Root {
 
 		// Reload options.
 		$this->cls( 'Conf' )->load_site_options();
+		$this->cls( 'Activation' )->update_files();
 
-		Conf::delete_site_option( Base::_VER );
-		Conf::add_site_option( Base::_VER, Core::VER );
+		if ( ! Purge::queue_upgrade_invalidation() ) {
+			return false;
+		}
+
+		if ( ! Conf::update_site_option( Base::_VER, Core::VER ) ) {
+			return false;
+		}
 
 		self::debug( 'Updated site_version to ' . Core::VER );
 
@@ -201,6 +213,8 @@ class Data extends Root {
 			define( 'LSWCP_EMPTYCACHE', true );
 		}
 		Purge::purge_all();
+
+		return true;
 	}
 
 	/**
@@ -236,7 +250,7 @@ class Data extends Root {
 		Admin_Display::info(
 			sprintf(
 				/* translators: %s: time string */
-				__( 'The database has been upgrading in the background since %s. This message will disappear once upgrade is complete.', 'litespeed-cache' ),
+				__( 'A database upgrade started %s has not completed yet. If it does not finish, it will be retried automatically within an hour of that start.', 'litespeed-cache' ),
 				'<code>' . Utility::readable_time( $is_upgrading ) . '</code>'
 			) . ' [LiteSpeed]',
 			true

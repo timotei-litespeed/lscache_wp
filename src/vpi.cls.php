@@ -43,13 +43,6 @@ class VPI extends Cloud_Queue_Svc {
 	const POST_META_MOBILE = 'litespeed_vpi_list_mobile';
 
 	/**
-	 * Summary values persisted between requests (timings, last runs, etc).
-	 *
-	 * @var array
-	 */
-	protected $_summary;
-
-	/**
 	 * Init.
 	 *
 	 * @since 4.7
@@ -133,10 +126,8 @@ class VPI extends Cloud_Queue_Svc {
 	 * @return void
 	 */
 	public function add_to_queue() {
-		$is_mobile = $this->_separate_mobile();
-
-		global $wp;
-		$request_url = home_url( $wp->request );
+		$is_mobile   = $this->_separate_mobile();
+		$request_url = Utility::request_url();
 
 		if ( ! apply_filters( 'litespeed_vpi_should_queue', true, $request_url ) ) {
 			return;
@@ -150,7 +141,7 @@ class VPI extends Cloud_Queue_Svc {
 		// Store it to prepare for cron.
 		$this->_queue = $this->load_queue( 'vpi' );
 
-		if ( count( $this->_queue ) > $this->_max_queue_size() ) {
+		if ( count( $this->_queue ) >= $this->_max_queue_size() ) {
 			self::debug( 'Queue is full - ' . $this->_max_queue_size() );
 			return;
 		}

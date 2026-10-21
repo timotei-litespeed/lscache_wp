@@ -14,6 +14,7 @@ defined('WPINC') || exit();
 
 use LiteSpeed\API;
 use LiteSpeed\Base;
+use LiteSpeed\Control;
 use LiteSpeed\ESI;
 
 /**
@@ -77,6 +78,7 @@ class WooCommerce extends Base {
 
 		add_action('litespeed_control_finalize', [ $this, 'set_control' ]);
 		add_action('litespeed_tag_finalize', [ $this, 'set_tag' ]);
+		add_filter( 'rest_pre_dispatch', [ $this, 'nocache_store_api' ], 1, 3 );
 
 		// Purge affected product caches when WooCommerce stock changes, including cancellation restocks.
 		add_action('woocommerce_product_set_stock', [ $this, 'purge_product' ]);
@@ -95,20 +97,14 @@ class WooCommerce extends Base {
 		add_action( 'wc_product_end_scheduled_sale', [ $this, 'purge_products_on_sale_change' ], 99 );
 
 		add_action('comment_post', [ $this, 'add_review' ], 10, 3);
+		add_action('litespeed_api_purge_post', [ $this, 'backend_purge' ]);
+		add_action('delete_term_relationships', [ $this, 'delete_rel' ], 10, 2);
 
 		if ( $this->esi_enabled ) {
-			if ( function_exists('is_shop') && ! is_shop() ) {
-				add_action('litespeed_tpl_normal', [ $this, 'set_block_template' ]);
-				// No need for add-to-cart button
-				// add_action( 'litespeed_esi_load-wc-add-to-cart-form', [ $this, 'load_add_to_cart_form_block' ] ) ;
-
-				add_action('litespeed_esi_load-storefront-cart-header', [ $this, 'load_cart_header' ]);
-				add_action('litespeed_esi_load-widget', [ $this, 'register_post_view' ]);
-			}
-
-			if ( function_exists('is_product') && is_product() ) {
-				add_filter('litespeed_esi_params', [ $this, 'add_post_id' ], 10, 2);
-			}
+			add_action( 'template_redirect', [ $this, 'register_templates' ] );
+			add_action('litespeed_esi_load-storefront-cart-header', [ $this, 'load_cart_header' ]);
+			add_action('litespeed_esi_load-widget', [ $this, 'register_post_view' ]);
+			add_filter('litespeed_esi_params', [ $this, 'add_post_id' ], 10, 2);
 
 			// #612331 - remove WooCommerce geolocation redirect on ESI page (PR#708)
 			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- ESI parameter detection, not processing user input.
@@ -118,8 +114,6 @@ class WooCommerce extends Base {
 		}
 
 		if ( is_admin() ) {
-			add_action('litespeed_api_purge_post', [ $this, 'backend_purge' ]); // todo
-			add_action('delete_term_relationships', [ $this, 'delete_rel' ], 10, 2);
 			add_action('litespeed_settings_tab', [ $this, 'settings_add_tab' ]);
 			add_action('litespeed_settings_content', [ $this, 'settings_add_content' ]);
 			add_filter('litespeed_widget_default_options', [ $this, 'wc_widget_default' ], 10, 2);
@@ -143,6 +137,23 @@ class WooCommerce extends Base {
 	}
 
 	/**
+	 * Keep the session-bound WooCommerce Store API out of the public page cache.
+	 *
+	 * @since 7.9.2
+	 * @param mixed            $result  Pre-dispatch result.
+	 * @param \WP_REST_Server  $server  REST server instance.
+	 * @param \WP_REST_Request $request Current REST request.
+	 * @return mixed
+	 */
+	public function nocache_store_api( $result, $server, $request ) {
+		$route = is_object( $request ) && is_callable( [ $request, 'get_route' ] ) ? $request->get_route() : '';
+		if ( is_string( $route ) && ( '/wc/store/' === substr( $route, 0, 10 ) || '/wc/store' === $route ) ) {
+			Control::set_nocache_hard( 'WooCommerce Store API' );
+		}
+		return $result;
+	}
+
+	/**
 	 * Purge esi private tag.
 	 *
 	 * @since  1.6.3
@@ -152,6 +163,17 @@ class WooCommerce extends Base {
 	public function purge_esi() {
 		do_action('litespeed_debug', '3rd woo purge ESI in action: ' . current_filter());
 		do_action('litespeed_purge_private_esi', 'storefront-cart-header');
+	}
+
+	/**
+	 * Register page-specific templates after the main query is available.
+	 *
+	 * @return void
+	 */
+	public function register_templates() {
+		if ( function_exists( 'is_shop' ) && ! is_shop() ) {
+			add_action( 'litespeed_tpl_normal', [ $this, 'set_block_template' ] );
+		}
 	}
 
 	/**
@@ -459,7 +481,7 @@ class WooCommerce extends Base {
 	 * @return array
 	 */
 	public function add_post_id( $params, $block_id ) {
-		if ( 'widget' === $block_id ) {
+		if ( 'widget' === $block_id && function_exists( 'is_product' ) && is_product() ) {
 			if ( 'WC_Widget_Recently_Viewed' === $params[ API::PARAM_NAME ] ) {
 				$params[ self::ESI_PARAM_POSTID ] = get_the_ID();
 			}
@@ -513,9 +535,8 @@ class WooCommerce extends Base {
 		// Check if product has a cache ttl limit or not.
 		$sale_from = (int) get_post_meta( $id, '_sale_price_dates_from', true );
 		$sale_to   = (int) get_post_meta( $id, '_sale_price_dates_to', true );
-		// phpcs:ignore WordPress.DateTime.CurrentTimeTimestamp.Requested -- Need local timestamp for WooCommerce sale dates.
-		$now = current_time('timestamp');
-		$ttl = false;
+		$now       = time();
+		$ttl       = false;
 
 		if ( $sale_from && $now < $sale_from ) {
 			$ttl = $sale_from - $now;
@@ -578,6 +599,10 @@ class WooCommerce extends Base {
 		}
 
 		$woocom = WC();
+		if ( ! $esi_id && ! $this->conf( self::O_CART_VARY ) && $woocom && ! empty( $woocom->cart ) && $woocom->cart->get_cart_contents_count() > 0 ) {
+			Control::set_nocache_hard( 'WooCommerce cart without a cart vary' );
+			return;
+		}
 		if ( ! $woocom || empty( $woocom->session ) ) {
 			return;
 		}
@@ -837,7 +862,10 @@ class WooCommerce extends Base {
 			return;
 		}
 		foreach ( $term_ids as $term_id ) {
-			do_action( 'litespeed_purge', self::CACHETAG_TERM . $term_id );
+			$term = get_term_by( 'term_taxonomy_id', (int) $term_id );
+			if ( $term && ! is_wp_error( $term ) ) {
+				do_action( 'litespeed_purge', self::CACHETAG_TERM . $term->term_id );
+			}
 		}
 	}
 
@@ -908,7 +936,7 @@ class WooCommerce extends Base {
 
 		$recent_reviews = $wp_widget_factory->widgets['WC_Widget_Recent_Reviews'];
 		if ( ! is_null( $recent_reviews ) ) {
-			do_action( 'litespeed_tag_add_widget', $recent_reviews->id );
+			do_action( 'litespeed_purge_widget', $recent_reviews->id );
 		}
 	}
 
@@ -1008,8 +1036,13 @@ class WooCommerce extends Base {
 	 * @return void
 	 */
 	public static function bulk_edit_purge() {
+		// phpcs:ignore WordPress.WP.Capabilities.Unknown -- `edit_products` is registered by WooCommerce, whose presence is checked first.
+		if ( ! function_exists( 'wc_get_product' ) || ! current_user_can( 'edit_products' ) ) {
+			return;
+		}
+
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Third-party plugin action; cannot enforce here.
-		if ( empty( $_POST['type'] ) || 'saveproducts' !== $_POST['type'] || empty( $_POST['data'] ) ) {
+		if ( empty( $_POST['type'] ) || 'saveproducts' !== $_POST['type'] || empty( $_POST['data'] ) || ! is_array( $_POST['data'] ) ) {
 			return;
 		}
 
@@ -1023,25 +1056,33 @@ class WooCommerce extends Base {
 		 *      )
 		 *  )
 		 */
-		$stock_string_arr = [];
+		$product_ids = [];
 
 		// Ensure data is unslashed before processing.
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Third-party plugin may not send nonce. Data format defined by third-party plugin.
 		$data = isset( $_POST['data'] ) ? wp_unslash( $_POST['data'] ) : [];
 
 		foreach ( (array) $data as $stock_value ) {
-			$stock_string_arr = array_merge( $stock_string_arr, explode( '#^#', (string) $stock_value ) );
+			if ( ! is_string( $stock_value ) ) {
+				continue;
+			}
+			foreach ( explode( '#^#', $stock_value ) as $edited_stock ) {
+				$product_id = (int) strtok( $edited_stock, '$' );
+				if ( $product_id > 0 ) {
+					$product_ids[ $product_id ] = true;
+				}
+			}
+		}
+
+		if ( ! $product_ids ) {
+			return;
 		}
 
 		$lscwp_3rd_woocommerce = new self();
 
-		if ( count( $stock_string_arr ) < 1 ) {
-			return;
-		}
-
-		foreach ( $stock_string_arr as $edited_stock ) {
-			$product_id = (int) strtok( (string) $edited_stock, '$' );
-			$product    = wc_get_product( $product_id );
+		// The same product can appear in several edited columns; purge it once per request.
+		foreach ( array_keys( $product_ids ) as $product_id ) {
+			$product = wc_get_product( $product_id );
 
 			if ( empty( $product ) ) {
 				do_action( 'litespeed_debug', '3rd woo purge: ' . $product_id . ' not found.' );

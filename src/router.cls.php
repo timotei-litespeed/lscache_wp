@@ -75,7 +75,6 @@ class Router extends Base {
 	const TYPE = 'litespeed_type';
 
 	const ITEM_HASH       = 'hash';
-	const ITEM_FLASH_HASH = 'flash_hash';
 
 	private static $_esi_enabled;
 	private static $_is_ajax;
@@ -100,13 +99,13 @@ class Router extends Base {
 		}
 
 		// Add i to avoid browser too many redirected warning
-		$i = !empty($_GET['litespeed_i']) ? $_GET['litespeed_i'] : 0;
+		$i = isset($_GET['litespeed_i']) && is_numeric($_GET['litespeed_i']) ? (int) $_GET['litespeed_i'] : 0;
 		++$i;
 
 		$link = Utility::build_url($action, $type, false, null, array( 'litespeed_i' => $i ));
 
 		$url = html_entity_decode($link);
-		exit("<meta http-equiv='refresh' content='0;url=$url'>");
+		exit( "<meta http-equiv='refresh' content='0;url=" . esc_attr( $url ) . "'>" );
 	}
 
 	/**
@@ -208,7 +207,7 @@ class Router extends Base {
 		$rest_prefix = function_exists('rest_get_url_prefix') ? rest_get_url_prefix() : apply_filters('rest_url_prefix', 'wp-json');
 		if (
 			!empty($_SERVER['REQUEST_URI']) &&
-			strpos($_SERVER['REQUEST_URI'], $rest_prefix . '/wp/v2/media') !== false &&
+			REST::str_hit_uri($_SERVER['REQUEST_URI'], [$rest_prefix . '/wp/v2/media']) &&
 			isset($_SERVER['HTTP_REFERER']) &&
 			strpos($_SERVER['HTTP_REFERER'], 'wp-admin') !== false
 		) {
@@ -250,7 +249,7 @@ class Router extends Base {
 			return;
 		}
 
-		if (empty($_COOKIE['litespeed_hash']) && empty($_COOKIE['litespeed_flash_hash'])) {
+		if (empty($_COOKIE['litespeed_hash'])) {
 			return;
 		}
 
@@ -268,24 +267,12 @@ class Router extends Base {
 			return;
 		}
 
-		// Flash hash validation
-		if (!empty($_COOKIE['litespeed_flash_hash'])) {
-			$hash_data = self::get_option(self::ITEM_FLASH_HASH, array());
-			if ($hash_data && is_array($hash_data) && !empty($hash_data['hash']) && !empty($hash_data['ts']) && !empty($hash_data['uid'])) {
-				if (time() - $hash_data['ts'] < 120 && $_COOKIE['litespeed_flash_hash'] == $hash_data['hash']) {
-					self::debug('🪪 Role simulator flash hash matched, escalating user to be uid=' . $hash_data['uid']);
-					self::delete_option(self::ITEM_FLASH_HASH);
-					wp_set_current_user($hash_data['uid']);
-					return;
-				}
-			}
-		}
 		// Hash validation
 		if (!empty($_COOKIE['litespeed_hash'])) {
 			$hash_data = self::get_option(self::ITEM_HASH, array());
 			if ($hash_data && is_array($hash_data) && !empty($hash_data['hash']) && !empty($hash_data['ts']) && !empty($hash_data['uid'])) {
 				$RUN_DURATION = $this->cls('Crawler')->get_crawler_duration();
-				if (time() - $hash_data['ts'] < $RUN_DURATION && $_COOKIE['litespeed_hash'] == $hash_data['hash']) {
+				if (time() - $hash_data['ts'] < $RUN_DURATION && is_string($_COOKIE['litespeed_hash']) && is_string($hash_data['hash']) && hash_equals($hash_data['hash'], $_COOKIE['litespeed_hash'])) {
 					self::debug('🪪 Role simulator hash matched, escalating user to be uid=' . $hash_data['uid']);
 					wp_set_current_user($hash_data['uid']);
 					return;
@@ -294,34 +281,6 @@ class Router extends Base {
 		}
 
 		self::debug('❌ WARNING: role simulator hash not match');
-	}
-
-	/**
-	 * Get a short ttl hash (2mins)
-	 *
-	 * @since  6.4
-	 */
-	public function get_flash_hash( $uid ) {
-		$hash_data = self::get_option(self::ITEM_FLASH_HASH, array());
-		if ($hash_data && is_array($hash_data) && !empty($hash_data['hash']) && !empty($hash_data['ts'])) {
-			if (time() - $hash_data['ts'] < 60) {
-				return $hash_data['hash'];
-			}
-		}
-
-		// Check if this user has editor access or not
-		if (user_can($uid, 'edit_posts')) {
-			self::debug('🛑 The user with id ' . $uid . ' has editor access, which is not allowed for the role simulator.');
-			return '';
-		}
-
-		$hash = Str::rrand(32);
-		self::update_option(self::ITEM_FLASH_HASH, array(
-			'hash' => $hash,
-			'ts' => time(),
-			'uid' => $uid,
-		));
-		return $hash;
 	}
 
 	/**
@@ -400,15 +359,20 @@ class Router extends Base {
 	 * @return boolean
 	 */
 	public static function frontend_path() {
-		// todo: move to htaccess.cls ?
 		if (!isset(self::$_frontend_path)) {
-			$frontend = rtrim(ABSPATH, '/'); // /home/user/public_html/frontend
-			// get home path failed. Trac ticket #37668 (e.g. frontend:/blog backend:/wordpress)
-			if (!$frontend) {
-				Debug2::debug('[Router] No ABSPATH, generating from home option');
-				$frontend = parse_url(get_option('home'));
-				$frontend = !empty($frontend['path']) ? $frontend['path'] : '';
-				$frontend = $_SERVER['DOCUMENT_ROOT'] . $frontend;
+			$frontend = rtrim( wp_normalize_path( ABSPATH ), '/' );
+			$home     = wp_parse_url( get_option( 'home' ) );
+			$site     = wp_parse_url( get_option( 'siteurl' ) );
+			// Resolve own-directory installs without get_home_path()'s request-only SCRIPT_FILENAME assumption.
+			if ( is_array( $home ) && is_array( $site ) && ! empty( $home['host'] ) && ! empty( $site['host'] ) && 0 === strcasecmp( $home['host'], $site['host'] ) ) {
+				$home_path = isset( $home['path'] ) ? rtrim( rawurldecode( $home['path'] ), '/' ) : '';
+				$site_path = isset( $site['path'] ) ? rtrim( rawurldecode( $site['path'] ), '/' ) : '';
+				if ( $site_path !== $home_path && 0 === strpos( $site_path, $home_path . '/' ) ) {
+					$suffix = substr( $site_path, strlen( $home_path ) );
+					if ( ! preg_match( '#(^|/)\.{1,2}(/|$)#', $suffix ) && substr( $frontend, -strlen( $suffix ) ) === $suffix ) {
+						$frontend = substr( $frontend, 0, -strlen( $suffix ) );
+					}
+				}
 			}
 			$frontend = realpath($frontend);
 
@@ -522,7 +486,7 @@ class Router extends Base {
 	 * @access public
 	 */
 	public static function verify_type() {
-		if (empty($_REQUEST[self::TYPE])) {
+		if (empty($_REQUEST[self::TYPE]) || !is_string($_REQUEST[self::TYPE])) {
 			Debug2::debug('[Router] no type', 2);
 			return false;
 		}
@@ -539,7 +503,7 @@ class Router extends Base {
 	 * @access private
 	 */
 	private function verify_action() {
-		if (empty($_REQUEST[self::ACTION])) {
+		if (empty($_REQUEST[self::ACTION]) || !is_string($_REQUEST[self::ACTION])) {
 			Debug2::debug2('[Router] LSCWP_CTRL bypassed empty');
 			return;
 		}
@@ -590,13 +554,17 @@ class Router extends Base {
 		// OK, as we want to do something magic, lets check if its allowed
 		$_is_multisite       = is_multisite();
 		$_is_network_admin   = $_is_multisite && is_network_admin();
-		$_can_network_option = $_is_network_admin && current_user_can('manage_network_options');
+		$_can_network_option = $_is_multisite && current_user_can('manage_network_options');
 		$_can_option         = current_user_can('manage_options');
 
 		switch ($action) {
 			case self::ACTION_TMP_DISABLE: // Disable LSC for 24H
-				Debug2::tmp_disable();
-				Admin::redirect("?page=litespeed-toolbox#settings-debug");
+				if ( $_can_network_option || ( ! $_is_multisite && $_can_option ) ) {
+					Debug2::tmp_disable();
+					Admin::redirect("?page=litespeed-toolbox#settings-debug");
+				} elseif ( $_is_multisite && $_can_option ) {
+					self::_network_permission_error();
+				}
 				return;
 
 			case self::ACTION_SAVE_SETTINGS_NETWORK: // Save network settings
@@ -606,15 +574,16 @@ class Router extends Base {
 				return;
 
 			case Core::ACTION_PURGE_BY:
-            if (defined('LITESPEED_ON') && ($_can_network_option || $_can_option || self::is_ajax())) {
-					// here may need more security
+				if ( defined( 'LITESPEED_ON' ) && ( $_can_network_option || $_can_option ) ) {
 					self::$_action = $action;
 				}
 				return;
 
 			case self::ACTION_DB_OPTM:
-            if ($_can_network_option || $_can_option) {
+			if ($_can_network_option || ( ! $_is_multisite && $_can_option )) {
 					self::$_action = $action;
+				} elseif ( $_is_multisite && $_can_option ) {
+					self::_network_permission_error();
 				}
 				return;
 
@@ -630,7 +599,8 @@ class Router extends Base {
 			case Core::ACTION_QS_SHOW_HEADERS:
 			case Core::ACTION_QS_PURGE_ALL:
 			case Core::ACTION_QS_PURGE_EMPTYCACHE:
-            if (defined('LITESPEED_ON') && ($_is_public_action || self::is_ajax())) {
+				$allowed = Core::ACTION_QS_PURGE_EMPTYCACHE === $action && $_is_multisite ? $_can_network_option : $_can_option;
+				if ( defined('LITESPEED_ON') && ( $_is_public_action || $allowed ) ) {
 					self::$_action = $action;
 				}
 				return;
@@ -646,7 +616,6 @@ class Router extends Base {
 			case self::ACTION_GUEST:
 			case self::ACTION_PRESET:
 			case self::ACTION_IMPORT:
-			case self::ACTION_REPORT:
 			case self::ACTION_CSS:
 			case self::ACTION_UCSS:
 			case self::ACTION_VPI:
@@ -660,9 +629,19 @@ class Router extends Base {
 				}
 				return;
 
-			case self::ACTION_PURGE:
 			case self::ACTION_DEBUG2:
-            if ($_can_network_option || $_can_option) {
+			case self::ACTION_REPORT:
+				if ( $_can_network_option || ( ! $_is_multisite && $_can_option ) ) {
+					self::$_action = $action;
+				} elseif ( $_is_multisite && $_can_option ) {
+					self::_network_permission_error();
+				}
+				return;
+
+			case self::ACTION_PURGE:
+				$type = isset( $_REQUEST[ self::TYPE ] ) && is_string( $_REQUEST[ self::TYPE ] ) ? sanitize_key( wp_unslash( $_REQUEST[ self::TYPE ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$network_only = in_array( $type, [ Purge::TYPE_PURGE_ALL_OBJECT, Purge::TYPE_PURGE_ALL_OPCACHE ], true );
+				if ( $_can_network_option || ( $_can_option && ( ! $_is_multisite || ! $network_only ) ) ) {
 					self::$_action = $action;
 				}
 				return;
@@ -674,7 +653,9 @@ class Router extends Base {
              * @since  2.9
              */
             // if ( self::is_ajax() ) {
-            self::$_action = $action;
+            if ( $_can_option || $_can_network_option ) {
+                self::$_action = $action;
+            }
             // }
 				return;
 
@@ -682,6 +663,17 @@ class Router extends Base {
             Debug2::debug('[Router] LSCWP_CTRL match failed: ' . $action);
 				return;
 		}
+	}
+
+	/**
+	 * Tell a subsite administrator why a network-only action was refused instead of ignoring it silently.
+	 *
+	 * @since 7.9.2
+	 * @return void
+	 */
+	private static function _network_permission_error() {
+		Debug2::debug( '[Router] Network-only action refused for a site administrator' );
+		Admin_Display::error( __( 'This action requires network administrator permission.', 'litespeed-cache' ) );
 	}
 
 	/**

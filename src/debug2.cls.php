@@ -118,7 +118,7 @@ class Debug2 extends Root {
 			return true;
 		}
 
-		Conf::cls()->update_confs( [ Base::DEBUG_TMP_DISABLE => 0 ] );
+		Conf::cls()->update( Base::DEBUG_TMP_DISABLE, 0 );
 		return false;
 	}
 
@@ -129,6 +129,10 @@ class Debug2 extends Root {
 	 * @access private
 	 */
 	private function _maybe_init_folder() {
+		$deny = "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nOrder allow,deny\nDeny from all\n</IfModule>\n";
+		if ( ! file_exists( self::$log_path_prefix . '.htaccess' ) ) {
+			File::save( self::$log_path_prefix . '.htaccess', $deny, true );
+		}
 		if ( file_exists( self::$log_path_prefix . 'index.php' ) ) {
 			return;
 		}
@@ -137,9 +141,13 @@ class Debug2 extends Root {
 
 		$logs = [ 'debug', 'debug.purge', 'crawler' ];
 		foreach ( $logs as $log ) {
+			// Core owns its active debug log; only migrate files whose ownership is unambiguous.
+			if ( 'debug' === $log && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+				continue;
+			}
 			$old_path = LSCWP_CONTENT_DIR . '/' . $log . '.log';
 			$new_path = $this->path( $log );
-			if ( file_exists( $old_path ) && ! file_exists( $new_path ) ) {
+			if ( $new_path && file_exists( $old_path ) && ! file_exists( $new_path ) ) {
 				// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Moving legacy log files during migration
 				rename( $old_path, $new_path );
 			}
@@ -151,10 +159,24 @@ class Debug2 extends Root {
 	 *
 	 * @since 6.5
 	 * @param string $type Log type (debug|purge|crawler).
-	 * @return string
+	 * @return string|false False when no secret is available to name the log.
 	 */
 	public function path( $type ) {
-		return self::$log_path_prefix . self::FilePath( $type );
+		$file = self::FilePath( $type );
+		return $file ? self::$log_path_prefix . $file : false;
+	}
+
+	/**
+	 * Return AUTH_KEY when it is a real secret, otherwise an empty string.
+	 *
+	 * @since 7.9.2
+	 * @return string
+	 */
+	public static function auth_key_secret() {
+		if ( defined( 'AUTH_KEY' ) && is_string( AUTH_KEY ) && '' !== AUTH_KEY && false === strpos( AUTH_KEY, 'put your unique phrase here' ) ) {
+			return AUTH_KEY;
+		}
+		return '';
 	}
 
 	/**
@@ -162,15 +184,44 @@ class Debug2 extends Root {
 	 *
 	 * @since 6.5
 	 * @param string $type Log type (debug|debug.purge|crawler).
-	 * @return string
+	 * @return string|false False when neither AUTH_KEY nor the installation hash provides a secret; never a predictable name.
 	 */
 	public static function FilePath( $type ) {
 		if ( 'debug.purge' === $type ) {
 			$type = 'purge';
 		}
-		$key  = defined( 'AUTH_KEY' ) ? AUTH_KEY : md5( __FILE__ );
-		$rand = substr( md5( substr( $key, -16 ) ), -16 );
+		$key = self::auth_key_secret();
+		if ( '' === $key ) {
+			// Without a real AUTH_KEY, use the main site's hash so every subsite shares one unpredictable log name.
+			$blog_id = is_multisite() ? get_main_site_id( get_main_network_id() ) : get_current_blog_id();
+			$key     = Conf::ensure_blog_hash( $blog_id );
+		}
+		if ( '' === $key ) {
+			return false;
+		}
+		$rand = substr( hash( 'sha256', $key ), -16 );
 		return $type . $rand . '.log';
+	}
+
+	/**
+	 * Delete the v7.9.1-named logs that the renamed log files left behind.
+	 *
+	 * Only the exact names derivable from the v7.9.1 formula are removed; the debug folder is installation-wide, so repeated calls are harmless.
+	 *
+	 * @since 7.9.2
+	 * @return void
+	 */
+	public static function remove_legacy_logs() {
+		$dir    = LITESPEED_STATIC_DIR . '/debug/';
+		$key    = defined( 'AUTH_KEY' ) ? (string) AUTH_KEY : md5( __FILE__ );
+		$suffix = substr( md5( substr( $key, -16 ) ), -16 ) . '.log';
+		foreach ( [ 'debug', 'purge', 'crawler' ] as $type ) {
+			$legacy = $type . $suffix;
+			if ( ! is_file( $dir . $legacy ) ) {
+				continue;
+			}
+			wp_delete_file( $dir . $legacy );
+		}
 	}
 
 	/**
@@ -194,6 +245,62 @@ class Debug2 extends Root {
 	}
 
 	/**
+	 * Whether an update package URL comes from a pinned publisher: the wordpress.org zip, QUIC.cloud / LiteSpeed hosts, or this repository's branch and tag archives on GitHub.
+	 *
+	 * When a commit is selected, a GitHub URL is accepted only as this repository's full-SHA commit archive bound to the admin-selected SHA.
+	 *
+	 * @since 7.9.2
+	 * @param string $url    Package URL.
+	 * @param string $commit Admin-selected commit SHA (7-40 hex), or empty when no commit was selected.
+	 * @return bool
+	 */
+	public static function validate_package_url( $url, $commit = '' ) {
+		// The exact built-in URL needs no DNS lookup to establish publisher identity.
+		if ( self::BETA_TEST_URL_WP === $url ) {
+			return true;
+		}
+		if ( ! is_string( $url ) || ! wp_http_validate_url( $url ) || 'https' !== strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) ) ) {
+			return false;
+		}
+		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
+		if ( preg_match( '#(^|/)\.\.?(/|$)|\\\\|%2e|%2f|%5c#i', $path ) ) {
+			return false;
+		}
+		$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+		foreach ( [ 'quic.cloud', 'litespeedtech.com' ] as $trusted ) {
+			if ( $host === $trusted || substr( $host, - strlen( '.' . $trusted ) ) === '.' . $trusted ) {
+				return true;
+			}
+		}
+		$archives = [
+			'github.com'          => '#^/litespeedtech/lscache_wp/archive/([0-9a-f]{40})\.zip$#i',
+			'codeload.github.com' => '#^/litespeedtech/lscache_wp/zip/([0-9a-f]{40})$#i',
+		];
+		if ( empty( $archives[ $host ] ) ) {
+			return false;
+		}
+		if ( $commit ) {
+			if ( ! is_string( $commit ) || ! preg_match( '#^[0-9a-f]{7,40}$#i', $commit ) ) {
+				return false;
+			}
+			return (bool) preg_match( $archives[ $host ], $path, $m ) && 0 === strpos( strtolower( $m[1] ), strtolower( $commit ) );
+		}
+		$prefixes = [
+			'github.com'          => [ '/litespeedtech/lscache_wp/archive/refs/heads/', '/litespeedtech/lscache_wp/archive/refs/tags/' ],
+			'codeload.github.com' => [ '/litespeedtech/lscache_wp/zip/refs/heads/', '/litespeedtech/lscache_wp/zip/refs/tags/' ],
+		];
+		if ( empty( $prefixes[ $host ] ) ) {
+			return false;
+		}
+		foreach ( $prefixes[ $host ] as $prefix ) {
+			if ( 0 === strpos( $path, $prefix ) && strlen( $path ) > strlen( $prefix ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Run beta test upgrade. Accepts a direct ZIP URL or attempts to derive one.
 	 *
 	 * @since 2.9.5
@@ -203,6 +310,7 @@ class Debug2 extends Root {
 	 * @return void
 	 */
 	public function beta_test( $zip = false ) {
+		$commit = '';
 		if ( ! $zip ) {
 			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			if ( empty( $_REQUEST[ self::BETA_TEST_URL ] ) ) {
@@ -215,6 +323,9 @@ class Debug2 extends Root {
 				if ( 'latest' === $zip ) {
 					$zip = self::BETA_TEST_URL_WP;
 				} else {
+					if ( preg_match( '#^(?:https://github\.com/litespeedtech/lscache_wp/commit/)?([0-9a-f]{7,40})/?(?:[?\#].*)?$#i', $zip, $m ) ) {
+						$commit = strtolower( $m[1] );
+					}
 					// Generate zip url
 					$zip = $this->_package_zip( $zip );
 				}
@@ -226,12 +337,13 @@ class Debug2 extends Root {
 			return;
 		}
 
-		self::debug( '[Debug2] ZIP file ' . $zip );
-
-		$update_plugins = get_site_transient( 'update_plugins' );
-		if ( ! is_object( $update_plugins ) ) {
-			$update_plugins = new \stdClass();
+		if ( ! self::validate_package_url( $zip, $commit ) ) {
+			self::debug( '[Debug2] ❌  Rejected ZIP file from an untrusted publisher: ' . $zip );
+			Admin_Display::error( __( 'Rejected an update package URL that is not on the trusted publisher list.', 'litespeed-cache' ) );
+			return;
 		}
+
+		self::debug( '[Debug2] ZIP file ' . $zip );
 
 		$plugin_info              = new \stdClass();
 		$plugin_info->new_version = Core::VER;
@@ -240,11 +352,16 @@ class Debug2 extends Root {
 		$plugin_info->package     = $zip;
 		$plugin_info->url         = 'https://wordpress.org/plugins/litespeed-cache/';
 
-		$update_plugins->response[ Core::PLUGIN_FILE ] = $plugin_info;
-
-		set_site_transient( 'update_plugins', $update_plugins );
-
+		// Offered to the upgrader's single read only; never stored in the shared transient.
+		$inject = function ( $value ) use ( &$inject, $plugin_info ) {
+			remove_filter( 'site_transient_update_plugins', $inject );
+			$value                                = is_object( $value ) ? clone $value : new \stdClass();
+			$value->response[ Core::PLUGIN_FILE ] = $plugin_info;
+			return $value;
+		};
+		add_filter( 'site_transient_update_plugins', $inject );
 		Activation::cls()->upgrade();
+		remove_filter( 'site_transient_update_plugins', $inject );
 	}
 
 	/**
@@ -284,6 +401,9 @@ class Debug2 extends Root {
 		}
 
 		$purge_file = self::cls()->path( 'purge' );
+		if ( ! $purge_file ) {
+			return;
+		}
 
 		self::cls()->_init_request( $purge_file );
 
@@ -320,8 +440,8 @@ class Debug2 extends Root {
 		 */
 		$list = $this->conf( Base::O_DEBUG_INC );
 		if ( $list ) {
-			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-			$result      = Utility::str_hit_array( $request_uri, $list );
+			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Matching must preserve encoded path characters.
+			$result      = REST::str_hit_uri( $request_uri, $list );
 			if ( ! $result ) {
 				return;
 			}
@@ -329,17 +449,35 @@ class Debug2 extends Root {
 
 		$list = $this->conf( Base::O_DEBUG_EXC );
 		if ( $list ) {
-			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-			$result      = Utility::str_hit_array( $request_uri, $list );
+			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Matching must preserve encoded path characters.
+			$result      = REST::str_hit_uri( $request_uri, $list );
 			if ( $result ) {
 				return;
 			}
+		}
+
+		// No secret to name the log file: do not log rather than write to a predictable path.
+		if ( ! self::$log_path ) {
+			return;
 		}
 
 		if ( ! defined( 'LSCWP_LOG' ) ) {
 			$this->_init_request();
 			define( 'LSCWP_LOG', true );
 		}
+	}
+
+	/**
+	 * Redact credential query values in both the request and referrer.
+	 *
+	 * @param string $value Query string or URL.
+	 * @return string
+	 */
+	private function _redact_query( $value ) {
+		return preg_replace_callback( '/(^|[?&])([^=?&#]+)=[^&#]*/', static function ( $matches ) {
+			$key = rawurldecode( $matches[2] );
+			return preg_match( '/nonce|password|passwd|pwd|token|key|secret|_hash|code|auth|sig/i', $key ) ? $matches[1] . $matches[2] . '=[redacted]' : $matches[0];
+		}, $value );
 	}
 
 	/**
@@ -354,6 +492,9 @@ class Debug2 extends Root {
 	private function _init_request( $log_file = null ) {
 		if ( ! $log_file ) {
 			$log_file = self::$log_path;
+		}
+		if ( ! $log_file ) {
+			return;
 		}
 
 		// Rotate if exceeding configured size (MiB).
@@ -394,6 +535,7 @@ class Debug2 extends Root {
 		$param = sprintf('💓 ------%s %s %s', $server['REQUEST_METHOD'], $server['SERVER_PROTOCOL'], strtok($server['REQUEST_URI'], '?'));
 
 		$qs = !empty($server['QUERY_STRING']) ? $server['QUERY_STRING'] : '';
+		$qs = $this->_redact_query( $qs );
 		if ( $this->conf( Base::O_DEBUG_COLLAPSE_QS ) ) {
 			$qs = $this->_omit_long_message( $qs );
 			if ( $qs ) {
@@ -406,7 +548,7 @@ class Debug2 extends Root {
 		}
 
 		if ( ! empty( $server['HTTP_REFERER'] ) ) {
-			$params[] = 'HTTP_REFERER: ' . $this->_omit_long_message( $server['HTTP_REFERER'] );
+			$params[] = 'HTTP_REFERER: ' . $this->_omit_long_message( $this->_redact_query( $server['HTTP_REFERER'] ) );
 		}
 
 		if ( defined( 'LSCWP_LOG_MORE' ) ) {
@@ -461,6 +603,7 @@ class Debug2 extends Root {
 	 * @return string Formatted line.
 	 */
 	private static function format_message( $msg ) {
+		$msg = preg_replace( '/[\r\n]+/', ' ', (string) $msg );
 		if ( ! defined( 'LSCWP_LOG_TAG' ) ) {
 			return $msg . "\n";
 		}
@@ -579,6 +722,10 @@ class Debug2 extends Root {
 			$msg .= self::_backtrace_info( (int) $backtrace_limit );
 		}
 
+		if ( ! self::$log_path ) {
+			return;
+		}
+
 		File::append( self::$log_path, self::format_message( $msg ) );
 	}
 
@@ -645,7 +792,10 @@ class Debug2 extends Root {
 	private function _clear_log() {
 		$logs = [ 'debug', 'purge', 'crawler' ];
 		foreach ( $logs as $log ) {
-			File::save( $this->path( $log ), '' );
+			$file = $this->path( $log );
+			if ( $file ) {
+				File::save( $file, '' );
+			}
 		}
 	}
 
@@ -666,7 +816,7 @@ class Debug2 extends Root {
 		}
 
 		$file = $this->path( $log_type );
-		if ( ! file_exists( $file ) ) {
+		if ( ! $file || ! file_exists( $file ) ) {
 			wp_die( esc_html__( 'Log file not found.', 'litespeed-cache' ) );
 		}
 
@@ -674,7 +824,6 @@ class Debug2 extends Root {
 
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
-		header( 'Content-Length: ' . filesize( $file ) );
 		header( 'Cache-Control: no-cache, no-store, must-revalidate' );
 		header( 'Pragma: no-cache' );
 		header( 'Expires: 0' );
