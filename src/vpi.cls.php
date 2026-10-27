@@ -138,6 +138,10 @@ class VPI extends Cloud_Queue_Svc {
 			? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) )
 			: '';
 
+		if ( ! $this->queueable_request() ) {
+			return;
+		}
+
 		// Store it to prepare for cron.
 		$this->_queue = $this->load_queue( 'vpi' );
 

@@ -254,7 +254,7 @@ trait Cloud_Misc {
 	 * @return int
 	 */
 	private function _cached_allowance( $service, &$err ) {
-		if ( in_array( $service, [ self::SVC_CCSS, self::SVC_UCSS, self::SVC_VPI ], true ) ) {
+		if ( in_array( $service, [ self::SVC_CCSS, self::SVC_UCSS, self::SVC_VPI, self::SVC_OPTIMAX ], true ) ) { // TODO: temporary added OX to page optm so it uses that credit
 			// @since 4.2
 			$service = self::SVC_PAGE_OPTM;
 		}
@@ -288,6 +288,17 @@ trait Cloud_Misc {
 			}
 
 			return $allowance;
+		}
+
+		// Overage plan: past `quota`, QUIC.cloud keeps serving up to `overage_cap`.
+		// Such an account reports `overage_cap`/`overage_used` instead of a daily
+		// quota, and QUIC.cloud's own credit check stays the authority.
+		if ( isset( $usage['overage_cap'], $usage['overage_used'] ) && $usage['overage_cap'] > $usage['overage_used'] ) {
+			$overage = max( 1, (int) floor( $usage['overage_cap'] - $usage['overage_used'] ) );
+			if ( $allowance_max && $allowance_max < $overage ) {
+				return $allowance_max;
+			}
+			return $overage;
 		}
 
 		// Check Pay As You Go balance

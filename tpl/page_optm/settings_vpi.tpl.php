@@ -83,12 +83,24 @@ $vpi_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_VPI );
 									if ( ! empty( $v['_status'] ) ) {
 										echo '</span>';
 									}
-									$pos = strpos( $k, ' ' );
-									if ( $pos ) {
-										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $k, 0, $pos ) ) . ')';
-									}
-									if ( $v['is_mobile'] ) {
-										echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
+									// Vary group: mobile shows as an icon, anything else the key carries follows as
+									// text in the same style, and the parenthetical is dropped when empty. VPI
+									// builds its key as ( $is_mobile ? 'mobile' : '' ) rather than from a vary
+									// string, so the token dropped here is 'mobile', not 'ismobile'.
+									$pos        = strpos( $k, ' ' );
+									$vary_rest  = $pos ? substr( $k, 0, $pos ) : '';
+									$vary_rest  = trim( str_replace( 'mobile', '', $vary_rest ) );
+									$has_mobile = ! empty( $v['is_mobile'] );
+
+									if ( $has_mobile || '' !== $vary_rest ) {
+										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':';
+										if ( $has_mobile ) {
+											echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
+										}
+										if ( '' !== $vary_rest ) {
+											echo ' <code class="litespeed-success">' . esc_html( $vary_rest ) . '</code>';
+										}
+										echo ')';
 									}
 									echo '<br />';
 								}

@@ -21,6 +21,7 @@ defined( 'WPINC' ) || exit;
 	<td>
 		<?php $this->build_switch( $option_id, array( esc_html__( 'OFF', 'litespeed-cache' ), 'WebP', 'AVIF' ) ); ?>
 		<?php Doc::maybe_on_by_gm( $option_id ); ?>
+		<?php Doc::maybe_on_by_ox( $option_id ); ?>
 		<div class="litespeed-desc">
 			<?php esc_html_e( 'Request WebP/AVIF versions of original images when doing optimization.', 'litespeed-cache' ); ?>
 			<?php printf( esc_html__( 'Significantly improve load time by replacing images with their optimized %s versions.', 'litespeed-cache' ), '.webp/.avif' ); ?>

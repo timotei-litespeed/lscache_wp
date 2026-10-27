@@ -180,7 +180,7 @@ if ( ! empty( $summary['preset'] ) || ! empty( $backups ) ) :
 			printf( esc_html__( 'Error: Failed to apply the settings %1$s', 'litespeed-cache' ), esc_html( $time ) );
 		} elseif ( 'backup' === $name ) {
 			printf( esc_html__( 'Restored backup settings %1$s', 'litespeed-cache' ), esc_html( $time ) );
-		} else {
+		} elseif ( isset( $presets[ $name ] ) ) {
 			printf(
 				esc_html__( 'Applied the %1$s preset %2$s', 'litespeed-cache' ),
 				'<strong>' . esc_html( $presets[ $name ]['title'] ) . '</strong>',

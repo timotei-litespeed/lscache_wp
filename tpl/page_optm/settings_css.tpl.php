@@ -135,15 +135,28 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 									if ( ! empty( $queue_val['_status'] ) ) {
 										echo '</span>';
 									}
-									$pos = strpos( $queue_key, ' ' );
-									if ( $pos ) {
-										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
-									}
-									if ( $queue_val['is_mobile'] ) {
-										echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-									}
-									if ( ! empty( $queue_val['is_webp'] ) ) {
-										echo ' ' . wp_kses_post( $next_gen );
+									// Vary group: mobile and next-gen show as icons, anything else the vary
+									// carries follows as text in the same style, and the whole parenthetical is
+									// dropped when there is nothing to describe.
+									$pos         = strpos( $queue_key, ' ' );
+									$vary_rest   = $pos ? substr( $queue_key, 0, $pos ) : '';
+									$vary_rest   = str_replace( [ 'ismobile', 'webp', 'avif' ], '', $vary_rest );
+									$vary_rest   = trim( preg_replace( '/\++/', ' ', $vary_rest ) );
+									$has_mobile  = ! empty( $queue_val['is_mobile'] );
+									$has_nextgen = ! empty( $queue_val['is_webp'] );
+
+									if ( $has_mobile || $has_nextgen || '' !== $vary_rest ) {
+										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':';
+										if ( $has_mobile ) {
+											echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
+										}
+										if ( $has_nextgen ) {
+											echo ' ' . wp_kses_post( $next_gen );
+										}
+										if ( '' !== $vary_rest ) {
+											echo ' <code class="litespeed-success">' . esc_html( $vary_rest ) . '</code>';
+										}
+										echo ')';
 									}
 									echo '<br />';
 								endforeach;
@@ -272,15 +285,28 @@ $ccss_service_hot = $this->cls( 'Cloud' )->service_hot( Cloud::SVC_CCSS );
 									if ( ! empty( $queue_val['_status'] ) ) {
 										echo '</span>';
 									}
-									$pos = strpos( $queue_key, ' ' );
-									if ( $pos ) {
-										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':' . esc_html( substr( $queue_key, 0, $pos ) ) . ')';
-									}
-									if ( $queue_val['is_mobile'] ) {
-										echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
-									}
-									if ( ! empty( $queue_val['is_webp'] ) ) {
-										echo ' ' . wp_kses_post( $next_gen );
+									// Vary group: mobile and next-gen show as icons, anything else the vary
+									// carries follows as text in the same style, and the whole parenthetical is
+									// dropped when there is nothing to describe.
+									$pos         = strpos( $queue_key, ' ' );
+									$vary_rest   = $pos ? substr( $queue_key, 0, $pos ) : '';
+									$vary_rest   = str_replace( [ 'ismobile', 'webp', 'avif' ], '', $vary_rest );
+									$vary_rest   = trim( preg_replace( '/\++/', ' ', $vary_rest ) );
+									$has_mobile  = ! empty( $queue_val['is_mobile'] );
+									$has_nextgen = ! empty( $queue_val['is_webp'] );
+
+									if ( $has_mobile || $has_nextgen || '' !== $vary_rest ) {
+										echo ' (' . esc_html__( 'Vary Group', 'litespeed-cache' ) . ':';
+										if ( $has_mobile ) {
+											echo ' <span data-balloon-pos="up" aria-label="mobile">📱</span>';
+										}
+										if ( $has_nextgen ) {
+											echo ' ' . wp_kses_post( $next_gen );
+										}
+										if ( '' !== $vary_rest ) {
+											echo ' <code class="litespeed-success">' . esc_html( $vary_rest ) . '</code>';
+										}
+										echo ')';
 									}
 									echo '<br />';
 								endforeach;
