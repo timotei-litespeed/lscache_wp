@@ -38,7 +38,8 @@ class File {
 	 * @return string Full .htaccess body.
 	 */
 	public static function build_static_dir_htaccess() {
-		$home_path = parse_url(home_url('/'), PHP_URL_PATH);
+		// The static folder is shared by every site of a network: one target keeps the file identical, so sites don't rewrite it in turn.
+		$home_path = parse_url(network_home_url('/'), PHP_URL_PATH);
 		if (!is_string($home_path) || '' === $home_path) {
 			$home_path = '/';
 		}
