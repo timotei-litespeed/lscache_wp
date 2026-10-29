@@ -604,7 +604,8 @@ class Control extends Root {
 			self::debug( '301 from ' . $script_uri );
 			self::debug( '301 to ' . $location );
 
-			$to_check = [ PHP_URL_SCHEME, PHP_URL_HOST, PHP_URL_PATH, PHP_URL_QUERY ];
+			// No scheme: behind a TLS proxy SCRIPT_URI is http while the Location is https, for the same cache entry.
+			$to_check = [ PHP_URL_HOST, PHP_URL_PATH, PHP_URL_QUERY ];
 
 			$is_same_redirect = true;
 
