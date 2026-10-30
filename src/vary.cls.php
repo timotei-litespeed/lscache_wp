@@ -806,7 +806,7 @@ class Vary extends Root {
 	 * @return string
 	 */
 	public function vary_hash() {
-		$hash = is_multisite() ? Conf::ensure_blog_hash( get_main_site_id( get_main_network_id() ) ) : (string) $this->conf( Base::HASH );
+		$hash = Conf::ensure_blog_hash( is_multisite() ? get_main_site_id( get_main_network_id() ) : get_current_blog_id() );
 		if ( '' === $hash ) {
 			Control::set_nocache_hard( 'missing shared vary hash' );
 			return '';

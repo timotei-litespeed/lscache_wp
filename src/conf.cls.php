@@ -351,13 +351,14 @@ class Conf extends Base {
 	}
 
 	/**
-	 * Read the primary blog's HASH on multisite, adding it only when absent.
+	 * Read a blog's HASH, adding it when absent or empty.
 	 *
 	 * @param int $blog_id Owning blog ID.
 	 * @return string Empty when the stored value is empty or invalid.
 	 */
 	public static function ensure_blog_hash( $blog_id ) {
-		$switched = get_current_blog_id() !== (int) $blog_id;
+		$switched    = get_current_blog_id() !== (int) $blog_id;
+		$regenerated = false;
 		if ( $switched ) {
 			switch_to_blog( $blog_id );
 		}
@@ -366,11 +367,19 @@ class Conf extends Base {
 			if ( false === $hash ) {
 				self::add_option( self::HASH, Str::rrand( 32 ) );
 				$hash = self::get_option( self::HASH, '' );
+			} elseif ( '' === $hash ) {
+				// An empty stored hash disables the vary cookie, so logged-in users get the guest cache.
+				self::update_option( self::HASH, Str::rrand( 32 ) );
+				$hash        = self::get_option( self::HASH, '' );
+				$regenerated = true;
 			}
 		} finally {
 			if ( $switched ) {
 				restore_current_blog();
 			}
+		}
+		if ( $regenerated ) {
+			Activation::cls()->refresh_conf_data_file();
 		}
 		return is_string( $hash ) ? $hash : '';
 	}

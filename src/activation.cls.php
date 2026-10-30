@@ -470,6 +470,19 @@ class Activation extends Base {
 	}
 
 	/**
+	 * Rewrite the data conf file after the hash was regenerated, as guest.vary.php reads the hash from it.
+	 *
+	 * @since 7.9.3
+	 * @return void
+	 */
+	public function refresh_conf_data_file() {
+		$options = $this->get_options();
+		if ( $options[ self::O_GUEST ] && ( ! $options[ self::O_DEBUG_DISABLE_ALL ] || is_multisite() ) ) {
+			$this->update_conf_data_file( $options );
+		}
+	}
+
+	/**
 	 * Update data conf file for guest mode & object cache
 	 *
 	 * Updates the .litespeed_conf.php file with relevant settings.
