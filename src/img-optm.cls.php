@@ -61,6 +61,8 @@ class Img_Optm extends Base {
 	// `_summary` keys carrying failed-attachment counts across batch_switch / destroy redirects.
 	const SUMMARY_SWITCH_FAILED  = 'switch_failed';
 	const SUMMARY_DESTROY_FAILED = 'destroy_failed';
+	// `_summary` key counting the images OptimaX builds saved; Destroy clears it, Soft Reset keeps it.
+	const SUMMARY_OX_IMGS = 'ox_imgs';
 
 	/**
 	 * WordPress upload directory info.

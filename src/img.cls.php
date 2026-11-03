@@ -313,7 +313,30 @@ class Img {
 	 */
 	private static function _valid( $file, $sum, $algo, $type ) {
 		$size = is_string( $file ) && is_file( $file ) ? filesize( $file ) : false;
-		if ( ! $size || self::MAX_BYTES < $size || ! is_string( $sum ) ) {
+		if ( ! $size || self::MAX_BYTES < $size ) {
+			return false;
+		}
+
+		return self::matches_sum( $file, $sum, $algo, true ) && self::_is_img( $file, $type );
+	}
+
+	/**
+	 * Whether content matches the checksum its service sent for it.
+	 *
+	 * The one digest check for every artifact pulled from QUIC.cloud: the images
+	 * above, and OptiMax's JS bundle and used CSS, which arrive as a body rather
+	 * than a file.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $data    Content, or a file path when `$is_file`.
+	 * @param mixed  $sum     Expected checksum, hex.
+	 * @param string $algo    Checksum algorithm: `md5` or `sha256`.
+	 * @param bool   $is_file Whether `$data` is a file path.
+	 * @return bool
+	 */
+	public static function matches_sum( $data, $sum, $algo, $is_file = false ) {
+		if ( ! is_string( $sum ) ) {
 			return false;
 		}
 		if ( 'md5' === $algo ) {
@@ -324,8 +347,8 @@ class Img {
 			return false;
 		}
 
-		$actual = hash_file( $algo, $file );
-		return $valid_sum && is_string( $actual ) && hash_equals( strtolower( $sum ), $actual ) && self::_is_img( $file, $type );
+		$actual = $is_file ? hash_file( $algo, $data ) : hash( $algo, (string) $data );
+		return $valid_sum && is_string( $actual ) && hash_equals( strtolower( $sum ), $actual );
 	}
 
 	/**

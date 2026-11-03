@@ -29,6 +29,7 @@ defined( 'WPINC' ) || exit;
 				<?php else : ?>
 					<?php $this->build_switch( $option_id ); ?>
 				<?php endif; ?>
+				<?php Doc::maybe_on_by_ox( $option_id ); ?>
 				<div class="litespeed-desc">
 					<?php
 					printf(

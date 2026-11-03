@@ -41,6 +41,20 @@ if ( is_network_admin() ) {
     </h2>
 
     <div class="litespeed-body">
+        <?php if ( ! is_network_admin() && $this->conf( Base::O_OPTIMAX ) && ! Optimax::nextgen_on() ) : ?>
+            <div class="litespeed-callout notice notice-warning inline">
+                <h4><?php esc_html_e( 'OptimaX does not optimize images', 'litespeed-cache' ); ?></h4>
+                <p>
+                    <?php
+                    printf(
+                        /* translators: %s: link to the Next-Gen Image Format setting in Image Optimization */
+                        esc_html__( 'Next-Gen Image Format is off, so OptimaX does not optimize images. Turn it on in %s to get WebP/AVIF images in OptimaX pages.', 'litespeed-cache' ),
+                        '<a href="' . esc_url( admin_url( 'admin.php?page=litespeed-img_optm#settings' ) ) . '">' . esc_html__( 'Image Optimization settings', 'litespeed-cache' ) . '</a>'
+                    );
+                    ?>
+                </p>
+            </div>
+        <?php endif; ?>
         <?php
         foreach ( $menu_list as $menu_key => $val ) {
             GUI::display_tab_layout( $menu_list, $menu_key );

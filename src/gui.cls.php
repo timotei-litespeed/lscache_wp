@@ -591,7 +591,7 @@ class GUI extends Base {
 			]
 		);
 
-		if ( $this->has_cache_folder( 'ucss' ) ) {
+		if ( $this->has_purgeable_folder( 'ucss' ) ) {
 			$possible_url_tag = UCSS::get_url_tag();
 			$append_arr       = [];
 			if ( $possible_url_tag ) {
@@ -749,7 +749,7 @@ class GUI extends Base {
 			);
 		}
 
-		if ( $this->has_cache_folder( 'ccss' ) ) {
+		if ( $this->has_purgeable_folder( 'ccss' ) ) {
 			$wp_admin_bar->add_menu(
 				[
 					'parent' => 'litespeed-menu',
@@ -761,7 +761,7 @@ class GUI extends Base {
 			);
 		}
 
-		if ( $this->has_cache_folder( 'ucss' ) ) {
+		if ( $this->has_purgeable_folder( 'ucss' ) ) {
 			$wp_admin_bar->add_menu(
 				[
 					'parent' => 'litespeed-menu',
@@ -796,7 +796,7 @@ class GUI extends Base {
 			);
 		}
 
-		if ( $this->has_cache_folder( 'vpi' ) ) {
+		if ( $this->has_purgeable_folder( 'vpi' ) ) {
 			$wp_admin_bar->add_menu(
 				[
 					'parent' => 'litespeed-menu',
@@ -815,6 +815,18 @@ class GUI extends Base {
 					'id'     => 'litespeed-purge-avatar',
 					'title'  => esc_html__( 'Purge All', 'litespeed-cache' ) . ' - ' . esc_html__( 'Gravatar Cache', 'litespeed-cache' ),
 					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_AVATAR, false, '_ori' ),
+					'meta'   => [ 'tabindex' => '0' ],
+				]
+			);
+		}
+
+		if ( $this->has_cache_folder( 'optimax' ) ) {
+			$wp_admin_bar->add_menu(
+				[
+					'parent' => 'litespeed-menu',
+					'id'     => 'litespeed-purge-optimax',
+					'title'  => __( 'Purge All', 'litespeed-cache' ) . ' - OptimaX',
+					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_OPTIMAX, false, '_ori' ),
 					'meta'   => [ 'tabindex' => '0' ],
 				]
 			);
@@ -968,7 +980,7 @@ class GUI extends Base {
 			);
 		}
 
-		if ( $this->has_cache_folder( 'ccss' ) ) {
+		if ( $this->has_purgeable_folder( 'ccss' ) ) {
 			$wp_admin_bar->add_menu(
 				[
 					'parent' => 'litespeed-menu',
@@ -980,7 +992,7 @@ class GUI extends Base {
 			);
 		}
 
-		if ( $this->has_cache_folder( 'ucss' ) ) {
+		if ( $this->has_purgeable_folder( 'ucss' ) ) {
 			$wp_admin_bar->add_menu(
 				[
 					'parent' => 'litespeed-menu',
@@ -1015,7 +1027,7 @@ class GUI extends Base {
 			);
 		}
 
-    	if ( $this->has_cache_folder( 'vpi' ) ) {
+    	if ( $this->has_purgeable_folder( 'vpi' ) ) {
 			$wp_admin_bar->add_menu(
 				[
 					'parent' => 'litespeed-menu',
@@ -1034,6 +1046,18 @@ class GUI extends Base {
 					'id'     => 'litespeed-purge-avatar',
 					'title'  => esc_html__( 'Purge All', 'litespeed-cache' ) . ' - ' . esc_html__( 'Gravatar Cache', 'litespeed-cache' ),
 					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_AVATAR ),
+					'meta'   => [ 'tabindex' => '0' ],
+				]
+			);
+		}
+
+		if ( $this->has_cache_folder( 'optimax' ) ) {
+			$wp_admin_bar->add_menu(
+				[
+					'parent' => 'litespeed-menu',
+					'id'     => 'litespeed-purge-optimax',
+					'title'  => __( 'Purge All', 'litespeed-cache' ) . ' - OptimaX',
+					'href'   => Utility::build_url( Router::ACTION_PURGE, Purge::TYPE_PURGE_ALL_OPTIMAX ),
 					'meta'   => [ 'tabindex' => '0' ],
 				]
 			);

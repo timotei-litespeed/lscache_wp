@@ -51,10 +51,14 @@ class Task extends Root {
 			'name' => 'litespeed_task_vpi',
 			'hook' => 'LiteSpeed\VPI::cron',
 		],
-		Base::O_OPTIMAX => [
+		Base::O_OPTIMAX_CRON => [
 			'name' => 'litespeed_task_optimax',
-			'hook' => 'LiteSpeed\Optimax::cron',
+			'hook' => 'LiteSpeed\Optimax::cron_push',
 		],
+		Base::O_OPTIMAX => [
+			'name' => Optimax::PULL_HOOK,
+			'hook' => 'LiteSpeed\Optimax::cron_pull',
+		], // always collect finished builds
 		Base::O_MEDIA_PLACEHOLDER_RESP_ASYNC => [
 			'name' => 'litespeed_task_lqip',
 			'hook' => 'LiteSpeed\Placeholder::cron',
@@ -98,6 +102,8 @@ class Task extends Root {
 	 */
 	const FILTER = 'litespeed_filter';
 
+	const TYPE_RUN = 'run';
+
 	/**
 	 * Keep all tasks in cron.
 	 *
@@ -125,6 +131,22 @@ class Task extends Root {
 				if ( ! Img_Optm::need_pull() ) {
 					continue;
 				}
+			} elseif ( Base::O_OPTIMAX === $id ) {
+				// Pull runs on outstanding work, not on the cron switch, but still
+				// requires the feature itself to be on.
+				if ( ! $this->conf( $id ) || ! Optimax::need_pull() ) {
+					// A recurring pull event left by an older version has nothing to collect.
+					$event = wp_get_scheduled_event( $trigger['name'] );
+					if ( $event && ! empty( $event->schedule ) ) {
+						wp_clear_scheduled_hook( $trigger['name'] );
+					}
+					continue;
+				}
+
+				// Its own single event at the try_later deadline, not the general interval.
+				Optimax::schedule_pull( true );
+				add_action( $trigger['name'], $trigger['hook'] );
+				continue;
 			} elseif ( ! $this->conf( $id ) ) {
 				if ( ! $guest_optm || ! in_array( $id, self::$_guest_options, true ) ) {
 					continue;
@@ -133,9 +155,9 @@ class Task extends Root {
 
 			// Skip cron registration if waiting for try_later timeout
 			$try_later_map = [
-				Base::O_OPTM_UCSS     => [ 'UCSS', 'ucss_next_run_after' ],
+				Base::O_OPTM_UCSS      => [ 'UCSS', 'ucss_next_run_after' ],
 				Base::O_OPTM_CSS_ASYNC => [ 'CSS', 'ccss_next_run_after' ],
-				Base::O_OPTIMAX       => [ 'Optimax', 'ox_next_run_after' ],
+				Base::O_OPTIMAX_CRON   => [ 'Optimax', 'ox_next_run_after' ],
 			];
 			if ( isset( $try_later_map[ $id ] ) ) {
 				list( $cls_name, $summary_key ) = $try_later_map[ $id ];
@@ -190,6 +212,80 @@ class Task extends Root {
 			}
 			add_action( $hook, 'LiteSpeed\Health::cron' );
 		}
+	}
+
+	/**
+	 * Whether WP-Cron is turned off (`DISABLE_WP_CRON`).
+	 *
+	 * @since 8.0
+	 *
+	 * @return bool
+	 */
+	public static function wp_cron_off() {
+		return defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+	}
+
+	/**
+	 * The standard note under a cron setting while WP-Cron is not running.
+	 *
+	 * @since 8.0
+	 *
+	 * @param bool $return_output Return the HTML instead of printing it.
+	 * @return string|void
+	 */
+	public static function cron_off_notice( $return_output = false ) {
+		$html = self::wp_cron_off() ? '<br /><font class="litespeed-warning">' . esc_html__( 'WP Cron is not running', 'litespeed-cache' ) . '</font>' : '';
+		if ( $return_output ) {
+			return $html;
+		}
+		echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above.
+	}
+
+	/**
+	 * A "Run Cron now" button while WP-Cron is not running.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $ids           Cron setting ids whose tasks to run; empty runs every LSCWP cron task.
+	 * @param bool  $return_output Return the HTML instead of printing it.
+	 * @return string|void
+	 */
+	public static function run_cron_btn( $ids = [], $return_output = false ) {
+		$html = '';
+		if ( self::wp_cron_off() ) {
+			$append = $ids ? [ 'litespeed_i' => implode( ',', $ids ) ] : [];
+			$html   = '<a href="' . esc_url( Utility::build_url( Router::ACTION_TASK, self::TYPE_RUN, false, null, $append ) ) . '" class="button button-secondary">' . esc_html__( 'Run Cron now', 'litespeed-cache' ) . '</a>';
+		}
+		if ( $return_output ) {
+			return $html;
+		}
+		echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above.
+	}
+
+	/**
+	 * Admin action: run LSCWP cron tasks now, as WP-Cron would.
+	 *
+	 * A task whose feature is off has no callback registered, so it does nothing.
+	 *
+	 * @since 8.0
+	 *
+	 * @return string|void Notice to show.
+	 */
+	public function handler() {
+		if ( self::TYPE_RUN !== Router::verify_type() ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Router::verify_action() checked the nonce.
+		$ids = ! empty( $_GET['litespeed_i'] ) ? explode( ',', sanitize_text_field( wp_unslash( $_GET['litespeed_i'] ) ) ) : array_keys( self::$_triggers );
+		foreach ( self::$_triggers as $id => $trigger ) {
+			if ( in_array( $id, $ids, true ) ) {
+				self::debug( 'Run cron now [name] ' . $trigger['name'] );
+				do_action( $trigger['name'] );
+			}
+		}
+
+		return __( 'Cron tasks ran.', 'litespeed-cache' );
 	}
 
 	/**
@@ -326,7 +422,7 @@ class Task extends Root {
 	public function lscache_cron_filter( $schedules ) {
 		if ( ! array_key_exists( self::FILTER, $schedules ) ) {
 			$schedules[ self::FILTER ] = [
-				'interval' => 900,
+				'interval' => 60,  // TODO: temporary added OX to speed up cron runs, change back to 900 (15min) after testing
 				'display'  => __( 'Every 15 Minutes', 'litespeed-cache' ),
 			];
 		}

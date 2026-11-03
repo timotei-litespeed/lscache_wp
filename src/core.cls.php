@@ -138,8 +138,10 @@ class Core extends Root {
 
 		add_action( 'after_setup_theme', [ $this, 'init' ] );
 
-		// Check if there is a purge request in queue
-		if ( ! defined( 'LITESPEED_CLI' ) ) {
+		// Check if there is a purge request in queue.
+		// wp-cron.php finishes the response before WP loads, so a cron request can't send the header:
+		// leave the queue for a request that can (send_headers() kicks one when cron ends).
+		if ( ! defined( 'LITESPEED_CLI' ) && ! wp_doing_cron() && ! headers_sent() ) {
 			$purge_queue = Purge::get_option( Purge::DB_QUEUE );
 			if ( $purge_queue && '-1' !== $purge_queue ) {
 				$this->http_header( $purge_queue );
@@ -219,6 +221,12 @@ class Core extends Root {
 		add_filter( 'litespeed_buffer_after', [ $this, 'drop_query_strings' ], 99 );
 		add_action( 'shutdown', [ $this, 'send_headers' ], 0 );
 		add_action( 'wp_footer', [ $this, 'footer_hook' ] );
+
+		// OptimaX: a qcbot request is served the build unchecked, so it must not enter the public cache.
+		// Decided here: the cache headers are sent before serve() runs.
+		if ( $this->conf( Base::O_OPTIMAX ) ) {
+			add_action( 'litespeed_control_finalize', [ $this->cls( 'Optimax' ), 'qcbot_nocache' ] );
+		}
 
 		/**
 		 * Check if is non-optimization simulator
@@ -501,7 +509,7 @@ class Core extends Root {
 		 */
 		if ( ! defined( 'LITESPEED_NO_OPTM' ) || ! LITESPEED_NO_OPTM ) {
 			// Optimax: first priority check — skip all hooks if ox HTML is cached. Checked here: building Optimax reads its summary option.
-			$ox_html = $this->conf( Base::O_OPTIMAX ) ? $this->cls( 'Optimax' )->serve() : false;
+			$ox_html = $this->conf( Base::O_OPTIMAX ) ? $this->cls( 'Optimax' )->serve( $buffer ) : false;
 			if ( false !== $ox_html ) {
 				Debug2::debug( '[Core] Optimax served, skip litespeed_buffer_finalize' );
 				define( 'LITESPEED_OX_SERVED', true );
@@ -662,7 +670,13 @@ class Core extends Root {
 
 		// Avoid PHP warning for headers sent out already
 		if ( headers_sent() ) {
-			self::debug( '❌ !!! Err: Header sent out already' );
+			// wp-cron.php finishes the response before running jobs on purpose: purges queued by its jobs
+			// can only go out through another request, so kick one (like CLI below).
+			if ( wp_doing_cron() ) {
+				self::kick_purge_queue();
+			} else {
+				self::debug( '❌ !!! Err: Header sent out already' );
+			}
 			return;
 		}
 
@@ -784,8 +798,9 @@ class Core extends Root {
 			Debug2::debug( '--forced--' );
 		}
 
-		// If CLI and contains Purge Header, issue an HTTP request to Purge
-		if ( defined( 'LITESPEED_CLI' ) ) {
+		// If CLI or cron and contains Purge Header, issue an HTTP request to Purge
+		// (the constructor leaves the queue alone in both).
+		if ( defined( 'LITESPEED_CLI' ) || wp_doing_cron() ) {
 			self::kick_purge_queue();
 		}
 	}

@@ -360,8 +360,7 @@ class Purge extends Base {
 	private function _purge_all_optimax( $silence = false ) {
 		do_action( 'litespeed_purged_all_optimax' );
 
-		$this->cls( 'Optimax' )->rm_cache_folder( 'optimax' );
-		$this->cls( 'Data' )->url_file_clean( 'optimax' );
+		$this->cls( 'Optimax_Pages' )->purge_builds();
 		$this->clear_q( 'optimax', true );
 
 		if ( ! $silence ) {
@@ -591,6 +590,17 @@ class Purge extends Base {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Purge all OptimaX files, URL mappings and queue (public wrapper).
+	 *
+	 * @since 8.0
+	 * @param bool $silence If true, don't show admin notice.
+	 * @return void
+	 */
+	public static function purge_all_optimax( $silence = true ) {
+		self::cls()->_purge_all_optimax( $silence );
 	}
 
 	/**
