@@ -380,7 +380,7 @@ class Optimax_Pages extends Root {
 		}
 		$types = implode( ',', array_map( 'intval', array_keys( $ext_by_type ) ) );
 
-		$rows = $wpdb->get_results( "SELECT filename, type FROM `$tb_file` WHERE type IN ($types) AND $where", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $wpdb->get_results( "SELECT filename, type, url_id, vary FROM `$tb_file` WHERE type IN ($types) AND $where", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared
 		if ( ! $rows ) {
 			return 0;
 		}
@@ -412,8 +412,44 @@ class Optimax_Pages extends Root {
 		}
 
 		$this->_delete_unused_assets( array_unique( $assets ) );
+		$this->_drop_orphan_sheet_copies( $rows );
 
 		return count( $rows );
+	}
+
+	/**
+	 * Drop the builder stylesheet copies of each version whose deleted fingerprint
+	 * row was its last: they belonged to the build that fingerprint matched.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $rows Deleted build rows: `type`, `url_id`, `vary`.
+	 * @return void
+	 */
+	private function _drop_orphan_sheet_copies( $rows ) {
+		global $wpdb;
+
+		$data   = Data::cls();
+		$tb     = $data->tb( 'url_file' );
+		$tb_url = $data->tb( 'url' );
+		$src_id = (int) $data->file_type_id( 'optimax_src' );
+		$done   = [];
+		foreach ( $rows as $f ) {
+			$key = (int) $f['url_id'] . ' ' . $f['vary'];
+			if ( $src_id !== (int) $f['type'] || isset( $done[ $key ] ) ) {
+				continue;
+			}
+			$done[ $key ] = true;
+
+			if ( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM `$tb` WHERE url_id = %d AND vary = %s AND type = %d", (int) $f['url_id'], $f['vary'], $src_id ) ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				continue;
+			}
+			$url_tag = $wpdb->get_var( $wpdb->prepare( "SELECT url FROM `$tb_url` WHERE id = %d", (int) $f['url_id'] ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			if ( $url_tag ) {
+				// A stored vary is already vary_key()'d, which vary_key() keeps as it is.
+				$this->drop_sheet_copies( $url_tag, $f['vary'] );
+			}
+		}
 	}
 
 	/**
@@ -925,6 +961,168 @@ class Optimax_Pages extends Root {
 		if ( $id ) {
 			$this->_delete_builds( $wpdb->prepare( 'url_id = %d AND vary = %s AND type = %d', $id, self::vary_key( $vary ), Data::cls()->file_type_id( 'optimax_src' ) ) );
 		}
+		// The stylesheet copies belong to the build the fingerprint matched.
+		$this->drop_sheet_copies( $url_tag, $vary );
+	}
+
+	/**
+	 * Keep the builder stylesheets a version's live build was cut from (Optimax_Sync::same_sheets()).
+	 *
+	 * Beside the fingerprint, not in it: a patch writes the fingerprint again from its
+	 * own render, while the build's CSS stays the one it was cut from. Written only
+	 * when a real build is stored (Optimax::_record_build_render()). A `.json` beside
+	 * the builds, so Purge All OptimaX takes it with them.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @param array  $sheets  URL path => pack_base() of the CSS, as kept with the render (pack_sheets()). Empty drops the copies.
+	 * @return void
+	 */
+	public function save_sheet_copies( $url_tag, $vary, $sheets ) {
+		// Each copy's md5 beside it: a render whose verdict is known inflates none.
+		$md5 = [];
+		foreach ( $sheets as $path => $packed ) {
+			$css = self::unpack_base( $packed, Optimax_Sync::SHEET_COPY_MAX );
+			if ( '' !== $css ) {
+				$md5[ $path ] = md5( $css );
+			}
+		}
+		if ( ! $md5 ) {
+			$this->drop_sheet_copies( $url_tag, $vary );
+			return;
+		}
+
+		$con = wp_json_encode(
+			[
+				'url_tag' => $url_tag,
+				'vary'    => $vary,
+				'sheets'  => array_intersect_key( $sheets, $md5 ),
+				'md5'     => $md5,
+			]
+		);
+		if ( ! is_string( $con ) || false === File::save( $this->_sheets_file( $url_tag, $vary ), $con, true ) ) {
+			// Without them every builder stylesheet change counts, as before.
+			$this->drop_sheet_copies( $url_tag, $vary );
+		}
+	}
+
+	/**
+	 * The builder stylesheets a version's live build was cut from, and the verdicts
+	 * on them remembered for that build (save_sheet_verdicts()).
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @param string $build   The build's HTML md5: verdicts of another build are left out.
+	 * @return array `md5`: URL path => md5 of the copy, empty when none are kept; `packed`: URL path =>
+	 *               pack_base() of the copy (unpack_sheet()); `known`: Optimax_Sync::same_sheets() verdicts.
+	 */
+	public function load_sheet_copies( $url_tag, $vary, $build ) {
+		$file = $this->_sheets_file( $url_tag, $vary );
+		$kept = file_exists( $file ) ? json_decode( (string) File::read( $file ), true ) : null;
+		$out  = [
+			'md5'    => [],
+			'packed' => [],
+			'known'  => [],
+		];
+		if ( ! is_array( $kept ) || ! isset( $kept['sheets'], $kept['md5'] ) || ! is_array( $kept['sheets'] ) || ! is_array( $kept['md5'] ) ) {
+			return $out;
+		}
+
+		foreach ( $kept['md5'] as $path => $md5 ) {
+			if ( is_string( $md5 ) && preg_match( '/^[a-f0-9]{32}$/', $md5 ) && isset( $kept['sheets'][ $path ] ) && is_string( $kept['sheets'][ $path ] ) ) {
+				$out['md5'][ (string) $path ]    = $md5;
+				$out['packed'][ (string) $path ] = $kept['sheets'][ $path ];
+			}
+		}
+		if ( isset( $kept['verdicts']['build'], $kept['verdicts']['known'] ) && $build === $kept['verdicts']['build'] && is_array( $kept['verdicts']['known'] ) ) {
+			$out['known'] = array_filter( $kept['verdicts']['known'], 'is_bool' );
+		}
+		return $out;
+	}
+
+	/**
+	 * One kept builder stylesheet copy, read back.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $packed pack_base() of the copy.
+	 * @return string|null Null when it cannot be read, or is over the copy limit.
+	 */
+	public static function unpack_sheet( $packed ) {
+		$css = self::unpack_base( $packed, Optimax_Sync::SHEET_COPY_MAX );
+		return '' === $css ? null : $css;
+	}
+
+	/**
+	 * Remember the verdicts on a version's builder stylesheets, so a repeat render
+	 * does not parse them again (Optimax_Sync::same_sheets()).
+	 *
+	 * Kept beside the copies, for one build only; the newest 16. Copies written
+	 * again for a new build (save_sheet_copies()) start with none.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @param string $build   The build's HTML md5.
+	 * @param array  $known   Verdicts, `path|copy md5|file md5` => bool.
+	 * @return void
+	 */
+	public function save_sheet_verdicts( $url_tag, $vary, $build, $known ) {
+		$file = $this->_sheets_file( $url_tag, $vary );
+		$kept = file_exists( $file ) ? json_decode( (string) File::read( $file ), true ) : null;
+		if ( ! is_array( $kept ) || empty( $kept['sheets'] ) ) {
+			return;
+		}
+
+		$kept['verdicts'] = [
+			'build' => (string) $build,
+			'known' => array_slice( $known, -16, null, true ),
+		];
+		$con              = wp_json_encode( $kept );
+		if ( is_string( $con ) ) {
+			File::save( $file, $con, true );
+		}
+	}
+
+	/**
+	 * Forget the builder stylesheets a version's build was cut from.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return void
+	 */
+	public function drop_sheet_copies( $url_tag, $vary ) {
+		$file = $this->_sheets_file( $url_tag, $vary );
+		if ( file_exists( $file ) ) {
+			wp_delete_file( $file );
+		}
+	}
+
+	/**
+	 * A render's builder stylesheets as kept with it: URL path => pack_base() of the CSS.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $render The render.
+	 * @return array
+	 */
+	private static function pack_sheets( $render ) {
+		$out    = [];
+		$copies = '' !== (string) $render ? Optimax_Sync::sheet_copies( $render ) : [];
+		foreach ( $copies as $path => $css ) {
+			$packed = self::pack_base( $css );
+			if ( '' !== $packed ) {
+				$out[ $path ] = $packed;
+			}
+		}
+		return $out;
 	}
 
 	/**
@@ -946,11 +1144,12 @@ class Optimax_Pages extends Root {
 	 * @since 8.0
 	 *
 	 * @param string $packed pack_base() output.
-	 * @return string Empty when there is none, or it cannot be read.
+	 * @param int    $max    Most bytes it may inflate to; 0: no limit.
+	 * @return string Empty when there is none, it cannot be read, or it is over `$max`.
 	 */
-	public static function unpack_base( $packed ) {
+	public static function unpack_base( $packed, $max = 0 ) {
 		$raw  = '' === (string) $packed ? false : base64_decode( (string) $packed, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
-		$html = false === $raw || ! function_exists( 'gzinflate' ) ? false : gzinflate( $raw );
+		$html = false === $raw || ! function_exists( 'gzinflate' ) ? false : @gzinflate( $raw, $max ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- warns when over $max.
 		return false === $html ? '' : $html;
 	}
 
@@ -961,8 +1160,9 @@ class Optimax_Pages extends Root {
 	 * (`now`), and the build that served it (`file`), which expire_version() stops
 	 * serving but clean_expired() keeps until a result replaces it. `now` is
 	 * fingerprinted here, in the request that rendered it: a stylesheet counts by
-	 * its file's content, which may change before the result comes back. A `.json`,
-	 * so Purge All OptimaX takes it with the builds.
+	 * its file's content, which may change before the result comes back. Its builder
+	 * stylesheets are copied here too (pack_sheets()), for the full build that follows
+	 * a refused sync. A `.json`, so Purge All OptimaX takes it with the builds.
 	 *
 	 * @since 8.0
 	 *
@@ -971,9 +1171,10 @@ class Optimax_Pages extends Root {
 	 * @param string $base    pack_base() of the build's render.
 	 * @param string $now     The render that showed the change.
 	 * @param string $file    The build's filename (its HTML without `.html`).
+	 * @param array  $same    Optimax_Sync::same_sheets() of the render: a synced result reads those sheets as its copies (Optimax::_record_build_render()).
 	 * @return bool
 	 */
-	public function save_sync( $url_tag, $vary, $base, $now, $file ) {
+	public function save_sync( $url_tag, $vary, $base, $now, $file, $same = [] ) {
 		$con = wp_json_encode(
 			[
 				'url_tag' => $url_tag,
@@ -981,6 +1182,8 @@ class Optimax_Pages extends Root {
 				'base'    => (string) $base,
 				'now'     => self::pack_base( $now ),
 				'fp'      => self::render_fingerprint( $now ),
+				'css'     => self::pack_sheets( $now ),
+				'same'    => $same,
 				'file'    => (string) $file,
 			]
 		);
@@ -1063,7 +1266,7 @@ class Optimax_Pages extends Root {
 	 *
 	 * @param string $url_tag Page identity.
 	 * @param string $vary    Raw vary.
-	 * @return array `render` (empty when no sync is queued) and `fp` (null when not kept).
+	 * @return array `render` (empty when no sync is queued), `fp` (null when not kept), `css` (kept_sheets()) and `same` (save_sync()).
 	 */
 	public function sync_render( $url_tag, $vary ) {
 		$file = $this->_sync_file( $url_tag, $vary );
@@ -1072,15 +1275,17 @@ class Optimax_Pages extends Root {
 		return [
 			'render' => is_array( $snap ) && isset( $snap['now'] ) ? self::unpack_base( $snap['now'] ) : '',
 			'fp'     => is_array( $snap ) ? self::kept_fingerprint( $snap ) : null,
+			'css'    => is_array( $snap ) ? self::kept_sheets( $snap ) : [],
+			'same'   => is_array( $snap ) && self::kept_fingerprint( $snap ) && isset( $snap['same'] ) && is_array( $snap['same'] ) ? array_filter( $snap['same'], [ __CLASS__, 'is_same_sheet' ] ) : [],
 		];
 	}
 
 	/**
 	 * Keep the render a version's build was requested with, until its result is stored.
 	 *
-	 * A later request for the same version replaces it. Fingerprinted here, in the
-	 * request that rendered it (see save_sync()). A `.json` beside the builds, so
-	 * Purge All OptimaX takes it with them.
+	 * A later request for the same version replaces it. Fingerprinted, and its builder
+	 * stylesheets copied, here, in the request that rendered it (see save_sync()). A
+	 * `.json` beside the builds, so Purge All OptimaX takes it with them.
 	 *
 	 * @since 8.0
 	 *
@@ -1096,6 +1301,7 @@ class Optimax_Pages extends Root {
 				'vary'    => $vary,
 				'render'  => self::pack_base( $render ),
 				'fp'      => self::render_fingerprint( $render ),
+				'css'     => self::pack_sheets( $render ),
 			]
 		);
 
@@ -1103,14 +1309,14 @@ class Optimax_Pages extends Root {
 	}
 
 	/**
-	 * The render a version's build was requested with, and its fingerprint taken
-	 * when it was rendered, forgotten once read.
+	 * The render a version's build was requested with, and its fingerprint and
+	 * builder stylesheets taken when it was rendered, forgotten once read.
 	 *
 	 * @since 8.0
 	 *
 	 * @param string $url_tag Page identity.
 	 * @param string $vary    Raw vary.
-	 * @return array `render` (empty when there is none) and `fp` (null when not kept).
+	 * @return array `render` (empty when there is none), `fp` (null when not kept) and `css` (kept_sheets()).
 	 */
 	public function take_queued_render( $url_tag, $vary ) {
 		$file = $this->_queued_file( $url_tag, $vary );
@@ -1118,6 +1324,7 @@ class Optimax_Pages extends Root {
 			return [
 				'render' => '',
 				'fp'     => null,
+				'css'    => [],
 			];
 		}
 
@@ -1127,6 +1334,7 @@ class Optimax_Pages extends Root {
 		return [
 			'render' => is_array( $kept ) && isset( $kept['render'] ) ? self::unpack_base( $kept['render'] ) : '',
 			'fp'     => is_array( $kept ) ? self::kept_fingerprint( $kept ) : null,
+			'css'    => is_array( $kept ) ? self::kept_sheets( $kept ) : [],
 		];
 	}
 
@@ -1167,6 +1375,38 @@ class Optimax_Pages extends Root {
 	}
 
 	/**
+	 * The builder stylesheets kept with a render (pack_sheets()), still packed, when
+	 * they belong to a fingerprint of the current format.
+	 *
+	 * They are the build's CSS only together with that fingerprint: a render kept by
+	 * an older plugin has neither.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $kept The stored record.
+	 * @return array URL path => pack_base() of the CSS.
+	 */
+	private static function kept_sheets( $kept ) {
+		if ( ! self::kept_fingerprint( $kept ) || ! isset( $kept['css'] ) || ! is_array( $kept['css'] ) ) {
+			return [];
+		}
+		return array_filter( $kept['css'], 'is_string' );
+	}
+
+	/**
+	 * Whether a stored Optimax_Sync::same_sheets() entry is well formed.
+	 *
+	 * @since 8.0
+	 *
+	 * @param mixed $entry Entry.
+	 * @return bool
+	 */
+	private static function is_same_sheet( $entry ) {
+		return is_array( $entry ) && isset( $entry['from'], $entry['to'] ) && is_string( $entry['from'] ) && is_string( $entry['to'] )
+			&& preg_match( '/^[a-f0-9]{32}$/', $entry['from'] ) && preg_match( '/^[a-f0-9]{32}$/', $entry['to'] );
+	}
+
+	/**
 	 * Where one version's queued render lives.
 	 *
 	 * @param string $url_tag Page identity.
@@ -1188,6 +1428,19 @@ class Optimax_Pages extends Root {
 	 */
 	private function _sync_file( $url_tag, $vary ) {
 		return LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . 'sync-' . md5( self::vary_key( $vary ) . ' ' . $url_tag ) . '.json';
+	}
+
+	/**
+	 * Where the builder stylesheets one version's live build was cut from live.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return string
+	 */
+	private function _sheets_file( $url_tag, $vary ) {
+		return LITESPEED_STATIC_DIR . $this->_build_filepath_prefix( 'optimax' ) . 'sheets-' . md5( self::vary_key( $vary ) . ' ' . $url_tag ) . '.json';
 	}
 
 	/**

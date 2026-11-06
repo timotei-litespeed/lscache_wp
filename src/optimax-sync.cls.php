@@ -45,8 +45,37 @@ class Optimax_Sync {
 	 * 9: LSCWP's own `litespeed-dummy.css` placeholder is left out (is_dummy_css()).
 	 * 10: the visitor's OS class on `<body>` (UA_BODY_CLASSES) is left out.
 	 * 11: a `<link rel=preload as=style>` counts by the local file it loads, as a stylesheet does.
+	 * 12: a page-builder stylesheet whose change styles nothing on the page reads as the
+	 *     copy its build was cut from (same_sheets()). Bumped so every baseline is recorded
+	 *     again, without a copy: a page compares rules only from its next real build on.
 	 */
-	const VERSION = 11;
+	const VERSION = 12;
+
+	/**
+	 * A page-builder stylesheet: Elementor's `post-*.css`, Divi's `et-cache` files. The
+	 * builder rewrites them on a save, often with rules for elements the page does not have.
+	 */
+	const RE_BUILDER_SHEET = '~/elementor/css/post-|/et-cache/~';
+
+	/**
+	 * A class in a selector: `.name`, with escapes (`\:`, a hex `\31 `) and non-ASCII letters.
+	 */
+	const RE_CLASS = '~\.((?:\\\\[0-9a-fA-F]{1,6}\s?|\\\\.|[\w-]|[^\x00-\x7F])+)~';
+
+	/**
+	 * Bytes of one builder stylesheet a build keeps a copy of (sheet_copies()). A larger one is not kept, and any change of it counts.
+	 */
+	const SHEET_COPY_MAX = 524288;
+
+	/**
+	 * Bytes of builder stylesheets one render keeps copies of, all together. Sheets past it are not kept.
+	 */
+	const SHEET_COPIES_MAX = 1048576;
+
+	/**
+	 * Bytes of a build's own CSS read to judge a stylesheet or attribute change (build_css()). Past it the build's CSS counts as unknown.
+	 */
+	const BUILD_CSS_MAX = 4194304;
 
 	/**
 	 * A price in JSON-LD (schema.org Offer / AggregateOffer): key, then its raw JSON value.
@@ -113,17 +142,7 @@ class Optimax_Sync {
 		}
 
 		// The classes the page uses: a `<style>` rule naming another class styles nothing here.
-		$classes = [];
-		foreach ( $tokens as $tok ) {
-			if ( 'tag' === $tok['kind'] && false !== stripos( $tok['raw'], 'class' ) ) {
-				$attrs = self::attrs( $tok['raw'] );
-				if ( isset( $attrs['class'] ) ) {
-					foreach ( preg_split( '~\s+~', $attrs['class'], -1, PREG_SPLIT_NO_EMPTY ) as $class ) {
-						$classes[ $class ] = true;
-					}
-				}
-			}
-		}
+		$classes = self::page_classes( $tokens );
 
 		$skel  = [];
 		$items = [];
@@ -220,6 +239,29 @@ class Optimax_Sync {
 			'skel'   => $skel,
 			'items'  => $items,
 		];
+	}
+
+	/**
+	 * The classes a page's elements carry.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $tokens  tokenize() of the page.
+	 * @param array $classes Classes to add to, as keys.
+	 * @return array Classes, as keys.
+	 */
+	private static function page_classes( $tokens, $classes = [] ) {
+		foreach ( $tokens as $tok ) {
+			if ( 'tag' === $tok['kind'] && false !== stripos( $tok['raw'], 'class' ) ) {
+				$attrs = self::attrs( $tok['raw'] );
+				if ( isset( $attrs['class'] ) ) {
+					foreach ( preg_split( '~\s+~', $attrs['class'], -1, PREG_SPLIT_NO_EMPTY ) as $class ) {
+						$classes[ $class ] = true;
+					}
+				}
+			}
+		}
+		return $classes;
 	}
 
 	/**
@@ -378,7 +420,8 @@ class Optimax_Sync {
 			$seen[ $item[0] ][ $key ] = $nth[ $i ] + 1;
 		}
 
-		$edits = [];
+		$edits   = [];
+		$carried = [];
 		foreach ( $old as $i => $item ) {
 			if ( self::same( $item, $new[ $i ] ) ) {
 				continue;
@@ -424,12 +467,24 @@ class Optimax_Sync {
 					$repl = $edited ? false : $new[ $i ][1];
 					break;
 				default:
-					$repl = $edited ? false : self::patch_img( $tok['raw'], call_user_func( $img_tag, $new[ $i ][1] ), $item[1], $new[ $i ][1], $preloaded, ! empty( $tok['in_picture'] ) );
+					$repl = $edited ? false : self::patch_img( $tok['raw'], call_user_func( $img_tag, $new[ $i ][1] ), $item[1], $new[ $i ][1], $preloaded, ! empty( $tok['in_picture'] ), $carried );
 			}
 			if ( ! is_string( $repl ) ) {
 				return false;
 			}
 			$edits[ $tok['offset'] ] = [ strlen( $tok['raw'] ), $repl ];
+		}
+
+		// A carried `<img>` text attribute is no change of the page's look unless a rule
+		// selects on it: only when the build's own CSS names none of them.
+		if ( $carried ) {
+			$css = self::build_css( $html, true );
+			foreach ( array_keys( $carried ) as $name ) {
+				if ( null === $css || preg_match( '~\[\s*(?:[\w*-]*\|)?' . preg_quote( $name, '~' ) . '(?![\w-])~i', $css ) ) {
+					self::$why = 'img ' . $name . ( null === $css ? ' changed, and the build CSS cannot be read' : ' is selected on by the build CSS' );
+					return false;
+				}
+			}
 		}
 
 		krsort( $edits );
@@ -484,7 +539,7 @@ class Optimax_Sync {
 			if ( isset( $old_lines[ $i ] ) && $old_lines[ $i ] === $now['lines'][ $i ] ) {
 				continue;
 			}
-			if ( ! preg_match( '~ href=(\S*(?:/elementor/css/post-|/et-cache/)\S*)#([0-9a-f]{32})$~', $line, $m ) ) {
+			if ( ! preg_match( '~ href=(\S*)#([0-9a-f]{32})$~', $line, $m ) || ! preg_match( self::RE_BUILDER_SHEET, $m[1] ) ) {
 				continue;
 			}
 			$file    = Utility::is_internal_file( $m[1] );
@@ -499,14 +554,16 @@ class Optimax_Sync {
 	}
 
 	/**
-	 * OptimaX's own `<img>` with this render's image URLs.
+	 * OptimaX's own `<img>` with this render's image URLs and text attributes.
 	 *
-	 * Only the URL attributes change (`src`, `srcset`, `data-src`, ...): lazy-load,
-	 * sizes, width/height and the rest are OptimaX's and stay. Refused (false, with
-	 * `$why`) where the URLs alone are not the whole story: inside `<picture>`
-	 * (`<source>` tags link the image too), the image OptimaX preloads or marks
-	 * `fetchpriority=high` (the LCP image), or an OptimaX `srcset` the render has no
-	 * counterpart for (it would keep linking the old image).
+	 * Only the URL attributes change (`src`, `srcset`, `data-src`, ...), and a changed
+	 * text attribute (text_attr(): `alt`, `title`, an `aria-label`) is carried as
+	 * it is: lazy-load, sizes, width/height and the rest are OptimaX's and stay.
+	 * Refused (false, with `$why`) where that is not the whole story: inside
+	 * `<picture>` (`<source>` tags link the image too), the image OptimaX preloads or
+	 * marks `fetchpriority=high` (the LCP image, which QUIC.cloud judges), any other
+	 * attribute change, or an OptimaX `srcset` the render has no counterpart for (it
+	 * would keep linking the old image).
 	 *
 	 * @since 8.0
 	 *
@@ -516,9 +573,10 @@ class Optimax_Sync {
 	 * @param string $new_tag    The `<img>` tag in this render.
 	 * @param array  $preloaded  Paths OptimaX preloads as images, as keys.
 	 * @param bool   $in_picture Whether the tag sits inside `<picture>`.
+	 * @param array  $carried    Text attributes carried, as keys: added to, for patch() to check against the build's CSS.
 	 * @return string|false
 	 */
-	private static function patch_img( $ox, $fresh, $old_tag, $new_tag, $preloaded, $in_picture ) {
+	private static function patch_img( $ox, $fresh, $old_tag, $new_tag, $preloaded, $in_picture, &$carried ) {
 		$attrs = self::attrs( $ox );
 		if ( $in_picture ) {
 			self::$why = 'img inside <picture>';
@@ -529,10 +587,11 @@ class Optimax_Sync {
 			return false;
 		}
 
-		// Any other attribute that changed (alt, width/height, class) is not carried by a URL swap.
+		// Any other attribute that changed (width/height, class, style) is not carried by a URL swap.
 		$url_attrs = array_merge( self::IMG_URL_ATTRS, [ 'srcset', 'data-srcset' ] );
 		$was       = self::attrs( $old_tag );
 		$is        = self::attrs( $new_tag );
+		$text      = [];
 		foreach ( array_unique( array_merge( array_keys( $was ), array_keys( $is ) ) ) as $name ) {
 			if ( in_array( $name, $url_attrs, true ) ) {
 				continue;
@@ -541,10 +600,15 @@ class Optimax_Sync {
 			$b = isset( $is[ $name ] ) ? $is[ $name ] : null;
 			// An id-like attribute differs on every render: only its presence counts.
 			$differs = in_array( $name, self::ID_ATTRS, true ) ? ( null === $a ) !== ( null === $b ) : ( null === $a || null === $b || self::mask( $a ) !== self::mask( $b ) );
-			if ( $differs ) {
-				self::$why = 'img changed besides its URLs: ' . $name;
-				return false;
+			if ( ! $differs ) {
+				continue;
 			}
+			if ( null !== $a && null !== $b && self::text_attr( $name, $a, $b ) ) {
+				$text[ $name ] = $b;
+				continue;
+			}
+			self::$why = 'img changed besides its URLs: ' . $name;
+			return false;
 		}
 
 		$new = self::attrs( $fresh );
@@ -568,7 +632,45 @@ class Optimax_Sync {
 			}
 		}
 
+		foreach ( $text as $name => $val ) {
+			$ox = self::set_attr( $ox, $name, $val );
+			if ( false === $ox ) {
+				self::$why = 'img has no ' . $name . ' in OptimaX HTML';
+				return false;
+			}
+			$carried[ $name ] = true;
+		}
+
 		return $ox;
+	}
+
+	/**
+	 * Whether an `<img>` attribute change is text a patch may carry: `alt`, `title`,
+	 * `aria-label`, `aria-description` or `aria-roledescription`, free text on both sides.
+	 *
+	 * An empty value or a state token (`true`, `false`, `mixed`, `undefined`) is what
+	 * a rule selects on (`img[alt=""]`, `[aria-hidden=true]`), and UCSS keeps only the
+	 * rules the build's render matched, so such a change, or an attribute added or
+	 * removed, goes to QUIC.cloud.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $name Lowercased attribute name.
+	 * @param string $a    Value in the render the build matches.
+	 * @param string $b    Value in this render.
+	 * @return bool
+	 */
+	private static function text_attr( $name, $a, $b ) {
+		if ( ! in_array( $name, [ 'alt', 'title', 'aria-label', 'aria-description', 'aria-roledescription' ], true ) ) {
+			return false;
+		}
+		foreach ( [ $a, $b ] as $val ) {
+			$val = strtolower( trim( $val ) );
+			if ( '' === $val || in_array( $val, [ 'true', 'false', 'mixed', 'undefined' ], true ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -1010,21 +1112,720 @@ class Optimax_Sync {
 	}
 
 	/**
+	 * Copies of the page-builder stylesheets a render links, kept with the build cut from it.
+	 *
+	 * The build's used CSS is cut from these bytes. A later save rewrites the file,
+	 * and only the old bytes tell which rules changed (same_sheets()). Bounded: a
+	 * sheet over SHEET_COPY_MAX, or past SHEET_COPIES_MAX for the render, is not
+	 * copied (sized before it is read), and any change of it counts.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $html Render.
+	 * @return array URL path => CSS.
+	 */
+	public static function sheet_copies( $html ) {
+		$out   = [];
+		$total = 0;
+		foreach ( (array) self::tokenize( $html ) as $tok ) {
+			if ( 'tag' !== $tok['kind'] || 'link' !== $tok['name'] ) {
+				continue;
+			}
+			$attrs = self::attrs( $tok['raw'] );
+			if ( ! isset( $attrs['href'] ) || ! ( self::is_stylesheet( $attrs ) || self::is_style_preload( $attrs ) ) ) {
+				continue;
+			}
+			$path = (string) wp_parse_url( $attrs['href'], PHP_URL_PATH );
+			if ( isset( $out[ $path ] ) || ! preg_match( self::RE_BUILDER_SHEET, $path ) ) {
+				continue;
+			}
+
+			$css = self::read_css( Utility::is_internal_file( $attrs['href'] ), min( self::SHEET_COPY_MAX, self::SHEET_COPIES_MAX - $total ) );
+			if ( null === $css ) {
+				continue;
+			}
+			$total       += strlen( $css );
+			$out[ $path ] = $css;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * A local `.css` file's content, when it is no longer than a limit.
+	 *
+	 * Sized before it is read, and read no further than the limit.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array|false $file Utility::is_internal_file().
+	 * @param int         $max  Most bytes allowed.
+	 * @return string|null Null when there is no such file, it is not `.css`, or it is over the limit.
+	 */
+	private static function read_css( $file, $max ) {
+		if ( ! $file || $max < 0 || 'css' !== strtolower( pathinfo( $file[0], PATHINFO_EXTENSION ) ) ) {
+			return null;
+		}
+		$size = @filesize( $file[0] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( false === $size || $size > $max ) {
+			return null;
+		}
+		$css = @file_get_contents( $file[0], false, null, 0, $max + 1 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents, WordPress.PHP.NoSilencedErrors.Discouraged
+		return false === $css || strlen( $css ) > $max ? null : $css;
+	}
+
+	/**
+	 * The page-builder stylesheets whose change since the build's copy styles nothing
+	 * this page can show.
+	 *
+	 * Each sheet the render links whose file differs from the copy the build was cut
+	 * from (sheet_copies()) is compared with it as ordered rules (changed_rules()):
+	 * the copy against the file's bytes now, never one render against another. A
+	 * sheet none of whose changed rules may apply (rule_may_apply()) is the build's
+	 * sheet still. A sheet whose file changed again after this render was
+	 * fingerprinted, is over SHEET_COPY_MAX, cannot be parsed, or has no copy,
+	 * counts as changed.
+	 *
+	 * A verdict depends on the copy, the file and the build only: the build's
+	 * recorded classes, its CSS and its render are fixed, and a class the page gains
+	 * is a design change of its own. So it is remembered in `$known` by sheet, copy
+	 * and file, and a repeat render skips the parse; a build whose CSS or pages
+	 * cannot be read is remembered too (`#context` => false), and not read again.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array      $fp      fingerprint() of this render.
+	 * @param array      $copies  The build's copies: URL path => md5 of the CSS.
+	 * @param callable   $copy    Returns a copy's CSS by URL path, or null; called only for a sheet whose verdict is not known.
+	 * @param callable   $classes Returns rule_context() of the build, or null when it cannot be known. Called once, and only when a sheet must be parsed.
+	 * @param array      $known   Verdicts for this build so far, `path|copy md5|file md5` => bool: read and added to.
+	 * @param array|null $notes   Null: no log, and a sheet stops at its first rule that may apply. An array: filled with one line per differing sheet.
+	 * @return array URL path => `from` (md5 of the copy) and `to` (md5 of the file now), for with_sheets() and sheet_changes().
+	 */
+	public static function same_sheets( $fp, $copies, $copy, $classes, &$known = [], &$notes = null ) {
+		$out = [];
+		$set = isset( $known['#context'] ) ? null : false;
+		foreach ( $fp['skel'] as $line ) {
+			if ( ! preg_match( '~ href=(\S+)#([0-9a-f]{32})$~', $line, $m ) || ! isset( $copies[ $m[1] ] ) || isset( $out[ $m[1] ] ) ) {
+				continue;
+			}
+			$path = $m[1];
+			$from = (string) $copies[ $path ];
+			if ( $from === $m[2] ) {
+				continue;
+			}
+			$key = $path . '|' . $from . '|' . $m[2];
+			$ok  = isset( $known[ $key ] ) ? (bool) $known[ $key ] : null;
+
+			if ( null === $ok ) {
+				$old = call_user_func( $copy, $path );
+				$css = null === $old || md5( $old ) !== $from ? null : self::read_css( Utility::is_internal_file( $path ), self::SHEET_COPY_MAX );
+				if ( null === $css || md5( $css ) !== $m[2] ) {
+					// Not remembered: the next render may read it whole.
+					if ( null !== $notes ) {
+						$notes[] = $path . ': changed again since this render, over the copy limit, or its copy is unreadable';
+					}
+					continue;
+				}
+				if ( false === $set ) {
+					$set = call_user_func( $classes );
+					if ( null === $set ) {
+						$known['#context'] = false;
+					}
+				}
+				if ( null === $set ) {
+					if ( null !== $notes ) {
+						$notes[] = $path . ': the build CSS or a page cannot be read';
+					}
+					continue;
+				}
+
+				$ok            = self::sheet_unchanged( $path, $old, $css, $set, $notes );
+				$known[ $key ] = $ok;
+			} elseif ( null !== $notes ) {
+				$notes[] = $path . ': ' . ( $ok ? 'styles nothing' : 'may apply' ) . ' (known)';
+			}
+
+			if ( $ok ) {
+				$out[ $path ] = [
+					'from' => $from,
+					'to'   => $m[2],
+				];
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Whether no rule that changed between a builder stylesheet's copy and its file may apply.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string     $path    URL path, for the log.
+	 * @param string     $old_css The copy the build was cut from.
+	 * @param string     $new_css The file now.
+	 * @param array      $set     rule_context().
+	 * @param array|null $notes   As same_sheets(): with an array, every changed rule is judged and logged
+	 *                            as `-` (the copy's) or `+` (the file's), `!` when it may apply, those first.
+	 * @return bool
+	 */
+	private static function sheet_unchanged( $path, $old_css, $new_css, $set, &$notes ) {
+		$changed = self::changed_rules( $old_css, $new_css );
+		// The classes the copy names: QUIC.cloud's recorded classes were matched against it.
+		$named = false === preg_match_all( self::RE_CLASS, $old_css, $m ) ? null : array_fill_keys( array_map( 'stripslashes', $m[1] ), true );
+		if ( null === $changed || null === $named ) {
+			if ( null !== $notes ) {
+				$notes[] = $path . ': cannot be parsed';
+			}
+			return false;
+		}
+
+		$may = [];
+		$not = [];
+		foreach ( $changed as $rule ) {
+			$text = substr( $rule['text'], 0, 120 );
+			if ( self::rule_may_apply( $rule, $set['classes'], $set['recorded'], $named ) ) {
+				if ( null === $notes ) {
+					return false;
+				}
+				$may[] = $rule['side'] . '! ' . $text;
+			} elseif ( null !== $notes ) {
+				$not[] = $rule['side'] . ' ' . $text;
+			}
+		}
+
+		if ( null !== $notes ) {
+			$shown   = array_merge( $may, $not );
+			$notes[] = $path . ': ' . count( $changed ) . ' rule(s) changed, ' . count( $may ) . ' may apply' . ( $shown ? ': ' . implode( ' | ', array_slice( $shown, 0, 5 ) ) : '' );
+		}
+		return ! $may;
+	}
+
+	/**
+	 * A fingerprint with each stylesheet same_sheets() found unchanged read as its copy.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $fp     fingerprint().
+	 * @param array $sheets same_sheets().
+	 * @return array
+	 */
+	public static function with_sheets( $fp, $sheets ) {
+		if ( ! $sheets ) {
+			return $fp;
+		}
+		foreach ( $fp['skel'] as $i => $line ) {
+			if ( preg_match( '~ href=(\S+)#([0-9a-f]{32})$~', $line, $m ) && isset( $sheets[ $m[1] ] ) && $sheets[ $m[1] ]['to'] === $m[2] ) {
+				$fp['skel'][ $i ]  = substr( $line, 0, -32 ) . $sheets[ $m[1] ]['from'];
+				$fp['lines'][ $i ] = substr( md5( $fp['skel'][ $i ] ), 0, 8 );
+			}
+		}
+		$fp['design'] = md5( implode( "\n", $fp['skel'] ) );
+
+		return $fp;
+	}
+
+	/**
+	 * Which local stylesheets of a render a sync may show QUIC.cloud as the build's, and which changed.
+	 *
+	 * QUIC.cloud reads a stylesheet as its file is now, so a file that changed under
+	 * the same URL is a change it cannot see: such a sheet makes the page a rebuild.
+	 * A sheet is the build's when its fingerprint line is one the build's render had
+	 * (same file, same bytes), or same_sheets() found its change styles nothing. A
+	 * local sheet line whose path cannot be read back (a literal space in it) counts
+	 * as changed unless the build's render had it.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $old_lines Line hashes of the stored fingerprint.
+	 * @param array $now       fingerprint() of this render, after with_sheets().
+	 * @param array $same      same_sheets().
+	 * @return array `allow`: sheet ids (sheet_id()) as keys, for align_stylesheets(); `changed`: URL paths.
+	 */
+	public static function sheet_changes( $old_lines, $now, $same ) {
+		$had = array_flip( $old_lines );
+		$out = [
+			'allow'   => [],
+			'changed' => [],
+		];
+		foreach ( $now['skel'] as $i => $line ) {
+			if ( ! preg_match( '~ href=(\S+)#([0-9a-f]{32})$~', $line, $m ) ) {
+				if ( 0 === strpos( $line, 'link ' ) && preg_match( '~#[0-9a-f]{32}$~', $line ) && ! isset( $had[ $now['lines'][ $i ] ] ) ) {
+					$out['changed'][] = substr( $line, 0, 120 );
+				}
+				continue;
+			}
+			if ( isset( $same[ $m[1] ] ) ) {
+				$out['allow'][ $m[1] . '#' . $same[ $m[1] ]['to'] ] = true;
+			} elseif ( isset( $had[ $now['lines'][ $i ] ] ) ) {
+				$out['allow'][ $m[1] . '#' . $m[2] ] = true;
+			} else {
+				$out['changed'][] = $m[1];
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * The rules that differ between two copies of a stylesheet, in order.
+	 *
+	 * Compared as ordered lists (css_rules()), never sorted: the cascade gives a later
+	 * rule the win, so a moved rule is a change. The lists are cut at their common
+	 * start and end, and every rule between, on either side, counts as changed: a
+	 * move shows as both its old and new place.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $old_css The copy the build was cut from.
+	 * @param string $new_css The file now.
+	 * @return array|null css_rules() entries, each with `side`: `-` from the copy, `+` from the file. Null when either cannot be read.
+	 */
+	public static function changed_rules( $old_css, $new_css ) {
+		$a = self::css_rules( $old_css );
+		$b = self::css_rules( $new_css );
+		if ( null === $a || null === $b ) {
+			return null;
+		}
+		$na = count( $a );
+		$nb = count( $b );
+
+		$head = 0;
+		while ( $head < $na && $head < $nb && $a[ $head ]['text'] === $b[ $head ]['text'] ) {
+			++$head;
+		}
+		$tail = 0;
+		while ( $tail < $na - $head && $tail < $nb - $head && $a[ $na - 1 - $tail ]['text'] === $b[ $nb - 1 - $tail ]['text'] ) {
+			++$tail;
+		}
+
+		$out = [];
+		foreach ( array_slice( $a, $head, $na - $head - $tail ) as $rule ) {
+			$out[] = $rule + [ 'side' => '-' ];
+		}
+		foreach ( array_slice( $b, $head, $nb - $head - $tail ) as $rule ) {
+			$out[] = $rule + [ 'side' => '+' ];
+		}
+		return $out;
+	}
+
+	/**
+	 * A stylesheet as a flat, ordered list of rules, comments and whitespace left out.
+	 *
+	 * `@media`, `@supports`, `@layer` and `@container` blocks are opened: each rule in
+	 * them is listed with its wrappers in front, so a changed condition changes its
+	 * rules. Any other at-rule (`@font-face`, `@keyframes`, `@import`, `@scope`) is one
+	 * entry, and so is a style rule with nested rules in it, and a block nested deeper
+	 * than 32 wrappers. A comment marker inside a quoted string is no comment.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $css   CSS.
+	 * @param string $ctx   Wrappers around it, as written in front of each rule.
+	 * @param int    $depth Wrappers around it.
+	 * @param array  $out   Rules so far, appended to.
+	 * @return array|null List of `text` (the rule with its wrappers, compared), `sel` (its prelude) and `nested`. Null when the CSS cannot be read.
+	 */
+	private static function css_rules( $css, $ctx = '', $depth = 0, $out = [] ) {
+		if ( 0 === $depth ) {
+			$css = preg_replace_callback(
+				'~("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\')|/\*.*?\*/~s',
+				function ( $m ) {
+					return isset( $m[1] ) ? $m[1] : '';
+				},
+				(string) $css
+			);
+			if ( null === $css ) {
+				return null;
+			}
+		}
+
+		$len = strlen( $css );
+		$pos = 0;
+		while ( $pos < $len ) {
+			$open = strpos( $css, '{', $pos );
+			$semi = strpos( $css, ';', $pos );
+			// A statement (`@import`, `@charset`, `@layer a, b;`), or a stray `;`.
+			if ( false !== $semi && ( false === $open || $semi < $open ) ) {
+				$stmt = self::squeeze_css( substr( $css, $pos, $semi - $pos ) );
+				if ( '' !== $stmt ) {
+					$out[] = [
+						'text'   => $ctx . $stmt . ';',
+						'sel'    => $stmt,
+						'nested' => false,
+					];
+				}
+				$pos = $semi + 1;
+				continue;
+			}
+			if ( false === $open ) {
+				$rest = self::squeeze_css( substr( $css, $pos ) );
+				if ( '' !== $rest ) {
+					$out[] = [
+						'text'   => $ctx . $rest,
+						'sel'    => $rest,
+						'nested' => false,
+					];
+				}
+				break;
+			}
+
+			$level = 0;
+			for ( $end = $open; $end < $len; $end++ ) {
+				if ( '{' === $css[ $end ] ) {
+					++$level;
+				} elseif ( '}' === $css[ $end ] && 0 === --$level ) {
+					break;
+				}
+			}
+			$prelude = self::squeeze_css( substr( $css, $pos, $open - $pos ) );
+			$body    = substr( $css, $open + 1, max( 0, $end - $open - 1 ) );
+
+			if ( $depth < 32 && preg_match( '~^@(media|supports|layer|container)\b~i', $prelude ) ) {
+				$out = self::css_rules( $body, $ctx . $prelude . '{', $depth + 1, $out );
+			} else {
+				$out[] = [
+					'text'   => $ctx . $prelude . '{' . self::squeeze_css( $body ) . '}',
+					'sel'    => $prelude,
+					'nested' => $depth >= 32 || false !== strpos( $body, '{' ),
+				];
+			}
+			$pos = $end + 1;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Whether a stylesheet rule may style something on the page or its build: when in doubt, yes.
+	 *
+	 * A rule the file gained (`+`, changed rules included) may name a class a script
+	 * adds, which no HTML carries and the build's CSS, cut before the rule existed,
+	 * does not name. OptimaX lists the classes it saw on elements during its render,
+	 * script-added ones included, in the build (recorded_classes()): the exact names
+	 * join the class set, and the patterns UCSS keeps selectors by are passed here.
+	 * Without that list (a build from before it), a gained rule may always apply. With it:
+	 * - a selector part that holds a pattern anywhere in its text may apply: UCSS keeps
+	 *   any selector a pattern occurs in, so this covers at least what a rebuild keeps;
+	 * - a gained rule naming a class the sheet's copy never named may apply: the list
+	 *   was matched against the old CSS, and a rebuild might list the new class;
+	 * - otherwise a gained rule is judged as a lost one.
+	 *
+	 * May apply too: an at-rule (`@font-face`, `@keyframes`, `@import`, ...), a rule
+	 * with nested rules, a selector with a functional pseudo-class (`:not`, `:is`,
+	 * `:where`, `:has`, ...: their classes are not required, or test other elements),
+	 * a class with a hex escape (`.\31 0x`, not decoded here), or a selector of the
+	 * list (split at its top-level commas) that names no class, or only classes in the
+	 * set. The set holds the classes of the build's render, this render and the build,
+	 * plus every class the build's own CSS names (class_set()), so a class a script
+	 * adds that OptimaX kept a rule for counts too, and so does any rule the build's
+	 * CSS holds. Ids are not checked: themes number them per render.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array      $rule     css_rules() entry, with its `side` when from changed_rules().
+	 * @param array      $classes  Class set, as keys.
+	 * @param array|null $recorded name_patterns() of the build's recorded classes; null when it lists none.
+	 * @param array|null $named    Classes the sheet's copy names, as keys, for a gained rule; null: not checked.
+	 * @return bool
+	 */
+	public static function rule_may_apply( $rule, $classes, $recorded = null, $named = null ) {
+		$sel    = $rule['sel'];
+		$gained = isset( $rule['side'] ) && '+' === $rule['side'];
+		if ( ( null === $recorded && $gained ) || '@' === substr( $sel, 0, 1 ) || ! empty( $rule['nested'] ) ) {
+			return true;
+		}
+		// Any failed match below counts as "may apply".
+		if ( 0 !== preg_match( '~:(?!nth-(?:last-)?(?:child|of-type)\(|lang\(|dir\()[\w-]+\(|:nth-(?:last-)?child\([^)]*\bof\b~i', $sel ) ) {
+			return true;
+		}
+
+		foreach ( self::selector_parts( $sel ) as $part ) {
+			foreach ( (array) $recorded as $re ) {
+				if ( 0 !== preg_match( $re, $part ) ) {
+					return true;
+				}
+			}
+
+			// Attribute values and strings name no class: `[href$=".pdf"]`.
+			$part = preg_replace( '~\[(?:[^\]"\']|"[^"]*"|\'[^\']*\')*\]|"[^"]*"|\'[^\']*\'~', '[]', $part );
+			if ( null === $part || false === preg_match_all( self::RE_CLASS, $part, $m ) ) {
+				return true;
+			}
+			$all = true;
+			foreach ( $m[1] as $class ) {
+				if ( 0 !== preg_match( '~\\\\[0-9a-fA-F]~', $class ) ) {
+					return true;
+				}
+				$class = stripslashes( $class );
+				if ( $gained && null !== $named && ! isset( $named[ $class ] ) ) {
+					return true;
+				}
+				if ( ! isset( $classes[ $class ] ) ) {
+					$all = false;
+				}
+			}
+			if ( $all ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * A selector list split at its top-level commas: a comma inside `()`, `[]` or a string stays.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $sel Selector list.
+	 * @return array
+	 */
+	private static function selector_parts( $sel ) {
+		$parts = [];
+		$depth = 0;
+		$quote = '';
+		$start = 0;
+		$len   = strlen( $sel );
+		for ( $i = 0; $i < $len; $i++ ) {
+			$c = $sel[ $i ];
+			if ( '\\' === $c ) {
+				++$i;
+			} elseif ( '' !== $quote ) {
+				if ( $c === $quote ) {
+					$quote = '';
+				}
+			} elseif ( '"' === $c || "'" === $c ) {
+				$quote = $c;
+			} elseif ( '(' === $c || '[' === $c ) {
+				++$depth;
+			} elseif ( ( ')' === $c || ']' === $c ) && $depth > 0 ) {
+				--$depth;
+			} elseif ( ',' === $c && 0 === $depth ) {
+				$parts[] = substr( $sel, $start, $i - $start );
+				$start   = $i + 1;
+			}
+		}
+		$parts[] = substr( $sel, $start );
+
+		return $parts;
+	}
+
+	/**
+	 * What builder stylesheet rules are judged by (rule_may_apply()), for one build.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $base The build's render.
+	 * @param string $now  This render.
+	 * @param string $html The build's HTML.
+	 * @return array|null `classes` (class_set(), plus the build's recorded names) and `recorded` (name_patterns()
+	 *                    of its recorded patterns, null when it lists none: recorded_classes()); null when any of it cannot be read.
+	 */
+	public static function rule_context( $base, $now, $html ) {
+		$css = self::build_css( $html );
+		if ( null === $css ) {
+			return null;
+		}
+		$classes = self::class_set( [ $base, $now, $html ], $css );
+		if ( null === $classes ) {
+			return null;
+		}
+		$recorded = self::recorded_classes( $html );
+
+		return [
+			'classes'  => null === $recorded ? $classes : $classes + array_fill_keys( $recorded['names'], true ),
+			'recorded' => null === $recorded ? null : self::name_patterns( $recorded['patterns'] ),
+		];
+	}
+
+	/**
+	 * The classes OptimaX saw on elements during its render, script-added ones
+	 * included, as it lists them in the build right before `</head>`:
+	 * `<!--ox-classes NAME ...--><!--ox-class-patterns PATTERN ...-->`.
+	 *
+	 * Names are exact classes. Patterns are UCSS's allowlist entries: UCSS keeps any
+	 * selector one occurs in (rule_may_apply()); a leading dot is dropped, and an
+	 * empty one (a lone `.`) skipped. Read only as that pair, in that order, with
+	 * nothing but whitespace between them and the first `</head>`: a comment anywhere
+	 * else may be the page's own. A list over 256 KB or 5000 entries, a pattern
+	 * shorter than 2 characters (it would cover nearly every selector), or one of the
+	 * two missing, reads as none: the strict way.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $html The build's HTML.
+	 * @return array|null `names` and `patterns`; null when the build has no such lists, or they cannot be used.
+	 */
+	public static function recorded_classes( $html ) {
+		$html = (string) $html;
+		if ( ! preg_match( '~</head\s*>~i', $html, $h, PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+		$from = max( 0, $h[0][1] - 2 * 262144 - 64 );
+		$head = substr( $html, $from, $h[0][1] - $from );
+		if ( ! preg_match( '~<!--ox-classes(\s[^<>]*)?-->\s*<!--ox-class-patterns(\s[^<>]*)?-->\s*\z~', $head, $m ) ) {
+			return null;
+		}
+
+		$out = [];
+		foreach ( [ 'names' => 1, 'patterns' => 2 ] as $key => $group ) {
+			$list = isset( $m[ $group ] ) ? $m[ $group ] : '';
+			$all  = strlen( $list ) > 262144 ? false : preg_split( '~\s+~', $list, -1, PREG_SPLIT_NO_EMPTY );
+			if ( false === $all || count( $all ) > 5000 ) {
+				return null;
+			}
+			$out[ $key ] = [];
+			foreach ( $all as $entry ) {
+				if ( 'patterns' === $key ) {
+					$entry = ltrim( $entry, '.' );
+					if ( '' === $entry ) {
+						continue;
+					}
+					if ( strlen( $entry ) < 2 ) {
+						return null;
+					}
+				}
+				$out[ $key ][ $entry ] = true;
+			}
+			$out[ $key ] = array_map( 'strval', array_keys( $out[ $key ] ) );
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Names as a few patterns, each matching text that holds any of up to 500 of them.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array $names Patterns (recorded_classes()).
+	 * @return array Patterns; none for no names.
+	 */
+	private static function name_patterns( $names ) {
+		$out = [];
+		foreach ( array_chunk( $names, 500 ) as $chunk ) {
+			$out[] = '~' . implode(
+				'|',
+				array_map(
+					function ( $name ) {
+						return preg_quote( $name, '~' );
+					},
+					$chunk
+				)
+			) . '~';
+		}
+		return $out;
+	}
+
+	/**
+	 * The classes a builder stylesheet rule is judged by (rule_may_apply()).
+	 *
+	 * Every class on the pages given, plus every `.name` in the build's own CSS.
+	 * Read loosely (a `.5em` adds `5em`): more classes only make more rules apply.
+	 *
+	 * @since 8.0
+	 *
+	 * @param array  $pages     HTML of the build's render, this render and the build.
+	 * @param string $build_css build_css() of the build.
+	 * @return array|null Classes, as keys; null when a page or the CSS cannot be read.
+	 */
+	public static function class_set( $pages, $build_css ) {
+		$classes = [];
+		foreach ( $pages as $html ) {
+			$tokens = self::tokenize( $html );
+			if ( null === $tokens ) {
+				return null;
+			}
+			$classes = self::page_classes( $tokens, $classes );
+		}
+		if ( false === preg_match_all( self::RE_CLASS, (string) $build_css, $m ) ) {
+			return null;
+		}
+		foreach ( $m[1] as $class ) {
+			$classes[ stripslashes( $class ) ] = true;
+		}
+
+		return $classes;
+	}
+
+	/**
+	 * The CSS a build styles its page with: its inline `<style>` blocks (UCSS, CCSS) and
+	 * the local stylesheets it links, preloads and `<noscript>` copies included.
+	 *
+	 * A stylesheet that is not local (a font service) is not the build's own and is
+	 * left out; with `$strict`, only a font service's is, and any other makes the CSS
+	 * unknown. Each local file is sized before it is read.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $html   The build's HTML.
+	 * @param bool   $strict Whether a stylesheet that is not local, other than a font service's, makes the CSS unknown.
+	 * @return string|null Null when the HTML or a local stylesheet cannot be read, or the whole is over BUILD_CSS_MAX: unknown.
+	 */
+	public static function build_css( $html, $strict = false ) {
+		$html   = (string) $html;
+		$styles = preg_match_all( '~<style\b[^>]*>(.*?)</style\s*>~is', $html, $m );
+		$links  = preg_match_all( '~<link\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>~i', $html, $l );
+		if ( false === $styles || false === $links ) {
+			return null;
+		}
+		$css = implode( "\n", $m[1] );
+
+		$read = [];
+		foreach ( $l[0] as $link ) {
+			$attrs = self::attrs( $link );
+			if ( ! isset( $attrs['href'] ) || ! ( self::is_stylesheet( $attrs ) || self::is_style_preload( $attrs ) ) ) {
+				continue;
+			}
+			$file = Utility::is_internal_file( $attrs['href'] );
+			if ( ! $file ) {
+				if ( $strict && ! preg_match( '~^(fonts\.googleapis\.com|fonts\.bunny\.net|use\.typekit\.net)$~i', (string) wp_parse_url( $attrs['href'], PHP_URL_HOST ) ) ) {
+					return null;
+				}
+				continue;
+			}
+			if ( isset( $read[ $file[0] ] ) ) {
+				continue;
+			}
+			$read[ $file[0] ] = true;
+
+			$con = self::read_css( $file, self::BUILD_CSS_MAX - strlen( $css ) - 1 );
+			if ( null === $con ) {
+				return null;
+			}
+			$css .= "\n" . $con;
+		}
+
+		return strlen( $css ) > self::BUILD_CSS_MAX ? null : $css;
+	}
+
+	/**
 	 * This render, with each stylesheet link that loads the same file as in the build's
 	 * render written as it was there.
 	 *
 	 * The build links the old URL. QUIC.cloud refuses a changed `<link>` as a new
 	 * resource, so a sync must not show a `?ver=` bump over an unchanged file. Only a
 	 * link that differs in nothing but its href is rewritten: any other change of the
-	 * tag still reaches QUIC.cloud.
+	 * tag still reaches QUIC.cloud. A stylesheet preload (`rel=preload as=style`,
+	 * Divi's et-cache) is aligned the same way.
+	 *
+	 * Both sides are read by what their file holds now (sheet_id()), so a link whose
+	 * file changed under the same URL would align too, and QUIC.cloud, which reads
+	 * the file as it is now, could not see the change. So only the local sheets in
+	 * `$allow` are aligned (sheet_changes(): the bytes the build's render had, or a
+	 * change same_sheets() found styles nothing), and a page with any other changed
+	 * sheet is rebuilt, not synced.
 	 *
 	 * @since 8.0
 	 *
-	 * @param string $base The render the build matches.
-	 * @param string $now  This render.
+	 * @param string     $base  The render the build matches.
+	 * @param string     $now   This render.
+	 * @param array|null $allow Local sheet ids (sheet_id()) that may be aligned, as keys; null: any.
 	 * @return string
 	 */
-	public static function align_stylesheets( $base, $now ) {
+	public static function align_stylesheets( $base, $now, $allow = null ) {
 		$was = [];
 		foreach ( self::stylesheet_tags( $base ) as $raw => $id ) {
 			$was[ $id ][] = $raw;
@@ -1036,6 +1837,9 @@ class Optimax_Sync {
 		$swap = [];
 		foreach ( self::stylesheet_tags( $now ) as $raw => $id ) {
 			if ( empty( $was[ $id ] ) || in_array( $raw, $was[ $id ], true ) ) {
+				continue;
+			}
+			if ( null !== $allow && ! isset( $allow[ $id ] ) && preg_match( '~#[0-9a-f]{32}$~', $id ) ) {
 				continue;
 			}
 			foreach ( $was[ $id ] as $old ) {
@@ -1258,7 +2062,7 @@ class Optimax_Sync {
 	}
 
 	/**
-	 * The stylesheet `<link>` tags of a page, each with what it loads (sheet_id()).
+	 * The stylesheet and stylesheet preload `<link>` tags of a page, each with what it loads (sheet_id()).
 	 *
 	 * @since 8.0
 	 *
@@ -1272,7 +2076,7 @@ class Optimax_Sync {
 				continue;
 			}
 			$attrs = self::attrs( $tok['raw'] );
-			if ( isset( $attrs['href'] ) && self::is_stylesheet( $attrs ) ) {
+			if ( isset( $attrs['href'] ) && ( self::is_stylesheet( $attrs ) || self::is_style_preload( $attrs ) ) ) {
 				$out[ $tok['raw'] ] = self::sheet_id( $attrs['href'] );
 			}
 		}

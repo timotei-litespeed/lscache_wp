@@ -913,7 +913,7 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
-		if ( ! $this->_save_con( $ox['html'], $assets, $queue_k, $is_mobile, $is_nextgen, $v ) ) {
+		if ( ! $this->_save_con( $ox['html'], $assets, $queue_k, $is_mobile, $is_nextgen, $v, ! empty( $ox['synced'] ) ) ) {
 			return false;
 		}
 
@@ -1341,12 +1341,19 @@ class Optimax extends Cloud_Queue_Svc {
 		if ( ! $fp || '' === $fp['base'] || '' === (string) $buffer || ! $filename ) {
 			return false;
 		}
+		// QUIC.cloud reads each stylesheet as its file is now: a sheet changed under the
+		// same URL shows it no change, and it would keep the build's old used CSS.
+		if ( $this->_sheets['changed'] ) {
+			self::debug( 'sync: a stylesheet changed under the same URL, rebuilding instead: ' . implode( ', ', array_slice( $this->_sheets['changed'], 0, 3 ) ) );
+			return false;
+		}
 		// The build links the stylesheet and image URLs of its own render: show QUIC.cloud
-		// this render with a `?ver=` bump over an unchanged file, and a proven next-gen
-		// copy in place of its original, undone, or it refuses the sync.
+		// this render with a `?ver=` bump over an unchanged file (or a builder file whose
+		// change styles nothing), and a proven next-gen copy in place of its original,
+		// undone, or it refuses the sync.
 		$base = Optimax_Pages::unpack_base( $fp['base'] );
-		$now  = Optimax_Sync::align_images( $base, Optimax_Sync::align_stylesheets( $base, $buffer ) );
-		if ( ! $pages->save_sync( $url_tag, $vary, $fp['base'], $now, $filename ) ) {
+		$now  = Optimax_Sync::align_images( $base, Optimax_Sync::align_stylesheets( $base, $buffer, $this->_sheets['allow'] ) );
+		if ( ! $pages->save_sync( $url_tag, $vary, $fp['base'], $now, $filename, $this->_sheets['same'] ) ) {
 			self::debug( '❌ Sync snapshot not saved, rebuilding instead [url] ' . $url_tag );
 			return false;
 		}
@@ -1531,6 +1538,17 @@ class Optimax extends Cloud_Queue_Svc {
 	private $_sync_stats = [];
 
 	/**
+	 * This request's local stylesheets as a sync may show them (Optimax_Sync::sheet_changes(), set by _same_sheets()).
+	 *
+	 * @var array
+	 */
+	private $_sheets = [
+		'allow'   => [],
+		'changed' => [],
+		'same'    => [],
+	];
+
+	/**
 	 * Whether this request is QUIC.cloud's own fetcher (`qcbot/1.0`).
 	 *
 	 * @since 8.0
@@ -1569,7 +1587,7 @@ class Optimax extends Cloud_Queue_Svc {
 
 		$x    = $this->_sync_stats;
 		$line = 'sync timing: ' . $x['outcome'] . ' total=' . self::_ms( $t ) . 'ms';
-		foreach ( [ 'fp_ms', 'load_ms', 'compare_ms', 'patch_ms', 'save_ms' ] as $k ) {
+		foreach ( [ 'fp_ms', 'load_ms', 'sheets_ms', 'compare_ms', 'patch_ms', 'save_ms' ] as $k ) {
 			if ( isset( $x[ $k ] ) ) {
 				$line .= ' ' . substr( $k, 0, -3 ) . '=' . $x[ $k ] . 'ms';
 			}
@@ -1645,12 +1663,15 @@ class Optimax extends Cloud_Queue_Svc {
 				$now['base'] = Optimax_Pages::pack_base( $buffer );
 			}
 			$pages->save_fingerprint( $url_tag, $vary, $now, 0 );
+			// This render is no build's: stylesheet copies left from another baseline would not be its CSS.
+			$pages->drop_sheet_copies( $url_tag, $vary );
 			// A check left open against a fingerprint of an older format has nothing to confirm against now.
 			$pages->end_check( $url_tag, $vary );
 			self::debug( 'sync: fingerprint recorded' );
 			return $html;
 		}
 
+		$now = $this->_same_sheets( $html, $buffer, $old, $now, $url_tag, $vary );
 		if ( $old['design'] !== $now['design'] ) {
 			$where = ( count( $old['lines'] ) - count( $now['lines'] ) ) . ' line(s) removed at the end';
 			foreach ( $now['lines'] as $i => $hash ) {
@@ -1695,6 +1716,69 @@ class Optimax extends Cloud_Queue_Svc {
 		}
 		$this->_sync_stats['outcome'] = 'content-to-qc';
 		return $this->_confirm( $old, 'content:' . Optimax_Sync::content_sig( $now['items'] ), $url_tag, $vary, 'content: ' . $changed );
+	}
+
+	/**
+	 * This render's fingerprint with each builder stylesheet whose change styles
+	 * nothing on the page read as the copy the build was cut from.
+	 *
+	 * Elementor and Divi rewrite their CSS file on a save, mostly with rules for
+	 * elements the page does not have. Such a sheet then counts as unchanged: it
+	 * leaves the design alone, so a content change around it can still be patched
+	 * or synced. Needs the copies kept with the build (Optimax_Pages::save_sheet_copies())
+	 * and the build's render. With LSCWP_LOG, each differing sheet's rule diff is
+	 * logged, whether it may apply or not.
+	 *
+	 * Also notes which local stylesheets changed under the same URL in a way that may
+	 * matter (Optimax_Sync::sheet_changes()): QUIC.cloud cannot see such a change, so
+	 * _queue_sync() leaves the page to a rebuild.
+	 *
+	 * @since 8.0
+	 *
+	 * @param string $html    Stored OptimaX HTML.
+	 * @param string $buffer  This render.
+	 * @param array  $old     Stored fingerprint.
+	 * @param array  $now     This render's fingerprint.
+	 * @param string $url_tag Page identity.
+	 * @param string $vary    Raw vary.
+	 * @return array $now, its unchanged sheets read as their copies.
+	 */
+	private function _same_sheets( $html, $buffer, $old, $now, $url_tag, $vary ) {
+		$same = [];
+		// Needs the build's render (`base`), which is kept only with sync on: by design, sync off compares no rules.
+		if ( $old['design'] !== $now['design'] && '' !== $old['base'] ) {
+			$t     = microtime( true );
+			$pages = $this->cls( 'Optimax_Pages' );
+			$build = md5( $html );
+			$kept  = $pages->load_sheet_copies( $url_tag, $vary, $build );
+			if ( $kept['md5'] ) {
+				$known = $kept['known'];
+				$notes = defined( 'LSCWP_LOG' ) ? [] : null;
+				$same  = Optimax_Sync::same_sheets(
+					$now,
+					$kept['md5'],
+					function ( $path ) use ( $kept ) {
+						return Optimax_Pages::unpack_sheet( $kept['packed'][ $path ] );
+					},
+					function () use ( $html, $buffer, $old ) {
+						return Optimax_Sync::rule_context( Optimax_Pages::unpack_base( $old['base'] ), $buffer, $html );
+					},
+					$known,
+					$notes
+				);
+				if ( $known !== $kept['known'] ) {
+					$pages->save_sheet_verdicts( $url_tag, $vary, $build, $known );
+				}
+				foreach ( (array) $notes as $note ) {
+					self::debug( 'sync: builder stylesheet rules ' . $note );
+				}
+			}
+			$this->_sync_stats['sheets_ms'] = self::_ms( $t );
+		}
+
+		$now           = Optimax_Sync::with_sheets( $now, $same );
+		$this->_sheets = Optimax_Sync::sheet_changes( $old['lines'], $now, $same ) + [ 'same' => $same ];
+		return $now;
 	}
 
 	/**
@@ -2415,9 +2499,10 @@ class Optimax extends Cloud_Queue_Svc {
 	 * @param bool   $is_mobile  Whether is mobile.
 	 * @param string $is_nextgen Next-gen image format ('webp', 'avif', or '').
 	 * @param array  $v          Queue item.
+	 * @param bool   $synced     Whether the result is a sync of the version's build, not a build.
 	 * @return bool
 	 */
-	private function _save_con( $content, $assets, $queue_k, $is_mobile, $is_nextgen, $v ) {
+	private function _save_con( $content, $assets, $queue_k, $is_mobile, $is_nextgen, $v, $synced = false ) {
 		$content = apply_filters( 'litespeed_optimax', $content, $queue_k );
 		if ( ! is_string( $content ) ) {
 			return false;
@@ -2449,7 +2534,7 @@ class Optimax extends Cloud_Queue_Svc {
 			return false;
 		}
 
-		$this->_record_build_render( $url_tag, $vary );
+		$this->_record_build_render( $url_tag, $vary, $synced );
 
 		Purge::add( 'OPTIMAX.' . md5( $queue_k ) );
 		Purge::add( self::page_tag( $url_tag ), true );
@@ -2478,21 +2563,27 @@ class Optimax extends Cloud_Queue_Svc {
 	 * requested with. Without either, the build's first serve records its render, as
 	 * before; a change made between the request and that serve then goes unseen.
 	 *
+	 * The builder stylesheets copied with that render (Optimax_Sync::same_sheets())
+	 * become the build's copies when a real build is stored. A synced result keeps
+	 * the copies it had: its CSS is still that of the build it came from.
+	 *
 	 * @since 8.0
 	 *
 	 * @param string $url_tag Page identity.
 	 * @param string $vary    Raw vary.
+	 * @param bool   $synced  Whether the result stored is a sync of the version's build.
 	 * @return void
 	 */
-	private function _record_build_render( $url_tag, $vary ) {
+	private function _record_build_render( $url_tag, $vary, $synced = false ) {
 		$pages  = $this->cls( 'Optimax_Pages' );
 		$queued = $pages->take_queued_render( $url_tag, $vary );
 		// A sync snapshot left from before sync was turned off did not make this build.
-		$synced = self::sync_enabled() ? $pages->sync_render( $url_tag, $vary ) : [
+		$sync   = self::sync_enabled() ? $pages->sync_render( $url_tag, $vary ) : [
 			'render' => '',
 			'fp'     => null,
+			'css'    => [],
 		];
-		$kept   = '' !== $synced['render'] ? $synced : $queued;
+		$kept   = '' !== $sync['render'] ? $sync : $queued;
 		$render = $kept['render'];
 
 		// The fingerprint taken when the render was made: fingerprinting it now would
@@ -2507,10 +2598,19 @@ class Optimax extends Cloud_Queue_Svc {
 			return;
 		}
 
+		// A synced result keeps the build's copies, so the sheets whose change styled
+		// nothing read as those copies, as after a patch: else each later render would
+		// see them change again.
+		if ( $synced && ! empty( $kept['same'] ) && isset( $fp['skel'] ) ) {
+			$fp = Optimax_Sync::with_sheets( $fp, $kept['same'] );
+		}
 		if ( self::sync_enabled() ) {
 			$fp['base'] = Optimax_Pages::pack_base( $render );
 		}
 		$pages->save_fingerprint( $url_tag, $vary, $fp, 0 );
-		self::debug( 'sync: fingerprint recorded from the render ' . ( '' !== $synced['render'] ? 'that showed the synced change' : 'the build was requested with' ) );
+		if ( ! $synced ) {
+			$pages->save_sheet_copies( $url_tag, $vary, $kept['css'] );
+		}
+		self::debug( 'sync: fingerprint recorded from the render ' . ( '' !== $sync['render'] ? 'that showed the synced change' : 'the build was requested with' ) );
 	}
 }
