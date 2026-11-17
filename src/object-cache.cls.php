@@ -872,13 +872,19 @@ class Object_Cache extends Root {
 	/**
 	 * Bound Memcached connection, polling and socket I/O without persistent backoff.
 	 *
+	 * Before libmemcached 1.1.4, a reply that arrives after a poll timeout stays on the socket and is
+	 * returned for the next keys with RES_SUCCESS (php-memcached#531). There only the connect timeout
+	 * is shortened; poll and socket I/O keep the library defaults, set explicitly so a persistent
+	 * connection configured by an earlier version is reset.
+	 *
 	 * @return void
 	 */
 	private function _set_mem_timeouts() {
 		$this->_conn->setOption( \Memcached::OPT_CONNECT_TIMEOUT, (int) ( self::REDIS_TIMEOUT * 1000 ) );
-		$this->_conn->setOption( \Memcached::OPT_POLL_TIMEOUT, (int) ( self::REDIS_TIMEOUT * 1000 ) );
-		$this->_conn->setOption( \Memcached::OPT_SEND_TIMEOUT, (int) ( self::REDIS_TIMEOUT * 1000000 ) );
-		$this->_conn->setOption( \Memcached::OPT_RECV_TIMEOUT, (int) ( self::REDIS_TIMEOUT * 1000000 ) );
+		$safe = defined( '\Memcached::LIBMEMCACHED_VERSION_HEX' ) && \Memcached::LIBMEMCACHED_VERSION_HEX >= 0x01001004;
+		$this->_conn->setOption( \Memcached::OPT_POLL_TIMEOUT, $safe ? (int) ( self::REDIS_TIMEOUT * 1000 ) : 5000 );
+		$this->_conn->setOption( \Memcached::OPT_SEND_TIMEOUT, $safe ? (int) ( self::REDIS_TIMEOUT * 1000000 ) : 0 );
+		$this->_conn->setOption( \Memcached::OPT_RECV_TIMEOUT, $safe ? (int) ( self::REDIS_TIMEOUT * 1000000 ) : 0 );
 	}
 
 	/**
