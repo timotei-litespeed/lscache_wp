@@ -762,9 +762,6 @@ class Crawler_Map extends Root {
 			$this->_save( $data2 );
 		}
 
-		// Reset crawler.
-		Crawler::cls()->reset_pos();
-
 		return count( $this->_urls );
 	}
 

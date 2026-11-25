@@ -404,6 +404,12 @@ class Crawler extends Root {
 			}
 		}
 
+		// Apply a reset requested while no crawler ran (e.g. Purge All) instead of stopping after the first batch.
+		if ( file_exists( $this->_resetfile ) && unlink( $this->_resetfile ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+			$this->_summary['last_pos']     = 0;
+			$this->_summary['curr_crawler'] = 0;
+		}
+
 		$crawlers       = $this->list_crawlers();
 		$crawlers_count = count( $crawlers );
 
@@ -1488,7 +1494,9 @@ class Crawler extends Root {
 
 		switch ( $type ) {
 			case self::TYPE_REFRESH_MAP:
-				$this->cls( 'Crawler_Map' )->gen( true );
+				if ( $this->cls( 'Crawler_Map' )->gen( true ) ) {
+					$this->reset_pos(); // A running crawler restarts on the new map.
+				}
 				break;
 
 			case self::TYPE_EMPTY:
